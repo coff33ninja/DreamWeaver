@@ -40,7 +40,7 @@ class RegisterClientRequest(BaseModel):
 class HeartbeatRequest(BaseModel):
     pc_id: str = Field(..., example="PC2")
     token: str
-    # status: Optional[str] = Field(None, example="Idle", description="Optional: Client's current operational status.")
+    status: Optional[str] = Field(None, example="Idle", description="Optional: Client's current operational status.")
 
 
 # --- API Endpoints ---

@@ -100,7 +100,7 @@ class Database:
             )
         """)
         self._ensure_column("client_tokens", "client_port", "INTEGER")
-        self_ensure_column("client_tokens", "status", "TEXT DEFAULT 'Registered'") # Ensure default is set if column added
+        self._ensure_column("client_tokens", "status", "TEXT DEFAULT 'Registered'") # Ensure default is set if column added
 
         self.conn.commit()
         print("Database schema ensured.")

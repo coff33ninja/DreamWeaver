@@ -134,8 +134,10 @@ class TTSManager:
         except Exception as e:
             print(f"Server TTSManager: Error during async TTS synthesis with {self.service_name}: {e}")
             if os.path.exists(output_path):
-                try: os.remove(output_path)
-                except OSError: pass
+                try:
+                    os.remove(output_path)
+                except OSError:
+                    pass
             return False
 
     def _get_or_download_model_blocking(self, service_name, model_identifier):
@@ -168,16 +170,22 @@ class TTSManager:
     @staticmethod
     def list_services():
         services = []
-        if gtts: services.append("gtts")
-        if piper_voice_lib: services.append("piper")
-        if CoquiTTS: services.append("xttsv2")
+        if gtts:
+            services.append("gtts")
+        if piper_voice_lib:
+            services.append("piper")
+        if CoquiTTS:
+            services.append("xttsv2")
         return services
 
     @staticmethod
     def get_available_models(service_name: str): # This is mostly for UI hints
-        if service_name == "gtts": return ["N/A (uses language codes)"]
-        if service_name == "piper": return ["en_US-ryan-high", "en_US-lessac-medium"]
-        if service_name == "xttsv2": return ["tts_models/multilingual/multi-dataset/xtts_v2"]
+        if service_name == "gtts":
+            return ["N/A (uses language codes)"]
+        if service_name == "piper":
+            return ["en_US-ryan-high", "en_US-lessac-medium"]
+        if service_name == "xttsv2":
+            return ["tts_models/multilingual/multi-dataset/xtts_v2"]
         return []
 
 if __name__ == "__main__":

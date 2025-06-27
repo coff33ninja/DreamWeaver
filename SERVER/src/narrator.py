@@ -1,3 +1,4 @@
+import os
 import whisper
 # from pyannote.audio import Pipeline # pyannote.audio can be heavy, let's simplify for now if not strictly needed or make it optional
 import asyncio # Added asyncio

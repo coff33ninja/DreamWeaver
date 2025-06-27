@@ -10,9 +10,7 @@ accelerate
 datasets
 transformers
 datasets
-piper-tts
-xttsv2
 gtts
-TTS
+coqui-tts
 huggingface_hub
 requests

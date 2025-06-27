@@ -22,7 +22,7 @@ class CharacterServer: # This is for PC1, the server's own character
                 "llm_model": None # LLMEngine will use its default
             }
             # Optionally save this default to DB if it's truly missing
-            # self.db.save_character(**self.character) # Careful with pc_id vs pc key
+            self.db.save_character(**self.character) # Careful with pc_id vs pc key
 
         # Initialize LLM and TTS for PC1
         # LLMEngine init is blocking, TTSManager init is also blocking (model downloads)

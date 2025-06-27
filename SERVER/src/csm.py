@@ -6,6 +6,7 @@ from .hardware import Hardware
 from .chaos_engine import ChaosEngine
 from .config import DB_PATH
 import asyncio # Added asyncio
+import os
 
 class CSM:
     def __init__(self):
@@ -166,8 +167,10 @@ if __name__ == '__main__':
         # Mock DB get_character for the test client
         original_db_get_char = csm.db.get_character
         def mock_db_get_char(pc_id):
-            if pc_id == "PC1": return {"name": "ServerTestChar", "pc_id": "PC1"}
-            if pc_id == "PC_TestClient": return {"name": "RemoteTestChar", "pc_id": "PC_TestClient"}
+            if pc_id == "PC1":
+                return {"name": "ServerTestChar", "pc_id": "PC1"}
+            if pc_id == "PC_TestClient":
+                return {"name": "RemoteTestChar", "pc_id": "PC_TestClient"}
             return None
         csm.db.get_character = mock_db_get_char
 
