@@ -4,9 +4,10 @@ import uuid
 import os
 import base64
 import asyncio
+import time # For retry delay
 
-from .tts_manager import TTSManager
-from .llm_engine import LLMEngine # Now using the implemented LLMEngine
+from .tts_manager import TTSManager # Now async
+from .llm_engine import LLMEngine  # Now async
 from .config import (
     CLIENT_TTS_REFERENCE_VOICES_PATH,
     ensure_client_directories
@@ -16,6 +17,8 @@ app = FastAPI()
 ensure_client_directories()
 
 HEARTBEAT_INTERVAL_SECONDS = 60
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY_SECONDS = 2
 
 class CharacterClient:
     def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):
@@ -28,201 +31,153 @@ class CharacterClient:
         self.llm = None
         self.local_reference_audio_path = None
 
+        # Note: __init__ itself cannot be async.
+        # Blocking operations during init (like initial model loading in LLM/TTS) will still block here.
+        # A more advanced pattern would involve an async factory or an explicit async `await self.async_init()` call.
+        # For now, keeping init largely synchronous for LLM/TTS model loading.
         print(f"Initializing CharacterClient for PC_ID: {self.pc_id} to connect to SERVER: {self.server_url}")
 
-        if not self._register_with_server():
+        # _register_with_server and fetch_traits are blocking but involve network I/O.
+        # These could be made async and awaited in an async factory or a separate startup method if desired.
+        if not self._register_with_server_blocking(): # Using blocking version for init sequence
             print(f"CRITICAL: Client {self.pc_id} failed to register. Functionality may be impaired.")
 
-        self.character = self.fetch_traits()
+        self.character = self._fetch_traits_blocking() # Using blocking version for init sequence
         if not self.character:
             print(f"CRITICAL: Failed to fetch character traits for {self.pc_id}. Using defaults.")
-            # Define a more complete default character, including llm_model if server doesn't provide
-            self.character = {
-                "name": self.pc_id,
-                "personality": "default",
-                "tts": "gtts", # A safe default that doesn't require model download
-                "tts_model": "en",
-                "reference_audio_filename": None,
-                "language": "en",
-                "llm_model": None # Will use LLMEngine's default if None
-            }
+            self.character = {"name": self.pc_id, "personality": "default", "tts": "gtts", "tts_model": "en",
+                              "reference_audio_filename": None, "language": "en", "llm_model": None}
 
-        # Initialize the implemented TTSManager
         self.tts = TTSManager(
             tts_service_name=self.character.get("tts", "gtts"),
             model_name=self.character.get("tts_model"),
             language=self.character.get("language", "en")
         )
-
-        # Initialize the implemented LLMEngine
-        # Pass pc_id to LLMEngine for adapter path construction
         self.llm = LLMEngine(
-            model_name=self.character.get("llm_model"), # LLMEngine handles default if None
+            model_name=self.character.get("llm_model"),
             pc_id=self.pc_id
         )
 
         if self.character and self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename"):
-            self._download_reference_audio()
+            self._download_reference_audio_blocking() # Blocking for init
 
-    def _download_reference_audio(self):
+    # --- Blocking I/O methods for use during __init__ or when async context isn't readily available ---
+    def _download_reference_audio_blocking(self):
+        # (Implementation is the same as original _download_reference_audio, just named for clarity)
         filename = self.character["reference_audio_filename"]
         os.makedirs(CLIENT_TTS_REFERENCE_VOICES_PATH, exist_ok=True)
         sane_pc_id = "".join(c if c.isalnum() else "_" for c in self.pc_id)
         sane_filename = "".join(c if c.isalnum() or c in ['.', '_', '-'] else "_" for c in filename)
         self.local_reference_audio_path = os.path.join(CLIENT_TTS_REFERENCE_VOICES_PATH, f"{sane_pc_id}_{sane_filename}")
 
-        if os.path.exists(self.local_reference_audio_path) and os.path.getsize(self.local_reference_audio_path) > 0:
-            print(f"Ref audio '{sane_filename}' exists at {self.local_reference_audio_path}. Skipping download.")
-            return
-
+        if os.path.exists(self.local_reference_audio_path) and os.path.getsize(self.local_reference_audio_path) > 0: return
         params = {"pc_id": self.pc_id, "token": self.token}
         try:
             ref_audio_url = f"{self.server_url}/get_reference_audio/{sane_filename}"
-            print(f"Downloading ref audio from: {ref_audio_url} for {self.pc_id}")
             response = requests.get(ref_audio_url, params=params, stream=True, timeout=30)
             response.raise_for_status()
             with open(self.local_reference_audio_path, "wb") as f_out:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f_out.write(chunk)
+                for chunk in response.iter_content(chunk_size=8192): f_out.write(chunk)
             print(f"Ref audio '{sane_filename}' downloaded to: {self.local_reference_audio_path}")
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error downloading ref audio '{sane_filename}' for {self.pc_id}: {e}")
             self.local_reference_audio_path = None
-        except Exception as e:
-            print(f"Unexpected error downloading ref audio for {self.pc_id}: {e}")
-            self.local_reference_audio_path = None
 
-    def fetch_traits(self):
+    def _fetch_traits_blocking(self):
+        # (Implementation is the same as original fetch_traits, just named for clarity)
         try:
             response = requests.get(f"{self.server_url}/get_traits", params={"pc_id": self.pc_id, "token": self.token}, timeout=10)
             response.raise_for_status()
-            print(f"Fetched traits for {self.pc_id}")
             return response.json()
         except Exception as e:
-            print(f"Error fetching traits for {self.pc_id}: {e}")
+            print(f"Error fetching traits for {self.pc_id} (blocking): {e}")
         return None
 
-import time # For retry delay
-
-# ... (other imports remain the same)
-
-# Default retry parameters
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_BASE_DELAY_SECONDS = 2 # Initial delay for retries
-
-class CharacterClient:
-    # ... (init and other methods remain the same up to _register_with_server)
-
-    def _register_with_server(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
-        print(f"Attempting to register client {self.pc_id} (port {self.client_port}) with server {self.server_url}...")
+    def _register_with_server_blocking(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
+        # (Implementation is the same as original _register_with_server with retries, just named for clarity)
         payload = {"pc_id": self.pc_id, "token": self.token, "client_port": self.client_port}
-
         for attempt in range(max_retries + 1):
             try:
                 response = requests.post(f"{self.server_url}/register", json=payload, timeout=10)
-                response.raise_for_status() # Check for HTTP errors
-                print(f"Registration successful for {self.pc_id}: {response.json().get('message', 'OK')}")
-                return True
-            except requests.exceptions.Timeout:
-                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Timeout.")
-            except requests.exceptions.ConnectionError:
-                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Connection error. Server might be down or URL incorrect.")
-            except requests.exceptions.RequestException as e: # Catch other request-related errors (like HTTPError)
-                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} failed: {e}")
-            except Exception as e: # Catch unexpected errors like JSONDecodeError
-                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} encountered an unexpected error: {e}")
+                response.raise_for_status(); print(f"Registration for {self.pc_id}: OK"); return True
+            except Exception as e:
+                print(f"Reg attempt {attempt+1} for {self.pc_id} failed: {e}")
+                if attempt < max_retries: time.sleep(base_delay * (2**attempt))
+                else: print(f"CRITICAL: Could not register {self.pc_id} after retries."); return False
+        return False
+    # --- End of blocking I/O methods ---
 
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt) # Exponential backoff
-                print(f"Waiting {delay}s before next registration attempt for {self.pc_id}...")
-                time.sleep(delay)
-            else:
-                print(f"CRITICAL: Could not register client {self.pc_id} with server after {max_retries + 1} attempts.")
-                return False
-        return False # Should be unreachable if loop logic is correct
-
-    def send_heartbeat(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
+    async def send_heartbeat_async(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
+        """Asynchronously sends a heartbeat with retries."""
         payload = {"pc_id": self.pc_id, "token": self.token}
         url = f"{self.server_url}/heartbeat"
 
+        def _blocking_heartbeat_call():
+            return requests.post(url, json=payload, timeout=5)
+
         for attempt in range(max_retries + 1):
             try:
-                response = requests.post(url, json=payload, timeout=5) # Shorter timeout for heartbeat
+                response = await asyncio.to_thread(_blocking_heartbeat_call)
                 response.raise_for_status()
-                # print(f"Heartbeat successful for {self.pc_id} on attempt {attempt + 1}") # Can be verbose
                 return True
-            except requests.exceptions.Timeout:
-                print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Timeout.")
-            except requests.exceptions.ConnectionError:
-                # Less verbose for heartbeat connection errors as they might be frequent if server is temporarily down
-                if attempt == 0: print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Connection error.")
-            except requests.exceptions.RequestException as e:
-                print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} failed: {e}")
+            except Exception as e:
+                print(f"Async Heartbeat attempt {attempt+1} for {self.pc_id} failed: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(base_delay * (2**attempt))
+                else:
+                    print(f"Async Heartbeat failed for {self.pc_id} after retries.")
+                    return False
+        return False
 
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                # For heartbeats, we might not want to wait too long or print every retry wait.
-                # A simpler fixed delay or shorter exponential backoff might be better.
-                # For now, using the same exponential backoff.
-                if attempt > 0 : # Only print wait message if it's a retry
-                    print(f"Waiting {delay}s before next heartbeat attempt for {self.pc_id}...")
-                time.sleep(delay)
-            else:
-                print(f"Heartbeat failed for {self.pc_id} after {max_retries + 1} attempts.")
-                return False
-        return False # Should be unreachable
-
-    def generate_response(self, narration, character_texts):
-        if not self.llm or not self.llm.is_initialized or not self.character: # Check is_initialized
-            error_msg = f"[{self.character.get('name', self.pc_id) if self.character else self.pc_id} LLM not ready]"
-            print(f"LLM generate_response error for {self.pc_id}: {error_msg}")
-            return error_msg
+    async def generate_response_async(self, narration: str, character_texts: dict) -> str:
+        """Asynchronously generates LLM response and handles fine-tuning placeholder."""
+        if not self.llm or not self.llm.is_initialized or not self.character:
+            return f"[{self.character.get('name', self.pc_id) if self.character else self.pc_id} LLM not ready]"
 
         prompt = f"Narrator: {narration}\n" + "\n".join([f"{k}: {v}" for k, v in character_texts.items()]) + f"\nCharacter: {self.character['name']} (as {self.character['personality']}):"
-        text = self.llm.generate(prompt)
 
-        # Call placeholder fine_tune on client's LLM
-        self.llm.fine_tune({"input": prompt, "output": text}, self.pc_id)
+        # LLMEngine.generate is now async
+        text = await self.llm.generate(prompt)
 
-        try:
+        # LLMEngine.fine_tune_async is now async (placeholder still)
+        await self.llm.fine_tune_async({"input": prompt, "output": text}, self.pc_id)
+
+        def _save_training_data_blocking():
             requests.post(f"{self.server_url}/save_training_data",
                           json={"dataset": {"input": prompt, "output": text}, "pc_id": self.pc_id, "token": self.token},
                           timeout=10)
+        try:
+            await asyncio.to_thread(_save_training_data_blocking)
         except Exception as e:
-            print(f"Error saving training data to server for {self.pc_id}: {e}")
+            print(f"Error saving training data (async) for {self.pc_id}: {e}")
         return text
 
-    def _synthesize_audio_internal(self, text_to_synthesize: str) -> str | None:
+    async def synthesize_audio_async(self, text_to_synthesize: str) -> str | None:
+        """Asynchronously synthesizes audio using the TTSManager."""
         if not self.tts or not self.tts.is_initialized:
-            print(f"Error: TTS not initialized for {self.pc_id}.")
+            print(f"Error: TTS not initialized for {self.pc_id} (async synthesize).")
             return None
 
         speaker_wav_to_use = None
         if self.character.get("tts") == "xttsv2":
             if self.local_reference_audio_path and os.path.exists(self.local_reference_audio_path):
                 speaker_wav_to_use = self.local_reference_audio_path
-            else:
-                print(f"Warning: XTTSv2 for {self.pc_id}, local ref audio not valid: {self.local_reference_audio_path}. Using default.")
 
         sane_char_name = "".join(c if c.isalnum() else "_" for c in self.character.get('name', self.pc_id))
         audio_filename_no_path = f"{sane_char_name}_{uuid.uuid4()}.wav"
 
-        generated_audio_path = self.tts.synthesize(
+        # TTSManager.synthesize is now async
+        generated_audio_path = await self.tts.synthesize(
             text_to_synthesize,
             audio_filename_no_path,
             speaker_wav_for_synthesis=speaker_wav_to_use
         )
-
-        if generated_audio_path:
-            # print(f"Audio for {self.pc_id} synthesized to: {generated_audio_path}") # Can be verbose
-            return generated_audio_path
-        else:
-            print(f"Audio synthesis failed for {self.pc_id}.")
-            return None
+        return generated_audio_path
 
 
 @app.post("/character")
 async def handle_character_generation_request(data: dict, request: Request):
+    """FastAPI endpoint, now fully asynchronous."""
     client: CharacterClient = request.app.state.character_client_instance
     if not client:
         raise HTTPException(status_code=503, detail="CharacterClient not available.")
@@ -231,51 +186,47 @@ async def handle_character_generation_request(data: dict, request: Request):
         raise HTTPException(status_code=401, detail="Invalid token.")
 
     narration = data.get("narration")
-    if narration is None:
-        raise HTTPException(status_code=400, detail="Missing 'narration'.")
+    if narration is None: raise HTTPException(status_code=400, detail="Missing 'narration'.")
 
     character_texts = data.get("character_texts", {})
-    response_text = client.generate_response(narration, character_texts)
-    audio_path = client._synthesize_audio_internal(response_text)
+
+    # Await the async methods
+    response_text = await client.generate_response_async(narration, character_texts)
+    audio_path = await client.synthesize_audio_async(response_text)
 
     encoded_audio_data = None
     if audio_path and os.path.exists(audio_path):
-        with open(audio_path, "rb") as f_audio:
-            audio_data = f_audio.read()
+        # Reading file can be blocking, run in thread
+        def _read_audio_file():
+            with open(audio_path, "rb") as f_audio:
+                return f_audio.read()
+        audio_data = await asyncio.to_thread(_read_audio_file)
         encoded_audio_data = base64.b64encode(audio_data).decode('utf-8')
         try:
-            os.remove(audio_path)
+            await asyncio.to_thread(os.remove, audio_path)
         except OSError as e:
-            print(f"Warning: Could not delete temp audio file {audio_path}: {e}")
-    # else: # This can be very noisy if generation or TTS often produces no audio
-        # print(f"Warning: No audio for {client.pc_id}. Path was: {audio_path}")
+            print(f"Warning: Could not delete temp audio file {audio_path} (async): {e}")
 
     return {"text": response_text, "audio_data": encoded_audio_data}
 
 
 @app.get("/health", status_code=200)
 async def health_check(request: Request):
-    """Simple health check endpoint for the client."""
     client: CharacterClient = request.app.state.character_client_instance
-    if not client:
-        # This state should ideally not be reachable if the app started correctly
-        raise HTTPException(status_code=503, detail="Client service not initialized.")
-
-    # Could add more checks here, e.g., LLM/TTS initialized status
+    if not client: raise HTTPException(status_code=503, detail="Client service not initialized.")
     llm_status = client.llm.is_initialized if client.llm else False
     tts_status = client.tts.is_initialized if client.tts else False
-
-    if llm_status and tts_status:
-        return {"status": "ok", "pc_id": client.pc_id, "llm_ready": llm_status, "tts_ready": tts_status}
-    else:
-        # Still return 200 OK if basic API is up, but indicate sub-optimal state
-        return {"status": "degraded", "pc_id": client.pc_id, "llm_ready": llm_status, "tts_ready": tts_status, "detail": "One or more sub-systems (LLM/TTS) are not fully ready."}
+    status = "ok" if llm_status and tts_status else "degraded"
+    detail = "" if status == "ok" else "One or more sub-systems (LLM/TTS) are not fully ready."
+    return {"status": status, "pc_id": client.pc_id, "llm_ready": llm_status, "tts_ready": tts_status, "detail": detail}
 
 
 async def _heartbeat_task_runner(client: CharacterClient):
+    """Runs send_heartbeat_async periodically."""
     while True:
-        await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
-        if client: client.send_heartbeat()
+        await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS) # Use asyncio.sleep
+        if client:
+            await client.send_heartbeat_async() # Call the async version
 
 _heartbeat_task_instance = None
 
@@ -283,29 +234,23 @@ def initialize_character_client(token: str, pc_id: str, server_url: str, client_
     global _heartbeat_task_instance
     if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:
         ensure_client_directories()
+        client_instance = CharacterClient(token=token, pc_id=pc_id, server_url=server_url, client_port=client_port)
+        app.state.character_client_instance = client_instance
 
-        # Critical: Instantiate the client and store it
-        client_instance = CharacterClient(
-            token=token, pc_id=pc_id, server_url=server_url, client_port=client_port
-        )
-        app.state.character_client_instance = client_instance # Assign to app.state
-
-        print(f"CharacterClient for {pc_id} initialized (LLM Ready: {client_instance.llm.is_initialized if client_instance.llm else False}, TTS Ready: {client_instance.tts.is_initialized if client_instance.tts else False}).")
+        llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else "N/A"
+        tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else "N/A"
+        print(f"CharacterClient for {pc_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).")
 
         if _heartbeat_task_instance is None or _heartbeat_task_instance.done():
-            if client_instance: # Use the locally created instance for clarity
-                # Schedule heartbeat task using the main event loop (managed by Uvicorn)
+            if client_instance:
                 try:
                     loop = asyncio.get_running_loop()
                     _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client_instance))
-                    print(f"Heartbeat task scheduled for client {pc_id}.")
-                except RuntimeError: # If no loop is running yet (shouldn't happen if called before uvicorn.run)
-                     print(f"WARNING: No running event loop for heartbeat task of {pc_id}. Will rely on Uvicorn startup.")
-                     # Fallback: try to create task anyway, or let startup_event handle it if re-enabled
+                    print(f"Async heartbeat task scheduled for client {pc_id}.")
+                except RuntimeError:
+                     print(f"WARNING: No running event loop for async heartbeat task of {pc_id}.")
                      _heartbeat_task_instance = asyncio.create_task(_heartbeat_task_runner(client_instance))
-
-
-            else: # Should not happen if instance was just created
-                 print(f"Heartbeat task NOT scheduled for {pc_id} due to client init failure immediately after creation.")
+            else:
+                 print(f"Heartbeat task NOT scheduled for {pc_id} due to client init failure.")
     else:
         print(f"CharacterClient for {pc_id} already initialized.")

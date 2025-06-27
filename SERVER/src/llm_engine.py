@@ -1,206 +1,222 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, BitsAndBytesConfig, DataCollatorForLanguageModeling
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel # Added PeftModel
-from datasets import Dataset # Using Hugging Face datasets library
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
+from datasets import Dataset
 import os
-from .config import ADAPTERS_PATH # Import from config
+import asyncio # Added asyncio
+
+from .config import ADAPTERS_PATH, MODELS_PATH # Ensure MODELS_PATH is available for base model caching
 
 class LLMEngine:
-    def __init__(self, model_name="TinyLLaMA", db=None): # model_name can be made configurable
+    def __init__(self, model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0", db=None): # Updated default model
         self.db = db
-        self.model_name = model_name # e.g., "TinyLLaMA", "NousResearch/Llama-2-7b-chat-hf"
+        self.model_name = model_name
+        sane_model_name = self.model_name.replace("/", "_") # For path safety
+        self.adapter_path = os.path.join(ADAPTERS_PATH, sane_model_name, "PC1") # Server LLM is for PC1
+        self.base_model_cache_path = os.path.join(MODELS_PATH, "llm_base_models") # Centralized cache for base models
 
-        # Use ADAPTERS_PATH from config and append model-specific and PC-specific parts
-        # This LLM Engine on the server is specifically for "PC1"
-        self.adapter_path = os.path.join(ADAPTERS_PATH, self.model_name.replace("/", "_"), "PC1") # Sanitize model_name for path
-        os.makedirs(self.adapter_path, exist_ok=True) # Ensure adapter directory exists
+        os.makedirs(self.adapter_path, exist_ok=True)
+        os.makedirs(self.base_model_cache_path, exist_ok=True)
 
-        # Configure for 4-bit quantization
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16, # Use bfloat16 for compute if available
-            bnb_4bit_use_double_quant=False,
-        )
+        self.model = None
+        self.tokenizer = None
+        self.is_initialized = False # Flag to track initialization status
+        self._load_model() # Initial load attempt
 
+    def _load_model(self):
+        """Loads the model and tokenizer. This is a blocking operation."""
+        print(f"LLMEngine (Server/PC1): Loading model '{self.model_name}'...")
         try:
+            bnb_config = None
+            if torch.cuda.is_available():
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+                    bnb_4bit_use_double_quant=False,
+                )
+                print("LLMEngine (Server/PC1): CUDA available, using BitsAndBytes 4-bit quantization.")
+
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                cache_dir=self.base_model_cache_path
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_name,
-                quantization_config=bnb_config,
-                device_map="auto", # Automatically map model to available devices (CPU, GPU)
-                trust_remote_code=True
-            )
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token # Common practice
-
-            self.model = prepare_model_for_kbit_training(self.model)
-
-            lora_config = LoraConfig(
-                r=16, # Increased rank
-                lora_alpha=32, # Increased alpha
-                target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # More target modules for Llama
-                lora_dropout=0.1, # Increased dropout
-                bias="none",
-                task_type="CAUSAL_LM",
+                quantization_config=bnb_config if bnb_config else None, # Only if CUDA is available
+                device_map="auto",
+                trust_remote_code=True,
+                cache_dir=self.base_model_cache_path
             )
 
-            if os.path.exists(os.path.join(self.adapter_path, "adapter_config.json")): # Check for a specific file
-                print(f"Loading existing LoRA adapters from {self.adapter_path}")
+            if torch.cuda.is_available(): # PEFT k-bit training prep only if CUDA
+                self.model = prepare_model_for_kbit_training(self.model)
+
+            # Try to load existing adapters for PC1
+            adapter_config_file = os.path.join(self.adapter_path, "adapter_config.json")
+            if os.path.exists(adapter_config_file):
+                print(f"LLMEngine (Server/PC1): Loading existing LoRA adapters from {self.adapter_path}")
                 self.model = PeftModel.from_pretrained(self.model, self.adapter_path)
             else:
-                print(f"No existing adapters found at {self.adapter_path}. Initializing new PEFT model.")
+                print(f"LLMEngine (Server/PC1): No existing adapters found for PC1 at {self.adapter_path}. Using base model or initializing new PEFT.")
+                # Optionally initialize with a default LoRA config for future fine-tuning
+                lora_config = LoraConfig(
+                    r=16, lora_alpha=32,
+                    target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Common for Llama-like models
+                    lora_dropout=0.1, bias="none", task_type="CAUSAL_LM"
+                )
                 self.model = get_peft_model(self.model, lora_config)
 
-            self.model.print_trainable_parameters()
+            self.model.eval() # Set to evaluation mode
+            self.is_initialized = True
+            print(f"LLMEngine (Server/PC1): Model '{self.model_name}' loaded successfully. Device: {self.model.device}")
+            if hasattr(self.model, 'print_trainable_parameters'):
+                self.model.print_trainable_parameters()
 
         except Exception as e:
-            print(f"Error loading LLM model {self.model_name} or configuring PEFT: {e}")
+            print(f"LLMEngine (Server/PC1): FATAL Error loading LLM model '{self.model_name}': {e}")
             self.model = None
             self.tokenizer = None
+            self.is_initialized = False
 
-    def generate(self, prompt, max_new_tokens=150): # Changed to max_new_tokens
-        if not self.model or not self.tokenizer:
-            return "Error: LLM not loaded."
 
-        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=self.tokenizer.model_max_length - max_new_tokens).to(self.model.device)
+    async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
+        if not self.is_initialized or not self.model or not self.tokenizer:
+            print("LLMEngine (Server/PC1): Not initialized. Cannot generate text.")
+            return "[LLM_ERROR: NOT_INITIALIZED]"
 
-        if "attention_mask" not in inputs:
-             inputs["attention_mask"] = torch.ones(inputs["input_ids"].shape, dtype=torch.long, device=self.model.device)
+        def _blocking_generate():
+            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True,
+                                    max_length=self.tokenizer.model_max_length - max_new_tokens - 5).to(self.model.device) # Added safety margin
+            with torch.no_grad():
+                output_sequences = self.model.generate(
+                    **inputs, max_new_tokens=max_new_tokens, num_return_sequences=1,
+                    do_sample=True, top_k=40, top_p=0.9, temperature=0.8,
+                    pad_token_id=self.tokenizer.pad_token_id, eos_token_id=self.tokenizer.eos_token_id
+                )
+            return self.tokenizer.decode(output_sequences[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
 
-        with torch.no_grad(): # Ensure no gradients are computed during generation
-            output_sequences = self.model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                max_new_tokens=max_new_tokens, # Controls length of generated text
-                num_return_sequences=1,
-                do_sample=True,
-                top_k=50,
-                top_p=0.95,
-                temperature=0.7,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id
+        try:
+            # print(f"LLMEngine (Server/PC1): Generating response for prompt (first 50 chars): '{prompt[:50]}...'")
+            response_text = await asyncio.to_thread(_blocking_generate)
+            # print(f"LLMEngine (Server/PC1): Generated response (first 50 chars): '{response_text[:50]}...'")
+            return response_text
+        except Exception as e:
+            print(f"LLMEngine (Server/PC1): Error during text generation: {e}")
+            return "[LLM_ERROR: GENERATION_FAILED]"
+
+    async def fine_tune(self, new_data_point: dict, pc_id: str):
+        if not self.is_initialized or not self.model or not self.tokenizer:
+            print("LLMEngine (Server/PC1): Not initialized. Cannot fine-tune.")
+            return
+        if pc_id != "PC1": # This engine instance is only for PC1
+            print(f"LLMEngine (Server/PC1): Fine-tuning attempt for '{pc_id}' ignored (engine is for PC1).")
+            return
+        if not self.db:
+            print("LLMEngine (Server/PC1): Database not available. Cannot fetch full dataset for fine-tuning.")
+            # Could proceed with just new_data_point if desired, but batch is better
+            return
+
+        print(f"LLMEngine (Server/PC1): Initiating fine-tuning for PC1...")
+
+        # For this example, we'll use a simplified batch fine-tuning approach with all data for PC1
+        all_training_data = self.db.get_training_data_for_pc("PC1")
+        if not all_training_data: # Should include the new_data_point if already saved
+            print(f"LLMEngine (Server/PC1): No training data found for PC1. Adding current point.")
+            all_training_data = [new_data_point] # Use the new point if no history
+        elif new_data_point not in all_training_data : # Avoid duplicates if new_data_point is already in db
+             all_training_data.append(new_data_point)
+
+
+        if not all_training_data:
+            print(f"LLMEngine (Server/PC1): No training data to fine-tune with for PC1.")
+            return
+
+        def _blocking_fine_tune():
+            self.model.train() # Set model to training mode
+
+            formatted_texts = [f"{data['input']}{self.tokenizer.eos_token}{data['output']}{self.tokenizer.eos_token}" for data in all_training_data]
+            dataset = Dataset.from_list([{"text": text} for text in formatted_texts])
+
+            def tokenize_function(examples):
+                return self.tokenizer(examples["text"], truncation=True, padding="max_length",
+                                      max_length=self.tokenizer.model_max_length or 512) # Ensure max_length
+
+            tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+
+            # Adjust training arguments for potentially small datasets or single updates
+            # These are example values and should be tuned.
+            num_epochs = 1 if len(all_training_data) < 10 else 3
+            batch_size = 1 if len(all_training_data) < 4 else 4
+            ga_steps = max(1, 4 // batch_size)
+
+
+            training_args = TrainingArguments(
+                output_dir=os.path.join("./results_server_ft", pc_id, self.model_name.replace("/", "_")),
+                per_device_train_batch_size=batch_size,
+                gradient_accumulation_steps=ga_steps,
+                num_train_epochs=num_epochs,
+                learning_rate=5e-5, # Common for LoRA
+                fp16=torch.cuda.is_available(), # True if CUDA, False otherwise
+                logging_steps=max(1, len(tokenized_dataset) // (batch_size * ga_steps) // 2 +1), # Log a few times
+                save_steps=max(1, len(tokenized_dataset) // (batch_size * ga_steps)), # Save once per effective epoch
+                optim="paged_adamw_8bit" if torch.cuda.is_available() else "adamw_torch",
+                report_to="none",
+                remove_unused_columns=False,
             )
 
-        # Decode only the newly generated tokens
-        generated_text = self.tokenizer.decode(output_sequences[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-        return generated_text.strip()
+            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
 
+            trainer = Trainer(model=self.model, args=training_args, train_dataset=tokenized_dataset,
+                              tokenizer=self.tokenizer, data_collator=data_collator)
 
-    def fine_tune(self, new_data_point, pc_id):
-        if not self.model or not self.tokenizer:
-            print("LLM not loaded, cannot fine-tune.")
-            return
+            print(f"LLMEngine (Server/PC1): Starting fine-tuning for PC1 with {len(all_training_data)} data points...")
+            trainer.train()
 
-        if pc_id != "PC1": # Server LLM only fine-tunes for PC1
-            print(f"Fine-tuning for PC {pc_id} is handled by the client. Server LLM only manages PC1.")
-            return
+            # Save LoRA adapters
+            os.makedirs(self.adapter_path, exist_ok=True)
+            if hasattr(self.model, 'save_pretrained'): # Check if it's a PeftModel
+                 self.model.save_pretrained(self.adapter_path)
+                 print(f"LLMEngine (Server/PC1): LoRA adapters for PC1 saved to {self.adapter_path}")
+            else:
+                 print(f"LLMEngine (Server/PC1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
 
-        print(f"Server LLM initiating fine-tuning for {pc_id} using data point: {new_data_point}")
-
-        # For simplicity in this example, we'll fine-tune on the single new data point.
-        # In a more robust system, you'd accumulate data or use a dataset.
-        # The `new_data_point` should be a dictionary like {"input": "...", "output": "..."}
-
-        # Combine input and output into a single text string for causal language modeling
-        # This format is typical for text-generation tasks.
-        text_data = f"{new_data_point['input']}{self.tokenizer.eos_token}{new_data_point['output']}{self.tokenizer.eos_token}"
-
-        # Create a dataset from this single example
-        # While not ideal for actual fine-tuning, it demonstrates the process.
-        # For real fine-tuning, use a larger dataset loaded via self.db.get_training_data_for_pc(pc_id)
-        dataset = Dataset.from_list([{"text": text_data}])
-
-        def tokenize_function(examples):
-            return self.tokenizer(examples["text"], truncation=True, padding="max_length", max_length=self.tokenizer.model_max_length or 512)
-
-        tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
-
-        # Define TrainingArguments
-        # These arguments would typically be more extensive for real training.
-        training_args = TrainingArguments(
-            output_dir=os.path.join("./results", pc_id), # Temporary directory for logs/checkpoints
-            per_device_train_batch_size=1, # Using 1 as we have a single data point for this example
-            num_train_epochs=1, # Train for 1 epoch on this single data point
-            learning_rate=5e-5, # A common learning rate for fine-tuning
-            fp16=True, # Use mixed precision if available
-            logging_steps=1,
-            report_to="none", # Disable external reporting like wandb for this simple case
-            remove_unused_columns=False,
-        )
-
-        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-
-        trainer = Trainer(
-            model=self.model, # The PEFT model
-            args=training_args,
-            train_dataset=tokenized_dataset,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator,
-        )
+            self.model.eval() # Set model back to evaluation mode
 
         try:
-            print(f"Starting fine-tuning for {pc_id}...")
-            trainer.train()
-            print(f"Fine-tuning completed for {pc_id}.")
-
-            # Save the updated LoRA adapters
-            self.model.save_pretrained(self.adapter_path)
-            print(f"LoRA adapters for {pc_id} saved to {self.adapter_path}")
-
+            await asyncio.to_thread(_blocking_fine_tune)
+            print(f"LLMEngine (Server/PC1): Fine-tuning process completed for PC1.")
         except Exception as e:
-            print(f"Error during fine-tuning for {pc_id}: {e}")
+            print(f"LLMEngine (Server/PC1): Error during fine-tuning for PC1: {e}")
+            if self.model: self.model.eval() # Ensure model is back in eval mode on error too
 
-    # Example: Method to load all training data for PC1 for a batch fine-tuning session
-    def batch_fine_tune_pc1(self):
-        if not self.db:
-            print("Database not available for batch fine-tuning.")
-            return
+    # batch_fine_tune_pc1 can be removed or refactored if fine_tune now handles batching from DB
+    # For now, let's assume fine_tune is the primary async method.
 
-        all_training_data = self.db.get_training_data_for_pc("PC1")
-        if not all_training_data:
-            print("No training data found for PC1 for batch fine-tuning.")
-            return
+if __name__ == "__main__":
+    # Basic test (requires DB setup for fine-tuning part)
+    async def main_test():
+        print("LLMEngine (Server/PC1) Test:")
+        # Dummy DB for testing generate, fine_tune would need a real one or mock
+        class DummyDB:
+            def get_training_data_for_pc(self, pc_id): return []
 
-        print(f"Starting batch fine-tuning for PC1 with {len(all_training_data)} data points.")
+        engine = LLMEngine(db=DummyDB()) # Provide a dummy DB
+        if engine.is_initialized:
+            prompt = "Hello, what is your purpose?"
+            print(f"Test Prompt: {prompt}")
+            response = await engine.generate(prompt, max_new_tokens=50)
+            print(f"Test Response: {response}")
 
-        # Prepare dataset (text format: "input<eos>output<eos>")
-        formatted_texts = [f"{data['input']}{self.tokenizer.eos_token}{data['output']}{self.tokenizer.eos_token}" for data in all_training_data]
-        dataset = Dataset.from_list([{"text": text} for text in formatted_texts])
+            # Test fine_tune (will just log with DummyDB or try to add to empty list)
+            # For a real test, you'd need a DB with some data.
+            # print("\nTesting fine_tune (placeholder)...")
+            # await engine.fine_tune({"input": "Test input", "output": "Test output"}, "PC1")
+        else:
+            print("LLMEngine (Server/PC1) failed to initialize for test.")
 
-        def tokenize_function(examples):
-            return self.tokenizer(examples["text"], truncation=True, padding="max_length", max_length=self.tokenizer.model_max_length or 512)
-
-        tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
-
-        training_args = TrainingArguments(
-            output_dir=os.path.join("./results_batch", "PC1"),
-            per_device_train_batch_size=max(1, 8 // torch.cuda.device_count() if torch.cuda.is_available() else 1), # Adjust based on VRAM
-            gradient_accumulation_steps=2, # Accumulate gradients if batch size is small
-            num_train_epochs=3, # Number of epochs for batch training
-            learning_rate=2e-4,
-            fp16=True, # nvidia-amp
-            logging_steps=max(1, len(tokenized_dataset) // (training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps) // 10), # Log 10 times per epoch
-            save_steps=max(1, len(tokenized_dataset) // (training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps)), # Save once per epoch
-            optim="paged_adamw_8bit", # From QLoRA paper
-            report_to="none",
-            remove_unused_columns=False,
-        )
-
-        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-
-        trainer = Trainer(
-            model=self.model,
-            args=training_args,
-            train_dataset=tokenized_dataset,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator,
-        )
-
-        try:
-            trainer.train()
-            print("Batch fine-tuning for PC1 completed.")
-            self.model.save_pretrained(self.adapter_path)
-            print(f"LoRA adapters for PC1 saved to {self.adapter_path} after batch training.")
-        except Exception as e:
-            print(f"Error during batch fine-tuning for PC1: {e}")
+    asyncio.run(main_test())

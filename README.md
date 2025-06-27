@@ -21,6 +21,7 @@ The system is managed from a central server that hosts the narrator's interface,
     *   Exporting the story to JSON or TXT.
 *   **Enhanced Client Status Monitoring**: The dashboard displays detailed client statuses: `Registered`, `Offline`, `Online_Heartbeat` (heartbeating but API not confirmed), `Online_Responsive` (fully ready), `Error_API` (API issues), `Error_Unreachable`, `Deactivated`.
 *   **Resilient Communication**: Basic retry mechanisms implemented for server-to-client and client-to-server (registration, heartbeat) communications.
+*   **Asynchronous Operations**: Long-running tasks in the Gradio UI (like story processing, checkpointing) and client API endpoints (LLM/TTS) are handled asynchronously to improve UI responsiveness and server/client throughput. `gr.Progress` indicators are used in the UI.
 
 ---
 

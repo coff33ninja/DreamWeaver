@@ -1,245 +1,284 @@
 import gradio as gr
 from .csm import CSM
 from .database import Database
-from .tts_manager import TTSManager
+from .tts_manager import TTSManager # Server's TTSManager
 from .client_manager import ClientManager
 from .checkpoint_manager import CheckpointManager
-from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH # Import from config
+from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
 import shutil
 import os
+import asyncio # Added asyncio
 
-# Use DB_PATH from config
+# --- Instances ---
+# These are global instances; care must be taken if server scales to multiple workers.
+# For typical Gradio/FastAPI on Uvicorn with multiple workers, these might need
+# to be managed differently (e.g., per-request or using a shared service pattern).
+# However, for a single-worker setup or simple multi-threading, this can work.
 db_instance = Database(DB_PATH)
-client_manager_instance = ClientManager(db_instance)
-# CSM now uses DB_PATH from config internally
-csm_instance = CSM()
-# CheckpointManager now uses paths from config internally
-checkpoint_manager = CheckpointManager()
+client_manager_instance = ClientManager(db_instance) # ClientManager needs db
+csm_instance = CSM() # CSM initializes its own db, narrator, character_server, client_manager
+checkpoint_manager = CheckpointManager() # CheckpointManager uses paths from server config
 
-def update_model_dropdown(service):
-    """Dynamically updates the model dropdown based on the selected TTS service."""
-    if service == "piper":
-        models = TTSManager.get_available_models(service)
-    elif service == "xttsv2":
-        models = TTSManager.get_available_models(service) # Should be ["tts_models/multilingual/multi-dataset/xtts_v2"]
-    elif service == "google":
-        models = TTSManager.get_available_models(service) # e.g., ['en-US-Standard-A', ...]
-    else:
-        models = []
-
-    # Ensure a valid default is selected if models list is not empty
+# --- Helper Functions (mostly synchronous as they are simple UI updates or fast DB calls) ---
+def update_model_dropdown(service_name: str):
+    """Dynamically updates the TTS model dropdown based on the selected service."""
+    # Uses Server's TTSManager to list models
+    models = TTSManager.get_available_models(service_name)
     default_value = models[0] if models else None
     return gr.Dropdown.update(choices=models, value=default_value)
 
-
-def create_character(name, personality, goals, backstory, tts, tts_model, reference_audio_file, pc):
-    reference_audio_filename = None
-    if reference_audio_file and tts == "xttsv2": # Only save if XTTSv2 is selected and file is provided
-        # Ensure the directory from config exists
-        os.makedirs(REFERENCE_VOICES_AUDIO_PATH, exist_ok=True)
-
-        # Sanitize character name for use in filename
-        sane_name = "".join(c if c.isalnum() else "_" for c in name)
-
-        # Get original extension
-        original_filename = reference_audio_file.name # This is the temporary path Gradio provides
-        _, ext = os.path.splitext(original_filename)
-
-        # Create a more robust unique filename
-        reference_audio_filename = f"{sane_name}_{os.urandom(4).hex()}{ext}"
-        destination_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, reference_audio_filename)
-
-        try:
-            shutil.copyfile(original_filename, destination_path) # Gradio provides a temp file path
-            print(f"Saved reference audio to: {destination_path}")
-        except Exception as e:
-            print(f"Error saving reference audio: {e}")
-            return f"Error saving reference audio: {e}"
-
-    elif tts == "xttsv2" and not reference_audio_file:
-        return "Error: XTTS-v2 selected but no reference audio file uploaded. Please upload a voice sample."
-
-
-    db_instance.save_character(name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc)
-    token = None
-    if pc != "PC1": # Assuming "PC1" is the server/local character
-        token = client_manager_instance.generate_token(pc)
-
-    msg = f"Character '{name}' for '{pc}' created successfully."
-    if token:
-        msg += f" Token for {pc}: {token}"
-    return msg
-
-
-def story_interface(audio_input_path, chaos_level_value):
-    if audio_input_path is None:
-        return "No audio input provided. Please record or upload narration.", {}
-
-    # CSM's process_story expects the audio filepath and chaos level
-    narration, character_texts = csm_instance.process_story(audio_input_path, chaos_level_value)
-
-    # Ensure character_texts is a dictionary (it should be)
-    if not isinstance(character_texts, dict):
-        character_texts = {"error": "Invalid character text format from CSM"}
-
-    return narration, character_texts
-
-
-def get_story_playback_data():
+def get_story_playback_data_sync(): # Renamed to indicate it's synchronous
     """Fetches story history from DB and formats it for Gradio Chatbot."""
-    history_raw = db_instance.get_story_history() # Ensure this method exists and works
+    # This is a DB read, usually fast. If it becomes slow for very long stories,
+    # it could be made async with to_thread and a progress indicator.
+    history_raw = db_instance.get_story_history()
     chatbot_messages = []
     if not history_raw:
         return [["System", "No story history found."]]
 
     for entry in history_raw:
-        # Assuming entry structure: (speaker, text, timestamp, audio_path_or_none)
-        speaker, text, timestamp = entry[0], entry[1], entry[2]
-
-        # Format for chatbot: [user_message, bot_response]
-        # Narrator's text appears on the left (user side), character's on the right (bot side).
+        speaker = entry.get("speaker", "Unknown")
+        text = entry.get("text", "")
+        timestamp = entry.get("timestamp", "")
+        # Format for chatbot
         formatted_text = f"_{timestamp}_ \n**{speaker}:** {text}"
-        if speaker.lower() == "narrator": # Case-insensitive check for narrator
+        if speaker.lower() == "narrator":
             chatbot_messages.append([formatted_text, None])
         else:
-            # If there's a previous narrator message without a response, append to it
             if chatbot_messages and chatbot_messages[-1][0] is not None and chatbot_messages[-1][1] is None:
                  chatbot_messages[-1][1] = formatted_text
-            else: # Otherwise, start a new line with None for user part (or handle as per desired UI)
+            else:
                 chatbot_messages.append([None, formatted_text])
     return chatbot_messages
 
+# --- Asynchronous Gradio Event Handlers ---
 
-def save_checkpoint_handler(name_prefix):
-    status, new_choices = checkpoint_manager.save_checkpoint(name_prefix)
+async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, pc_id, progress=gr.Progress(track_tqdm=True)):
+    """Asynchronously creates a character, handles file copy with progress."""
+    progress(0, desc="Initializing character creation...")
+
+    reference_audio_filename = None
+    if reference_audio_file and tts_service == "xttsv2":
+        progress(0.2, desc="Processing reference audio...")
+        # Ensure the directory from config exists (config.py does this, but good practice)
+        os.makedirs(REFERENCE_VOICES_AUDIO_PATH, exist_ok=True)
+        sane_name = "".join(c if c.isalnum() else "_" for c in name)
+        original_filename = reference_audio_file.name
+        _, ext = os.path.splitext(original_filename)
+        reference_audio_filename = f"{sane_name}_{pc_id}_{os.urandom(4).hex()}{ext}"
+        destination_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, reference_audio_filename)
+
+        try:
+            # shutil.copyfile is blocking, run in thread
+            await asyncio.to_thread(shutil.copyfile, original_filename, destination_path)
+            print(f"Saved reference audio to: {destination_path}")
+            progress(0.5, desc="Reference audio saved.")
+        except Exception as e:
+            print(f"Error saving reference audio: {e}")
+            return f"Error saving reference audio: {e}"
+    elif tts_service == "xttsv2" and not reference_audio_file:
+        return "Error: XTTS-v2 selected but no reference audio file uploaded."
+
+    progress(0.7, desc="Saving character details to database...")
+    # Database operations are fast, but can be threaded for consistency if desired
+    await asyncio.to_thread(
+        db_instance.save_character,
+        name, personality, goals, backstory, tts_service, tts_model,
+        reference_audio_filename, pc_id,
+        # Assuming a default or None for llm_model if not provided by UI yet
+        # You might want to add an llm_model dropdown in the UI too
+        character.get("llm_model") if 'character' in locals() and character else None
+    )
+
+    token_msg_part = ""
+    if pc_id != "PC1":
+        # Token generation is fast (secrets.token_hex + DB write)
+        token = await asyncio.to_thread(client_manager_instance.generate_token, pc_id)
+        if token:
+            token_msg_part = f" Token for {pc_id}: {token}"
+
+    progress(1, desc="Character created!")
+    return f"Character '{name}' for '{pc_id}' created successfully.{token_msg_part}"
+
+
+async def story_interface_async(audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)):
+    """Asynchronously processes the story turn with progress updates."""
+    if audio_input_path is None:
+        return "No audio input. Record or upload narration.", {}, gr.Button.update() # No change to button
+
+    progress(0, desc="Starting story processing...")
+    # CSM's process_story is now async
+    try:
+        # Simulate progress for different stages if csm.process_story doesn't have internal progress reporting
+        # For a real gr.Progress with tqdm, csm.process_story would need to accept a tqdm instance
+        # or use internal tqdm compatible logging.
+        # For now, we'll just await the whole thing.
+        # To show more granular progress, you'd break down csm.process_story or have it yield updates.
+
+        # Placeholder for narrator progress (assuming it's part of process_story)
+        # progress(0.1, desc="Transcribing narration...")
+
+        narration, character_texts = await csm_instance.process_story(audio_input_path, chaos_level_value)
+
+        progress(1, desc="Story turn processed.")
+
+        if not isinstance(character_texts, dict): # Should not happen if csm is correct
+            character_texts = {"error": "Invalid character text format from CSM"}
+
+        return narration, character_texts
+    except Exception as e:
+        print(f"Error in story_interface_async: {e}")
+        progress(1, desc="Error during story processing.") # Clear progress
+        return f"Error: {e}", {}, gr.Button.update() # Update button state if needed
+
+
+async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=True)):
+    progress(0, desc="Saving checkpoint...")
+    # CheckpointManager.save_checkpoint involves file I/O (blocking)
+    status, new_choices = await asyncio.to_thread(checkpoint_manager.save_checkpoint, name_prefix)
+    progress(1, desc="Checkpoint saved.")
     return status, gr.Dropdown.update(choices=new_choices, value=new_choices[0] if new_choices else None)
 
-def load_checkpoint_handler(checkpoint_name):
+async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm=True)):
     if not checkpoint_name:
-        return "Please select a checkpoint to load."
-    status = checkpoint_manager.load_checkpoint(checkpoint_name)
-    # After loading, refresh story playback as DB might have changed
-    new_story_data = get_story_playback_data()
+        return "Please select a checkpoint to load.", [] # Return empty list for chatbot if no load
+    progress(0, desc=f"Loading checkpoint '{checkpoint_name}'...")
+    # CheckpointManager.load_checkpoint involves file I/O (blocking)
+    status = await asyncio.to_thread(checkpoint_manager.load_checkpoint, checkpoint_name)
+
+    new_story_data = []
+    if "loaded" in status.lower() and "restart" not in status.lower() : # If successfully loaded and no restart needed (or handle restart message)
+        progress(0.8, desc="Refreshing story history...")
+        # get_story_playback_data_sync is blocking (DB read)
+        new_story_data = await asyncio.to_thread(get_story_playback_data_sync)
+
+    progress(1, desc=f"Checkpoint '{checkpoint_name}' load attempt finished.")
     return status, new_story_data
 
+async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True)):
+    progress(0, desc=f"Exporting story as {export_format}...")
+    # CheckpointManager.export_story involves DB read and file write (blocking)
+    status, filename = await asyncio.to_thread(checkpoint_manager.export_story, export_format)
+    progress(1, desc="Story export finished.")
+    return status, gr.Textbox.update(value=filename if filename else "", visible=bool(filename))
 
+
+# --- Gradio UI Launch ---
 def launch_interface():
-    with gr.Blocks(theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(theme=gr.themes.Soft(primary_hue=gr.themes.colors.indigo, secondary_hue=gr.themes.colors.blue)) as demo:
         gr.Markdown("# Dream Weaver Interface")
 
         with gr.Tabs():
             with gr.TabItem("Character Management"):
+                # ... (Character Management UI definition - use create_character_async) ...
                 gr.Markdown("## Create or Update Characters")
                 with gr.Row():
                     with gr.Column(scale=2):
-                        char_name = gr.Textbox(label="Character Name", placeholder="E.g., 'Elara the Explorer'")
-                        char_pc = gr.Dropdown(["PC1"] + [f"PC{i}" for i in range(2, 11)], label="Assign to PC", value="PC1", info="PC1 is the server. Others are clients.")
-                        char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service", info="Select the Text-to-Speech engine.")
-                        char_tts_model = gr.Dropdown([], label="TTS Model", interactive=True, info="Model for the selected TTS service.")
-                        char_ref_audio = gr.File(label="Reference Audio (for XTTS-v2 voice cloning)", type="filepath", interactive=True, visible=False)
+                        char_name = gr.Textbox(label="Character Name", placeholder="E.g., 'Elara'")
+                        char_pc_id = gr.Dropdown(["PC1"] + [f"PC{i}" for i in range(2, 11)], label="Assign to PC ID", value="PC1")
+                        char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service")
+                        char_tts_model = gr.Dropdown([], label="TTS Model", interactive=True)
+                        char_ref_audio = gr.File(label="Reference Audio (XTTSv2)", type="filepath", interactive=True, visible=False)
                     with gr.Column(scale=3):
-                        char_personality = gr.Textbox(label="Personality Traits", placeholder="E.g., 'Brave, curious, slightly reckless'", lines=2)
-                        char_goals = gr.Textbox(label="Character Goals", placeholder="E.g., 'Find the lost temple, protect her crew'", lines=2)
-                        char_backstory = gr.Textbox(label="Brief Backstory", placeholder="E.g., 'Left her village after discovering an ancient map...'", lines=3)
+                        char_personality = gr.Textbox(label="Personality", lines=2)
+                        char_goals = gr.Textbox(label="Goals", lines=2)
+                        char_backstory = gr.Textbox(label="Backstory", lines=3)
 
-                create_char_btn = gr.Button("Save Character Configuration", variant="primary")
+                create_char_btn = gr.Button("Save Character", variant="primary")
                 char_creation_status = gr.Textbox(label="Status", interactive=False)
 
-                # Dynamic updates for TTS model dropdown and reference audio visibility
                 char_tts_service.change(fn=update_model_dropdown, inputs=char_tts_service, outputs=char_tts_model)
                 char_tts_service.change(lambda service: gr.File.update(visible=(service == "xttsv2")), inputs=char_tts_service, outputs=char_ref_audio)
 
                 create_char_btn.click(
-                    create_character,
-                    inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_pc],
+                    create_character_async,
+                    inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_pc_id],
                     outputs=char_creation_status
                 )
-                # TODO: Add a way to view/edit existing characters
 
             with gr.TabItem("Story Progression"):
+                # ... (Story Progression UI definition - use story_interface_async) ...
                 gr.Markdown("## Narrate the Story")
                 with gr.Row():
                     with gr.Column(scale=2):
-                        story_audio_input = gr.Audio(source="microphone", type="filepath", label="Record Narration", show_label=True)
-                        story_chaos_slider = gr.Slider(minimum=0, maximum=10, value=1, step=1, label="Chaos Level", info="Higher level increases chances of random events.")
+                        story_audio_input = gr.Audio(sources=["microphone"], type="filepath", label="Record Narration")
+                        story_chaos_slider = gr.Slider(minimum=0, maximum=10, value=1, step=1, label="Chaos Level")
                         process_story_btn = gr.Button("Process Narration", variant="primary")
                     with gr.Column(scale=3):
                         narration_output_text = gr.Textbox(label="Narrator's Words", lines=3, interactive=False)
-                        character_responses_json = gr.JSON(label="Character Dialogues", interactive=False)
+                        character_responses_json = gr.JSON(label="Character Dialogues", interactive=False) # Changed from Textbox
 
                 process_story_btn.click(
-                    story_interface,
+                    story_interface_async,
                     inputs=[story_audio_input, story_chaos_slider],
                     outputs=[narration_output_text, character_responses_json]
                 )
 
             with gr.TabItem("Story Playback & History"):
+                # ... (Story Playback UI - get_story_playback_data_sync is likely fine for initial load and refresh unless very slow) ...
                 gr.Markdown("## Review Story History")
-                story_playback_chatbot = gr.Chatbot(label="Full Story Log", height=500, show_copy_button=True, bubble_full_width=False)
+                story_playback_chatbot = gr.Chatbot(label="Full Story Log", height=600, show_copy_button=True, bubble_full_width=False)
                 refresh_story_btn = gr.Button("Refresh Story History")
 
-                refresh_story_btn.click(get_story_playback_data, inputs=[], outputs=[story_playback_chatbot])
-                # Load history once when the interface loads
-                demo.load(get_story_playback_data, inputs=[], outputs=[story_playback_chatbot])
+                # Making this async too for consistency, though DB reads are usually fast.
+                async def refresh_story_async_wrapper(progress=gr.Progress()):
+                    progress(0, desc="Fetching history...")
+                    data = await asyncio.to_thread(get_story_playback_data_sync)
+                    progress(1, desc="History loaded.")
+                    return data
 
+                refresh_story_btn.click(refresh_story_async_wrapper, inputs=[], outputs=[story_playback_chatbot])
+                demo.load(refresh_story_async_wrapper, inputs=[], outputs=[story_playback_chatbot]) # Initial load
 
             with gr.TabItem("System & Data Management"):
+                # ... (Checkpoints & Export UI - use ..._async handlers) ...
                 gr.Markdown("## Checkpoints & Export")
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("### Checkpoints")
-                        chkpt_name_prefix = gr.Textbox(label="Checkpoint Name Prefix", placeholder="E.g., 'AfterTheCave'")
-                        save_chkpt_btn = gr.Button("Save Current State as Checkpoint")
+                        chkpt_name_prefix = gr.Textbox(label="Checkpoint Name Prefix", placeholder="E.g., 'AfterTheHeist'")
+                        save_chkpt_btn = gr.Button("Save Checkpoint")
 
-                        active_checkpoints = checkpoint_manager.list_checkpoints()
-                        chkpt_dropdown = gr.Dropdown(choices=active_checkpoints, label="Load from Checkpoint", value=active_checkpoints[0] if active_checkpoints else None)
+                        current_checkpoints = checkpoint_manager.list_checkpoints() # Sync, fast
+                        chkpt_dropdown = gr.Dropdown(choices=current_checkpoints, label="Load Checkpoint",
+                                                     value=current_checkpoints[0] if current_checkpoints else None)
                         load_chkpt_btn = gr.Button("Load Selected Checkpoint")
                         chkpt_status = gr.Textbox(label="Checkpoint Status", interactive=False)
 
                         save_chkpt_btn.click(
-                            save_checkpoint_handler,
+                            save_checkpoint_async,
                             inputs=[chkpt_name_prefix],
                             outputs=[chkpt_status, chkpt_dropdown]
                         )
-                        # When loading a checkpoint, also refresh the story playback
                         load_chkpt_btn.click(
-                            load_checkpoint_handler,
+                            load_checkpoint_async,
                             inputs=[chkpt_dropdown],
-                            outputs=[chkpt_status, story_playback_chatbot] # Update status and chatbot
+                            outputs=[chkpt_status, story_playback_chatbot]
                         )
-
                     with gr.Column():
                         gr.Markdown("### Export Story")
-                        export_format_radio = gr.Radio(["text", "json"], label="Choose Export Format", value="text")
+                        export_format_radio = gr.Radio(["text", "json"], label="Export Format", value="text")
                         export_story_btn = gr.Button("Export Full Story")
                         export_status_text = gr.Textbox(label="Export Status", interactive=False)
-                        # Keep filename output hidden as direct download isn't standard. Status gives filename.
-                        export_filename_display = gr.Textbox(label="Exported To", interactive=False, visible=True)
-
-                        def export_story_wrapper(fmt):
-                            status, filename = checkpoint_manager.export_story(fmt)
-                            # Make filename visible only if export was successful
-                            return status, gr.Textbox.update(value=filename if filename else "", visible=bool(filename))
+                        export_filename_display = gr.Textbox(label="Exported To", interactive=False)
 
                         export_story_btn.click(
-                            export_story_wrapper,
+                            export_story_async,
                             inputs=[export_format_radio],
                             outputs=[export_status_text, export_filename_display]
                         )
 
         gr.Markdown("---")
-        gr.Markdown("View [Monitoring Dashboard](/dashboard) (Server & Client Status)")
+        gr.Markdown("View [Server Dashboard](/dashboard) (Server Perf & Client Status)")
 
-
-    demo.launch(server_name="0.0.0.0") # Make it accessible on the network
+    # Launch the Gradio app
+    # For multi-worker Uvicorn, ensure global instances (db_instance, csm_instance etc.) are handled safely.
+    # This typically means initializing them within the FastAPI app's lifespan events or using dependency injection.
+    # For now, assuming single worker or careful management.
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860) # .queue() is important for async handlers and progress
 
 if __name__ == "__main__":
-    # This allows running the Gradio interface directly for testing if needed
-    # Ensure the necessary paths (like for DB) are resolvable if run this way
-    # or that environment variables are set.
-    print("Launching Gradio interface directly...")
-    # Make sure config creates directories before DB is initialized
-    from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH, CHARACTERS_AUDIO_PATH, MODELS_PATH, ADAPTERS_PATH, BASE_CHECKPOINT_PATH, NARRATOR_AUDIO_PATH
-    # The config.py already runs os.makedirs, so just importing it should be enough.
-
+    print("Launching Gradio interface directly (SERVER/src/gradio_interface.py)...")
+    # Ensure server config.py creates directories (it does on import)
+    from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
     launch_interface()
