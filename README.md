@@ -100,8 +100,8 @@ CharacterClient/            # Client directory
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repo-url> E:/DreamWeaver
-    cd E:/DreamWeaver
+    git clone https://github.com/coff33ninja/DreamWeaver
+    cd DreamWeaver
     ```
 
 2.  **Install dependencies:**
