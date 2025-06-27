@@ -1,19 +1,19 @@
 import os
 import shutil
 from datetime import datetime
-
 import json
-# Define base paths. In a larger application, these could come from a config file.
-BASE_DATA_PATH = "E:/DreamWeaver/data"
-BASE_CHECKPOINT_PATH = "E:/DreamWeaver/checkpoints"
-DB_FILE_PATH = os.path.join(BASE_DATA_PATH, "dream_weaver.db")
-# This path is specific to the server's LLM (PC1) and model name.
-# A more advanced system might manage multiple server-side models.
-SERVER_ADAPTER_PATH = os.path.join(BASE_DATA_PATH, "models/adapters/TinyLLaMA/PC1")
+from .config import DB_PATH, ADAPTERS_PATH, BASE_CHECKPOINT_PATH, BASE_DATA_PATH # Import from config
+
+# Path for server-specific adapters (PC1)
+# TODO: Make "TinyLLaMA" and "PC1" dynamic or configurable if multiple server models are supported.
+SERVER_ADAPTER_SPECIFIC_PATH = os.path.join(ADAPTERS_PATH, "TinyLLaMA", "PC1")
 
 class CheckpointManager:
     def __init__(self):
         os.makedirs(BASE_CHECKPOINT_PATH, exist_ok=True)
+        # Ensure the specific server adapter path for PC1 also exists, as it's a target for copying
+        os.makedirs(SERVER_ADAPTER_SPECIFIC_PATH, exist_ok=True)
+
 
     def list_checkpoints(self):
         """Returns a list of available checkpoint names, sorted by most recent first."""
@@ -32,14 +32,14 @@ class CheckpointManager:
             os.makedirs(checkpoint_dir, exist_ok=True)
 
             # 1. Save the database
-            if os.path.exists(DB_FILE_PATH):
-                shutil.copy(DB_FILE_PATH, os.path.join(checkpoint_dir, "dream_weaver.db"))
+            if os.path.exists(DB_PATH): # Use DB_PATH from config
+                shutil.copy(DB_PATH, os.path.join(checkpoint_dir, "dream_weaver.db"))
 
             # 2. Save the server's LLM adapters
-            if os.path.exists(SERVER_ADAPTER_PATH):
-                shutil.copytree(SERVER_ADAPTER_PATH, os.path.join(checkpoint_dir, "PC1_adapters"))
+            if os.path.exists(SERVER_ADAPTER_SPECIFIC_PATH): # Use SERVER_ADAPTER_SPECIFIC_PATH
+                shutil.copytree(SERVER_ADAPTER_SPECIFIC_PATH, os.path.join(checkpoint_dir, "PC1_adapters"))
             else:
-                print(f"Warning: Server LLM adapters not found at {SERVER_ADAPTER_PATH}. Skipping adapter save.")
+                print(f"Warning: Server LLM adapters not found at {SERVER_ADAPTER_SPECIFIC_PATH}. Skipping adapter save.")
 
             return f"Checkpoint '{checkpoint_name}' saved successfully.", self.list_checkpoints()
         except Exception as e:
@@ -53,29 +53,37 @@ class CheckpointManager:
 
         try:
             # 1. Restore the database
-            shutil.copy(os.path.join(checkpoint_dir, "dream_weaver.db"), DB_FILE_PATH)
+            db_in_checkpoint = os.path.join(checkpoint_dir, "dream_weaver.db")
+            if os.path.exists(db_in_checkpoint):
+                shutil.copy(db_in_checkpoint, DB_PATH) # Use DB_PATH from config
+            else:
+                return f"Error: Database not found in checkpoint '{checkpoint_name}'."
+
 
             # 2. Restore the server's LLM adapters
-            if os.path.exists(os.path.join(checkpoint_dir, "PC1_adapters")): # Check if adapters exist in checkpoint
-                if os.path.exists(SERVER_ADAPTER_PATH):
-                    shutil.rmtree(SERVER_ADAPTER_PATH) # Remove existing adapters before copying
-                shutil.copytree(os.path.join(checkpoint_dir, "PC1_adapters"), SERVER_ADAPTER_PATH)
+            adapters_in_checkpoint = os.path.join(checkpoint_dir, "PC1_adapters")
+            if os.path.exists(adapters_in_checkpoint):
+                if os.path.exists(SERVER_ADAPTER_SPECIFIC_PATH): # Use SERVER_ADAPTER_SPECIFIC_PATH
+                    shutil.rmtree(SERVER_ADAPTER_SPECIFIC_PATH) # Remove existing adapters before copying
+                shutil.copytree(adapters_in_checkpoint, SERVER_ADAPTER_SPECIFIC_PATH) # Use SERVER_ADAPTER_SPECIFIC_PATH
             else:
                 print(f"Warning: No PC1 adapters found in checkpoint '{checkpoint_name}'. Skipping adapter load.")
 
             return f"Checkpoint '{checkpoint_name}' loaded. PLEASE RESTART THE APPLICATION for changes to take effect."
         except Exception as e:
             return f"Error loading checkpoint: {e}"
+
     def export_story(self, export_format="text"):
         """Exports the story history to a file (text or JSON)."""
         from .database import Database # Local import to avoid circular dependency
-        db = Database(DB_FILE_PATH)
+        db = Database(DB_PATH) # Use DB_PATH from config
         history = db.get_story_history()
 
         if not history:
             return "Error: No story history found."
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Exports will be saved in a subdirectory of BASE_DATA_PATH
         export_dir = os.path.join(BASE_DATA_PATH, "exports")
         os.makedirs(export_dir, exist_ok=True)
 

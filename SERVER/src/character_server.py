@@ -1,5 +1,6 @@
 from .llm_engine import LLMEngine
 from .tts_manager import TTSManager
+from .config import REFERENCE_VOICES_AUDIO_PATH, CHARACTERS_AUDIO_PATH # Import necessary paths
 import pygame
 import uuid
 import os
@@ -24,7 +25,8 @@ class CharacterServer:
 
         speaker_wav = None
         if self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename"):
-            speaker_wav = os.path.join("E:/DreamWeaver/data/audio/reference_voices", self.character["reference_audio_filename"])
+            # Use path from config
+            speaker_wav = os.path.join(REFERENCE_VOICES_AUDIO_PATH, self.character["reference_audio_filename"])
 
         if text: # Only output audio if there's text
             self.output_audio(text, speaker_wav=speaker_wav)
@@ -32,7 +34,8 @@ class CharacterServer:
 
     def output_audio(self, text, speaker_wav=None):
         if self.tts and text and self.character:
-            audio_dir = f"E:/DreamWeaver/data/audio/characters/{self.character['name']}"
+            # Use path from config
+            audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, self.character['name'])
             os.makedirs(audio_dir, exist_ok=True)
             audio_path = os.path.join(audio_dir, f"{uuid.uuid4()}.wav")
             try:

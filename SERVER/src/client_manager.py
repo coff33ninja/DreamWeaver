@@ -4,6 +4,7 @@ import pygame
 import uuid
 import os
 import base64
+from .config import CHARACTERS_AUDIO_PATH # Import from config
 
 class ClientManager:
     def __init__(self, db):
@@ -30,23 +31,35 @@ class ClientManager:
         if not character:
             return ""
         token = self.db.get_token(client_id)
-        url = f"http://{client_ip}:8000/character" # Construct URL with registered IP
+        # Assuming client runs on port 8000, this might need to be configurable
+        url = f"http://{client_ip}:8000/character"
         try:
             response = requests.post(url, json={"narration": narration, "character_texts": character_texts, "token": token}, timeout=10)
             response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
 
-            audio_dir = f"E:/DreamWeaver/data/audio/characters/{character['name']}"
+            # Use path from config
+            audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, character['name'])
             os.makedirs(audio_dir, exist_ok=True)
-            audio_path = os.path.join(audio_dir, f"{uuid.uuid4()}.wav")
+            audio_filename = f"{uuid.uuid4()}.wav"
+            audio_path = os.path.join(audio_dir, audio_filename)
+
             with open(audio_path, "wb") as f:
                 # Decode the base64 string back to bytes before writing
                 decoded_audio_data = base64.b64decode(response.json()["audio_data"])
                 f.write(decoded_audio_data)
+
             pygame.mixer.Sound(audio_path).play() # Play client's audio on server
             return response.json()["text"] # Return client's text response
         except requests.exceptions.RequestException as e:
             print(f"Error communicating with client {client_id} at {url}: {e}")
+            # Potentially update client status to offline here
+            self.db.update_client_status(client_id, "Offline")
+            return ""
+        except KeyError as e:
+            print(f"Key error in response from client {client_id}: {e}. Response: {response.text}")
+            self.db.update_client_status(client_id, "Error") # Mark client as errored
             return ""
         except Exception as e:
             print(f"An unexpected error occurred processing client {client_id} response: {e}")
+            self.db.update_client_status(client_id, "Error")
             return ""
