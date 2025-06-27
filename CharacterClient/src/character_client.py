@@ -102,26 +102,75 @@ class CharacterClient:
             print(f"Error fetching traits for {self.pc_id}: {e}")
         return None
 
-    def _register_with_server(self):
-        print(f"Registering client {self.pc_id} (port {self.client_port}) with {self.server_url}...")
-        try:
-            payload = {"pc_id": self.pc_id, "token": self.token, "client_port": self.client_port}
-            response = requests.post(f"{self.server_url}/register", json=payload, timeout=10)
-            response.raise_for_status()
-            print(f"Registration for {self.pc_id}: {response.json().get('message', 'OK')}")
-            return True
-        except Exception as e:
-            print(f"Could not register client {self.pc_id}: {e}")
-            return False
+import time # For retry delay
 
-    def send_heartbeat(self):
-        try:
-            payload = {"pc_id": self.pc_id, "token": self.token}
-            requests.post(f"{self.server_url}/heartbeat", json=payload, timeout=5).raise_for_status()
-            return True
-        except Exception as e:
-            print(f"Heartbeat failed for {self.pc_id}: {e}") # Less verbose for heartbeat
-            return False
+# ... (other imports remain the same)
+
+# Default retry parameters
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY_SECONDS = 2 # Initial delay for retries
+
+class CharacterClient:
+    # ... (init and other methods remain the same up to _register_with_server)
+
+    def _register_with_server(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
+        print(f"Attempting to register client {self.pc_id} (port {self.client_port}) with server {self.server_url}...")
+        payload = {"pc_id": self.pc_id, "token": self.token, "client_port": self.client_port}
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(f"{self.server_url}/register", json=payload, timeout=10)
+                response.raise_for_status() # Check for HTTP errors
+                print(f"Registration successful for {self.pc_id}: {response.json().get('message', 'OK')}")
+                return True
+            except requests.exceptions.Timeout:
+                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Timeout.")
+            except requests.exceptions.ConnectionError:
+                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Connection error. Server might be down or URL incorrect.")
+            except requests.exceptions.RequestException as e: # Catch other request-related errors (like HTTPError)
+                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} failed: {e}")
+            except Exception as e: # Catch unexpected errors like JSONDecodeError
+                print(f"Registration attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} encountered an unexpected error: {e}")
+
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt) # Exponential backoff
+                print(f"Waiting {delay}s before next registration attempt for {self.pc_id}...")
+                time.sleep(delay)
+            else:
+                print(f"CRITICAL: Could not register client {self.pc_id} with server after {max_retries + 1} attempts.")
+                return False
+        return False # Should be unreachable if loop logic is correct
+
+    def send_heartbeat(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
+        payload = {"pc_id": self.pc_id, "token": self.token}
+        url = f"{self.server_url}/heartbeat"
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(url, json=payload, timeout=5) # Shorter timeout for heartbeat
+                response.raise_for_status()
+                # print(f"Heartbeat successful for {self.pc_id} on attempt {attempt + 1}") # Can be verbose
+                return True
+            except requests.exceptions.Timeout:
+                print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Timeout.")
+            except requests.exceptions.ConnectionError:
+                # Less verbose for heartbeat connection errors as they might be frequent if server is temporarily down
+                if attempt == 0: print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id}: Connection error.")
+            except requests.exceptions.RequestException as e:
+                print(f"Heartbeat attempt {attempt + 1}/{max_retries + 1} for {self.pc_id} failed: {e}")
+
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                # For heartbeats, we might not want to wait too long or print every retry wait.
+                # A simpler fixed delay or shorter exponential backoff might be better.
+                # For now, using the same exponential backoff.
+                if attempt > 0 : # Only print wait message if it's a retry
+                    print(f"Waiting {delay}s before next heartbeat attempt for {self.pc_id}...")
+                time.sleep(delay)
+            else:
+                print(f"Heartbeat failed for {self.pc_id} after {max_retries + 1} attempts.")
+                return False
+        return False # Should be unreachable
 
     def generate_response(self, narration, character_texts):
         if not self.llm or not self.llm.is_initialized or not self.character: # Check is_initialized
@@ -202,6 +251,26 @@ async def handle_character_generation_request(data: dict, request: Request):
         # print(f"Warning: No audio for {client.pc_id}. Path was: {audio_path}")
 
     return {"text": response_text, "audio_data": encoded_audio_data}
+
+
+@app.get("/health", status_code=200)
+async def health_check(request: Request):
+    """Simple health check endpoint for the client."""
+    client: CharacterClient = request.app.state.character_client_instance
+    if not client:
+        # This state should ideally not be reachable if the app started correctly
+        raise HTTPException(status_code=503, detail="Client service not initialized.")
+
+    # Could add more checks here, e.g., LLM/TTS initialized status
+    llm_status = client.llm.is_initialized if client.llm else False
+    tts_status = client.tts.is_initialized if client.tts else False
+
+    if llm_status and tts_status:
+        return {"status": "ok", "pc_id": client.pc_id, "llm_ready": llm_status, "tts_ready": tts_status}
+    else:
+        # Still return 200 OK if basic API is up, but indicate sub-optimal state
+        return {"status": "degraded", "pc_id": client.pc_id, "llm_ready": llm_status, "tts_ready": tts_status, "detail": "One or more sub-systems (LLM/TTS) are not fully ready."}
+
 
 async def _heartbeat_task_runner(client: CharacterClient):
     while True:
