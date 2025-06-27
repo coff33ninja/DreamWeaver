@@ -8,41 +8,35 @@ The system is managed from a central server that hosts the narrator's interface,
 
 ## Key Features
 
-*   **Decentralized Character Hive**: Characters run as independent clients on separate machines (PC2, PC3, ...), each with its own LLM (e.g., TinyLLaMA) and TTS engine.
+*   **Decentralized Character Hive**: Characters run as independent clients on separate machines (PC2, PC3, ...), each with its own LLM, TTS engine, and configurable API endpoint.
 *   **Dynamic Character Creation & Evolution**: Add or remove characters on the fly via the Gradio UI. Characters evolve as their local LLMs are fine-tuned with new dialogue, and the training data is backed up to the central server.
-*   **Robust Client Discovery**: Clients register with the server and maintain their connection via a periodic heartbeat, ensuring the server always knows which characters are active.
+*   **Robust Client Discovery & Communication**: Clients register their listening port with the server and maintain their connection via a periodic heartbeat. The server communicates with clients on their specified ports.
 *   **Flexible TTS Engine**: Supports multiple Text-to-Speech services, including Piper, Google TTS (requires setup), and Coqui's XTTS-v2 for high-quality voice cloning from a reference audio file.
 *   **Interactive Gradio Interface**: A central web UI for:
     *   Narrating the story via microphone (using Whisper STT).
-    *   Creating and configuring characters.
+    *   Creating and configuring characters, including their PC assignments.
     *   Generating secure access tokens for clients.
     *   Reviewing the complete story history in a chatbot format.
     *   Managing story checkpoints.
     *   Exporting the story to JSON or TXT.
 *   **Story Checkpoints & Export**: Save the entire story state (database and server-side model adapters) at any point. Load previous checkpoints to explore different narrative branches.
-*   **Real-time Monitoring Dashboard**: A web-based dashboard to monitor server CPU/memory and the online/offline status of all connected clients.
+*   **Real-time Monitoring Dashboard**: A web-based dashboard to monitor server CPU/memory and the online/offline status (including IP and port) of all connected clients.
 *   **Chaos Mode**: Injects random events into the story, driven by external APIs (like NASA) or random seeds, to create unexpected twists.
-*   **Hardware Integration**: An Arduino-controlled LED strip on the server can reflect the story's mood, with optional support for character-specific LEDs on client machines.
+*   **Hardware Integration**: An Arduino-controlled LED strip on the server can reflect the story's mood.
 
 ---
 
 ## Architecture
 
-The project follows a client-server model:
-
 *   **Server (PC1)**: The central hub.
-    *   **FastAPI Backend**: Manages client registration, serves character traits, stores training data, and provides API endpoints for the dashboard and reference audio.
-    *   **Gradio UI**: The primary user interface for the narrator and system administrator.
-    *   **SQLite Database**: A single `dream_weaver.db` file stores all story dialogue, character traits, client tokens, and training data. Path configurable via `DB_PATH` environment variable.
-    *   **Narrator Module**: Uses Whisper STT for transcription.
-    *   **PC1 Character**: Can optionally run a character directly on the server.
-
-*   **Clients (PC2, PC3, ...)**: The character nodes.
-    *   Each client runs its `main.py` script (which in turn runs `character_client.py`).
-    *   Connects to the server using a unique token to receive its personality and configuration.
-    *   Runs its own LLM for dialogue generation and a TTS engine for speech synthesis.
-    *   Sends generated audio back to the server for playback, creating a unified audio experience.
-    *   Periodically sends a heartbeat to the server to stay "online".
+    *   Runs FastAPI backend (default `0.0.0.0:8000`) and Gradio UI (default `localhost:7860`).
+    *   Manages client registration (including client IP and port), serves character traits, stores training data.
+    *   SQLite database stores all persistent data. Paths are configurable via environment variables (see Setup).
+*   **Clients (PC2, PC3, ...)**: Character nodes.
+    *   Each client runs `CharacterClient/main.py`.
+    *   Runs its own FastAPI server on a configurable host and port (defaults to `0.0.0.0:8001`).
+    *   Registers with the central server, providing its `pc_id`, `token`, and listening `client_port`.
+    *   Receives narration, generates responses using its local LLM & TTS, and sends audio data back to the server.
 
 ---
 
@@ -54,46 +48,28 @@ The project root (e.g., `DreamWeaver/`) is the base for default data and checkpo
 DreamWeaver/
 ├── SERVER/
 │   ├── src/
-│   │   ├── config.py         # Centralized path and settings management
-│   │   ├── csm.py            # Central State Manager
-│   │   ├── narrator.py       # STT for narration
-│   │   ├── character_server.py # Manages the character on PC1
-│   │   ├── client_manager.py # Handles client communication
-│   │   ├── llm_engine.py     # LLM management (server-side)
-│   │   ├── tts_manager.py    # TTS selection and synthesis (server-side)
-│   │   ├── gradio_interface.py # Gradio backend/frontend
-│   │   ├── server_api.py     # FastAPI endpoints for clients
-│   │   ├── dashboard.py      # FastAPI endpoints and HTML for the dashboard
-│   │   ├── checkpoint_manager.py # Logic for saving/loading story state
-│   │   ├── database.py       # SQLite management
+│   │   ├── config.py         # Centralized server path and settings
 │   │   └── ...               # Other server modules
 │   ├── requirements.txt      # Server dependencies
 │   └── main.py               # Server entry point
 │
 ├── CharacterClient/
 │   ├── src/
-│   │   ├── character_client.py # The script for all character clients
-│   │   ├── llm_engine.py     # LLM management (client-side)
-│   │   ├── tts_manager.py    # TTS management (client-side)
+│   │   ├── character_client.py # Client FastAPI app and logic
+│   │   ├── llm_engine.py     # Client LLM (placeholder)
+│   │   ├── tts_manager.py    # Client TTS (placeholder)
 │   │   └── requirements.txt  # Client dependencies
-│   ├── main.py               # Client entry point
-│   └── README.md             # Client-specific README (if any)
+│   ├── main.py               # Client entry point (argparse for config)
+│   └── README.md             # Client-specific README (TODO)
 │
-├── data/                     # Default directory for all persistent data (created if not exists)
-│   ├── dream_weaver.db       # Main SQLite database (location configurable by DB_PATH)
-│   ├── audio/                # Stores all generated audio
-│   │   ├── narrator/
-│   │   ├── characters/
-│   │   └── reference_voices/   # Stores uploaded voice cloning samples
-│   └── models/               # LLM and TTS model weights (location configurable by DREAMWEAVER_MODEL_PATH)
-│       └── adapters/         # Saved LoRA adapters for fine-tuned models
+├── data/                     # Default: [ProjectRoot]/data/
+│   ├── dream_weaver.db       # Default: [data]/dream_weaver.db
+│   └── ...                   # Other data subdirectories (audio, models)
 │
-├── checkpoints/              # Saved story checkpoints (location configurable by DREAMWEAVER_CHECKPOINT_PATH)
+├── checkpoints/              # Default: [ProjectRoot]/checkpoints/
 │
 └── README.md                 # This file
 ```
-
-All paths for data, models, and checkpoints are now relative to the project root by default and can be overridden using environment variables.
 
 ---
 
@@ -102,117 +78,87 @@ All paths for data, models, and checkpoints are now relative to the project root
 ### Prerequisites
 *   Python 3.9+
 *   Git
-*   An NVIDIA GPU with CUDA is highly recommended for running the LLMs and TTS engines efficiently. If not available, operations will fall back to CPU, which will be significantly slower.
+*   NVIDIA GPU with CUDA recommended for server and clients running LLMs/TTS.
 
 ### 1. Server Setup (PC1)
 
-1.  **Clone the repository:**
+1.  **Clone Repository:**
     ```bash
-    git clone https://github.com/your_username/DreamWeaver # Replace with your repo URL
+    git clone https://github.com/your_username/DreamWeaver.git # Replace with your repo URL
     cd DreamWeaver
     ```
-
 2.  **Install Server Dependencies:**
-    Navigate to the `SERVER` directory and install its requirements:
     ```bash
     cd SERVER
     pip install -r requirements.txt
     cd ..
     ```
-    *(Ensure you are in the `DreamWeaver` root before running the server)*
+3.  **Configure Server Environment Variables (Recommended):**
+    Create `.env` in `DreamWeaver/SERVER/` or set system-wide.
+    *   `DREAMWEAVER_DATA_PATH`: Base for data, db, audio, models. (Default: `[ProjectRoot]/data/`)
+    *   `DB_PATH`: Path to `dream_weaver.db`. (Default: `[DREAMWEAVER_DATA_PATH]/dream_weaver.db`)
+    *   `DREAMWEAVER_MODEL_PATH`: For LLM/TTS models. (Default: `[DREAMWEAVER_DATA_PATH]/models/`)
+    *   `DREAMWEAVER_CHECKPOINT_PATH`: For checkpoints. (Default: `[ProjectRoot]/checkpoints/`)
+    *   `ARDUINO_SERIAL_PORT`: E.g., `COM3` or `/dev/ttyUSB0`.
+    *   `NASA_API_KEY`: Default: `DEMO_KEY`.
 
-3.  **Configure Environment Variables (Recommended):**
-    You can set these system-wide or create a `.env` file in the `DreamWeaver/SERVER/` directory (and use a library like `python-dotenv` in `SERVER/main.py` to load it, if not already implemented). The application will use default paths relative to the project root if these are not set.
-
-    *   `DREAMWEAVER_DATA_PATH`: Base path for all data including the database, audio files, and models.
-        *   Default: `[ProjectRoot]/data/`
-    *   `DB_PATH`: Full path to the SQLite database file. Overrides the default location within `DREAMWEAVER_DATA_PATH`.
-        *   Default: `[DREAMWEAVER_DATA_PATH]/dream_weaver.db` (e.g., `[ProjectRoot]/data/dream_weaver.db`)
-    *   `DREAMWEAVER_MODEL_PATH`: Base path for storing downloaded LLM and TTS models. Overrides the default location within `DREAMWEAVER_DATA_PATH`.
-        *   Default: `[DREAMWEAVER_DATA_PATH]/models/` (e.g., `[ProjectRoot]/data/models/`)
-    *   `DREAMWEAVER_CHECKPOINT_PATH`: Base path for storing story checkpoints.
-        *   Default: `[ProjectRoot]/checkpoints/`
-    *   `ARDUINO_SERIAL_PORT`: COM port for the Arduino (if hardware integration is used).
-        *   Example: `COM3` (Windows) or `/dev/ttyUSB0` (Linux)
-    *   `NASA_API_KEY`: Your API key for the NASA API for Chaos Mode.
-        *   Default: `DEMO_KEY` (limited use)
-
-4.  **Launch the Server:**
-    From the `DreamWeaver` root directory, run:
+4.  **Launch Server:**
+    From `DreamWeaver/` root:
     ```bash
     python SERVER/main.py
     ```
-    *   The Gradio UI will be available at `http://localhost:7860` (or your server's IP:7860).
-    *   The FastAPI server (for client communication and dashboard) will run on `http://0.0.0.0:8000`.
-    *   The Monitoring Dashboard will be at `http://localhost:8000/dashboard`.
-
-    The first time you run the server, it will create the `data/` and `checkpoints/` directories if they don't exist at their configured locations.
+    *   Gradio UI: `http://localhost:7860`
+    *   FastAPI Server: `http://0.0.0.0:8000`
+    *   Dashboard: `http://localhost:8000/dashboard`
 
 ### 2. Client Setup (PC2, PC3, ...)
 
-1.  **Copy the `CharacterClient` directory** to each machine that will run a character.
-
+1.  **Copy `CharacterClient` Directory:** Transfer the `CharacterClient` folder to each client machine.
 2.  **Install Client Dependencies:**
-    On each client machine, navigate into the copied `CharacterClient` directory and install requirements:
+    On each client machine, in its `CharacterClient` directory:
     ```bash
-    cd CharacterClient
-    pip install -r src/requirements.txt # Assuming requirements.txt is in src
-    cd ..
+    pip install -r src/requirements.txt
     ```
-
-3.  **Configure Client Environment Variables:**
-    These are crucial for the client to connect to the server. Set them system-wide or in a `.env` file within the `CharacterClient` directory (if `CharacterClient/main.py` is set up to load it).
-    *   `SERVER_URL`: The full URL of the server's FastAPI instance (e.g., `http://<server_ip>:8000`). **Required.**
-    *   `CLIENT_PC_ID`: The unique ID for this client (e.g., `PC2`, `PC3`). This **must** match the PC ID assigned in the Gradio UI when creating the character. **Required.**
-    *   `CLIENT_TOKEN`: The access token generated by the server for this `CLIENT_PC_ID`. **Required.**
-    *   `DREAMWEAVER_CLIENT_MODEL_PATH`: (Optional) Base path for client-side models if different from server or if client downloads its own. Defaults might be within `CharacterClient/data/models/`.
-
-4.  **Get an Access Token (if not using `CLIENT_TOKEN` env var):**
-    *   On the server's Gradio UI, go to the "Character Management" tab.
-    *   Create a new character, assigning it to the correct Client PC ID (e.g., `PC2`).
-    *   A unique token will be generated and displayed. Copy this token.
-
-5.  **Launch the Client:**
+3.  **Configure and Launch Client:**
+    Clients are configured via command-line arguments or environment variables. Command-line arguments take precedence.
     From the `CharacterClient` directory on the client machine:
     ```bash
-    python main.py
+    python main.py --pc_id <YourClientID> --token <YourClientToken> --server_url <ServerFastAPI_URL> [--client_host <IP_Client_Binds_To>] [--client_port <Port_Client_Listens_On>]
     ```
-    If environment variables `SERVER_URL`, `CLIENT_PC_ID`, and `CLIENT_TOKEN` are set, the client should connect automatically.
-    Alternatively, if the client script supports command-line arguments for these, you might run it like:
-    ```bash
-    python main.py --token <your_character_token> --pc_id <CLIENT_PC_ID> --server_url <SERVER_URL>
-    ```
-    (This depends on the implementation in `CharacterClient/main.py`.)
+    **Required Arguments:**
+    *   `--pc_id <YourClientID>`: Unique ID for this client (e.g., `PC2`). Must match the ID used on the server's Gradio UI to create the character and generate the token. (Env: `CLIENT_PC_ID`)
+    *   `--token <YourClientToken>`: Access token obtained from the server's Gradio UI for this `pc_id`. (Env: `CLIENT_TOKEN`)
+    *   `--server_url <ServerFastAPI_URL>`: Full URL of the central server's FastAPI. (E.g., `http://<server_ip>:8000`). (Env: `SERVER_URL`, Default: `http://127.0.0.1:8000`)
 
-    The client will attempt to register with the server and then listen for narration.
+    **Optional Arguments:**
+    *   `--client_host <IP_Client_Binds_To>`: The IP address the client's own API server will bind to. (Env: `CLIENT_HOST`, Default: `0.0.0.0`)
+    *   `--client_port <Port_Client_Listens_On>`: The port the client's API server will listen on. This port is registered with the central server. **Ensure this is unique per client if multiple clients run on the same machine, and different from the main server's port (8000).** (Env: `CLIENT_PORT`, Default: `8001`)
+    *   `--client_model_path <Path>`: (Placeholder for future use) Path for client-specific models. (Env: `DREAMWEAVER_CLIENT_MODEL_PATH`)
+
+    **Example:**
+    ```bash
+    python main.py --pc_id PC2 --token abc123xyz --server_url http://192.168.1.100:8000 --client_port 8002
+    ```
+    The client will register its `pc_id`, IP address, and `client_port` (e.g., 8002) with the server. The server will then use `http://<client_ip>:8002/character` to communicate with this specific client.
 
 ---
 
 ## Usage Workflow
 
-1.  **Start the Server**: Run `python SERVER/main.py` on PC1 from the project root.
-2.  **Create Characters**: Open the Gradio UI (`http://<server_ip>:7860`). Create a character for the server (PC1) and characters for each client machine (PC2, PC3, etc.). For XTTS-v2, upload a reference voice file. Note the tokens generated for client PCs.
-3.  **Start Clients**: On each client machine, configure the necessary environment variables (`SERVER_URL`, `CLIENT_PC_ID`, `CLIENT_TOKEN`) and run `python main.py` from its `CharacterClient` directory.
-4.  **Monitor the Hive**: Open the dashboard (`http://<server_ip>:8000/dashboard`) to confirm all clients are "Online".
-5.  **Tell the Story**: In the Gradio UI's "Story Progression" tab, use the microphone to narrate. The server will transcribe your speech, and all active characters (server and clients) will generate and play back their responses.
-6.  **Review and Manage**:
-    *   Use the "Story Playback & History" tab to review the conversation.
-    *   Use the "System & Data Management" tab for checkpoints and story export.
+1.  **Start Server:** `python SERVER/main.py` on PC1.
+2.  **Create Characters (Gradio UI):** Access `http://<server_ip>:7860`. Create characters, assign them to `pc_id`s (e.g., `PC1`, `PC2`), and note the generated tokens for clients.
+3.  **Start Clients:** On each client machine, run `python main.py` from its `CharacterClient` directory with the appropriate arguments (see Client Setup).
+4.  **Monitor Hive (Dashboard):** `http://<server_ip>:8000/dashboard` to check client statuses (IP, port, online/offline).
+5.  **Narrate Story (Gradio UI):** Use the "Story Progression" tab. Server sends requests to clients at their registered IP and port.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a pull request or open an issue for any bugs, feature requests, or improvements.
-
-1.  Fork the repository.
-2.  Create a new branch (`git checkout -b feature/YourFeature`).
-3.  Commit your changes (`git commit -m 'Add some feature'`).
-4.  Push to the branch (`git push origin feature/YourFeature`).
-5.  Open a Pull Request.
+Fork, branch, commit, push, PR. Contributions welcome!
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file (if one exists) for details.
+MIT License. (Include LICENSE file if applicable).
