@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+transformers
+piper-tts
+xttsv2
+gtts
+requests
+TTS
+huggingface_hub
