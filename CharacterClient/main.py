@@ -12,10 +12,10 @@ def main():
         help="URL of the DreamWeaver Server (default: env SERVER_URL or http://127.0.0.1:8000)"
     )
     parser.add_argument(
-        "--pc_id",
+        "--Actor_id",
         type=str,
-        default=os.getenv("CLIENT_PC_ID", "PC_Client"),
-        help="Unique ID for this client (default: env CLIENT_PC_ID or PC_Client)"
+        default=os.getenv("CLIENT_Actor_ID", "Actor_Client"),
+        help="Unique ID for this client (default: env CLIENT_Actor_ID or Actor_Client)"
     )
     parser.add_argument(
         "--token",
@@ -49,7 +49,7 @@ def main():
     # Initialize the character client instance within the app state
     initialize_character_client(
         token=args.token,
-        pc_id=args.pc_id,
+        Actor_id=args.Actor_id,
         server_url=args.server_url,
         client_port=args.client_port # Pass client_port for registration
     )
@@ -57,10 +57,10 @@ def main():
     # Start the heartbeat task (if character_client_instance is now initialized)
     if hasattr(app.state, 'character_client_instance') and app.state.character_client_instance:
         start_heartbeat_task(app.state.character_client_instance)
-        print(f"Client '{args.pc_id}' API server starting on {args.client_host}:{args.client_port}")
+        print(f"Client '{args.Actor_id}' API server starting on {args.client_host}:{args.client_port}")
         uvicorn.run(app, host=args.client_host, port=args.client_port, log_level="info")
     else:
-        print(f"Failed to initialize CharacterClient for {args.pc_id}. Client will not start.")
+        print(f"Failed to initialize CharacterClient for {args.Actor_id}. Client will not start.")
 
 if __name__ == "__main__":
     main()

@@ -335,6 +335,83 @@
         "documentation": {}
     },
     {
+        "label": "os",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "os",
+        "description": "os",
+        "detail": "os",
+        "documentation": {}
+    },
+    {
+        "label": "uuid",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "uuid",
+        "description": "uuid",
+        "detail": "uuid",
+        "documentation": {}
+    },
+    {
+        "label": "requests",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "requests",
+        "description": "requests",
+        "detail": "requests",
+        "documentation": {}
+    },
+    {
+        "label": "base64",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "base64",
+        "description": "base64",
+        "detail": "base64",
+        "documentation": {}
+    },
+    {
+        "label": "asyncio",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "asyncio",
+        "description": "asyncio",
+        "detail": "asyncio",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
         "label": "FastAPI",
         "importPath": "fastapi",
         "description": "fastapi",
@@ -407,51 +484,6 @@
         "documentation": {}
     },
     {
-        "label": "requests",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "requests",
-        "description": "requests",
-        "detail": "requests",
-        "documentation": {}
-    },
-    {
-        "label": "uuid",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "uuid",
-        "description": "uuid",
-        "detail": "uuid",
-        "documentation": {}
-    },
-    {
-        "label": "os",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "os",
-        "description": "os",
-        "detail": "os",
-        "documentation": {}
-    },
-    {
-        "label": "base64",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "base64",
-        "description": "base64",
-        "detail": "base64",
-        "documentation": {}
-    },
-    {
-        "label": "asyncio",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "asyncio",
-        "description": "asyncio",
-        "detail": "asyncio",
-        "documentation": {}
-    },
-    {
         "label": "torch",
         "kind": 6,
         "isExtraImport": true,
@@ -485,67 +517,28 @@
         "documentation": {}
     },
     {
-        "label": "PeftModel",
-        "importPath": "peft",
-        "description": "peft",
+        "label": "Trainer",
+        "importPath": "transformers",
+        "description": "transformers",
         "isExtraImport": true,
-        "detail": "peft",
+        "detail": "transformers",
         "documentation": {}
     },
     {
-        "label": "LoraConfig",
-        "importPath": "peft",
-        "description": "peft",
+        "label": "TrainingArguments",
+        "importPath": "transformers",
+        "description": "transformers",
         "isExtraImport": true,
-        "detail": "peft",
+        "detail": "transformers",
         "documentation": {}
     },
     {
-        "label": "get_peft_model",
-        "importPath": "peft",
-        "description": "peft",
+        "label": "json",
+        "kind": 6,
         "isExtraImport": true,
-        "detail": "peft",
-        "documentation": {}
-    },
-    {
-        "label": "prepare_model_for_kbit_training",
-        "importPath": "peft",
-        "description": "peft",
-        "isExtraImport": true,
-        "detail": "peft",
-        "documentation": {}
-    },
-    {
-        "label": "LoraConfig",
-        "importPath": "peft",
-        "description": "peft",
-        "isExtraImport": true,
-        "detail": "peft",
-        "documentation": {}
-    },
-    {
-        "label": "get_peft_model",
-        "importPath": "peft",
-        "description": "peft",
-        "isExtraImport": true,
-        "detail": "peft",
-        "documentation": {}
-    },
-    {
-        "label": "prepare_model_for_kbit_training",
-        "importPath": "peft",
-        "description": "peft",
-        "isExtraImport": true,
-        "detail": "peft",
-        "documentation": {}
-    },
-    {
-        "label": "PeftModel",
-        "importPath": "peft",
-        "description": "peft",
-        "isExtraImport": true,
-        "detail": "peft",
+        "importPath": "json",
+        "description": "json",
+        "detail": "json",
         "documentation": {}
     },
     {
@@ -756,15 +749,6 @@
         "description": "carbon.storage",
         "isExtraImport": true,
         "detail": "carbon.storage",
-        "documentation": {}
-    },
-    {
-        "label": "json",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "json",
-        "description": "json",
-        "detail": "json",
         "documentation": {}
     },
     {
@@ -1028,6 +1012,38 @@
         "documentation": {}
     },
     {
+        "label": "LoraConfig",
+        "importPath": "peft",
+        "description": "peft",
+        "isExtraImport": true,
+        "detail": "peft",
+        "documentation": {}
+    },
+    {
+        "label": "get_peft_model",
+        "importPath": "peft",
+        "description": "peft",
+        "isExtraImport": true,
+        "detail": "peft",
+        "documentation": {}
+    },
+    {
+        "label": "prepare_model_for_kbit_training",
+        "importPath": "peft",
+        "description": "peft",
+        "isExtraImport": true,
+        "detail": "peft",
+        "documentation": {}
+    },
+    {
+        "label": "PeftModel",
+        "importPath": "peft",
+        "description": "peft",
+        "isExtraImport": true,
+        "detail": "peft",
+        "documentation": {}
+    },
+    {
         "label": "Dataset",
         "importPath": "datasets",
         "description": "datasets",
@@ -1058,22 +1074,6 @@
         "description": "pydantic",
         "isExtraImport": true,
         "detail": "pydantic",
-        "documentation": {}
-    },
-    {
-        "label": "Optional",
-        "importPath": "typing",
-        "description": "typing",
-        "isExtraImport": true,
-        "detail": "typing",
-        "documentation": {}
-    },
-    {
-        "label": "Optional",
-        "importPath": "typing",
-        "description": "typing",
-        "isExtraImport": true,
-        "detail": "typing",
         "documentation": {}
     },
     {
@@ -4220,7 +4220,16 @@
         "kind": 6,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "class CharacterClient:\n    def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.pc_id = pc_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None\n        self.llm = None\n        self.local_reference_audio_path = None",
+        "peekOfCode": "class CharacterClient:\n    def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.Actor_id = Actor_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None\n        self.llm = None\n        self.local_reference_audio_path: Optional[str] = None",
+        "detail": "CharacterClient.src.character_client",
+        "documentation": {}
+    },
+    {
+        "label": "start_heartbeat_task",
+        "kind": 2,
+        "importPath": "CharacterClient.src.character_client",
+        "description": "CharacterClient.src.character_client",
+        "peekOfCode": "def start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        client_instance = CharacterClient(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4229,7 +4238,7 @@
         "kind": 2,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "def initialize_character_client(token: str, pc_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        client_instance = CharacterClient(token=token, pc_id=pc_id, server_url=server_url, client_port=client_port)\n        app.state.character_client_instance = client_instance\n        llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else \"N/A\"\n        tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else \"N/A\"\n        print(f\"CharacterClient for {pc_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).\")\n        if _heartbeat_task_instance is None or _heartbeat_task_instance.done():",
+        "peekOfCode": "def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        client_instance = CharacterClient(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)\n        app.state.character_client_instance = client_instance\n        llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else \"N/A\"\n        tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else \"N/A\"\n        print(f\"CharacterClient for {Actor_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).\")\n        if _heartbeat_task_instance is None or _heartbeat_task_instance.done():",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4238,7 +4247,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "app = FastAPI()\nensure_client_directories()\nHEARTBEAT_INTERVAL_SECONDS = 60\nDEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.pc_id = pc_id\n        self.server_url = server_url",
+        "peekOfCode": "app = FastAPI()\nensure_client_directories()\nHEARTBEAT_INTERVAL_SECONDS = 60\nDEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.Actor_id = Actor_id\n        self.server_url = server_url",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4247,7 +4256,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "HEARTBEAT_INTERVAL_SECONDS = 60\nDEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.pc_id = pc_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None",
+        "peekOfCode": "HEARTBEAT_INTERVAL_SECONDS = 60\nDEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.Actor_id = Actor_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4256,7 +4265,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "DEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.pc_id = pc_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None",
+        "peekOfCode": "DEFAULT_MAX_RETRIES = 3\nDEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.Actor_id = Actor_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4265,7 +4274,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "DEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, pc_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.pc_id = pc_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None\n        self.llm = None",
+        "peekOfCode": "DEFAULT_BASE_DELAY_SECONDS = 2\nclass CharacterClient:\n    def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):\n        self.token = token\n        self.Actor_id = Actor_id\n        self.server_url = server_url\n        self.client_port = client_port\n        self.character = None\n        self.tts = None\n        self.llm = None",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4274,7 +4283,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "_heartbeat_task_instance = None\ndef initialize_character_client(token: str, pc_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        client_instance = CharacterClient(token=token, pc_id=pc_id, server_url=server_url, client_port=client_port)\n        app.state.character_client_instance = client_instance\n        llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else \"N/A\"\n        tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else \"N/A\"\n        print(f\"CharacterClient for {pc_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).\")",
+        "peekOfCode": "_heartbeat_task_instance = None\ndef start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4378,11 +4387,20 @@
         "documentation": {}
     },
     {
+        "label": "JsonDataset",
+        "kind": 6,
+        "importPath": "CharacterClient.src.llm_engine",
+        "description": "CharacterClient.src.llm_engine",
+        "peekOfCode": "class JsonDataset(torch.utils.data.Dataset):\n    def __init__(self, data_list, tokenizer, max_length=512):\n        self.data = data_list\n        self.tokenizer = tokenizer\n        self.max_length = max_length\n    def __len__(self):\n        return len(self.data)\n    def __getitem__(self, idx):\n        item = self.data[idx]\n        enc = self.tokenizer(",
+        "detail": "CharacterClient.src.llm_engine",
+        "documentation": {}
+    },
+    {
         "label": "LLMEngine",
         "kind": 6,
         "importPath": "CharacterClient.src.llm_engine",
         "description": "CharacterClient.src.llm_engine",
-        "peekOfCode": "class LLMEngine:\n    def __init__(self, model_name: str = None, pc_id: str = \"default_client_pc\"):\n        self.pc_id = pc_id\n        self.model_name = model_name if model_name else DEFAULT_CLIENT_MODEL_NAME\n        self.models_base_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"base_models\")\n        sane_model_name_for_path = self.model_name.replace(\"/\", \"_\")\n        self.adapters_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"adapters\", self.pc_id, sane_model_name_for_path)\n        os.makedirs(self.models_base_path, exist_ok=True)\n        os.makedirs(self.adapters_path, exist_ok=True)\n        self.model = None",
+        "peekOfCode": "class LLMEngine:\n    def __init__(self, model_name: str = \"\", Actor_id: str = \"default_client_Actor\"):\n        self.Actor_id = Actor_id or \"default_client_Actor\"\n        self.model_name = model_name if model_name else DEFAULT_CLIENT_MODEL_NAME\n        self.models_base_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"base_models\")\n        sane_model_name_for_path = self.model_name.replace(\"/\", \"_\")\n        self.adapters_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"adapters\", self.Actor_id, sane_model_name_for_path)\n        os.makedirs(self.models_base_path, exist_ok=True)\n        os.makedirs(self.adapters_path, exist_ok=True)\n        self.model = None",
         "detail": "CharacterClient.src.llm_engine",
         "documentation": {}
     },
@@ -4391,7 +4409,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.llm_engine",
         "description": "CharacterClient.src.llm_engine",
-        "peekOfCode": "DEFAULT_CLIENT_MODEL_NAME = \"TinyLlama/TinyLlama-1.1B-Chat-v1.0\"\nclass LLMEngine:\n    def __init__(self, model_name: str = None, pc_id: str = \"default_client_pc\"):\n        self.pc_id = pc_id\n        self.model_name = model_name if model_name else DEFAULT_CLIENT_MODEL_NAME\n        self.models_base_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"base_models\")\n        sane_model_name_for_path = self.model_name.replace(\"/\", \"_\")\n        self.adapters_path = os.path.join(CLIENT_LLM_MODELS_PATH, \"adapters\", self.pc_id, sane_model_name_for_path)\n        os.makedirs(self.models_base_path, exist_ok=True)\n        os.makedirs(self.adapters_path, exist_ok=True)",
+        "peekOfCode": "DEFAULT_CLIENT_MODEL_NAME = \"TinyLlama/TinyLlama-1.1B-Chat-v1.0\"\nclass JsonDataset(torch.utils.data.Dataset):\n    def __init__(self, data_list, tokenizer, max_length=512):\n        self.data = data_list\n        self.tokenizer = tokenizer\n        self.max_length = max_length\n    def __len__(self):\n        return len(self.data)\n    def __getitem__(self, idx):\n        item = self.data[idx]",
         "detail": "CharacterClient.src.llm_engine",
         "documentation": {}
     },
@@ -4400,7 +4418,7 @@
         "kind": 6,
         "importPath": "CharacterClient.src.tts_manager",
         "description": "CharacterClient.src.tts_manager",
-        "peekOfCode": "class TTSManager:\n    def __init__(self, tts_service_name: str, model_name: str = None, language: str = 'en'):\n        self.service_name = tts_service_name\n        self.model_name = model_name\n        self.language = language\n        self.tts_instance = None\n        self.is_initialized = False\n        os.environ['TTS_HOME'] = CLIENT_TTS_MODELS_PATH # For Coqui TTS\n        os.makedirs(os.path.join(CLIENT_TTS_MODELS_PATH, \"tts_models\"), exist_ok=True)\n        # print(f\"Client TTSManager: Initializing for service '{self.service_name}'...\")",
+        "peekOfCode": "class TTSManager:\n    def __init__(self, tts_service_name: str, model_name: Optional[str] = None, speaker_wav_path: Optional[str] = None, language: Optional[str] = 'en'):\n        self.service_name = tts_service_name\n        self.model_name = model_name or \"\"\n        self.speaker_wav_path = speaker_wav_path or \"\"\n        self.language = language or \"en\"\n        self.tts_instance = None\n        self.is_initialized = False\n        os.environ['TTS_HOME'] = CLIENT_TTS_MODELS_PATH # For Coqui TTS\n        os.makedirs(os.path.join(CLIENT_TTS_MODELS_PATH, \"tts_models\"), exist_ok=True)",
         "detail": "CharacterClient.src.tts_manager",
         "documentation": {}
     },
@@ -4409,7 +4427,7 @@
         "kind": 2,
         "importPath": "CharacterClient.main",
         "description": "CharacterClient.main",
-        "peekOfCode": "def main():\n    parser = argparse.ArgumentParser(description=\"DreamWeaver Character Client\")\n    parser.add_argument(\n        \"--server_url\",\n        type=str,\n        default=os.getenv(\"SERVER_URL\", \"http://127.0.0.1:8000\"),\n        help=\"URL of the DreamWeaver Server (default: env SERVER_URL or http://127.0.0.1:8000)\"\n    )\n    parser.add_argument(\n        \"--pc_id\",",
+        "peekOfCode": "def main():\n    parser = argparse.ArgumentParser(description=\"DreamWeaver Character Client\")\n    parser.add_argument(\n        \"--server_url\",\n        type=str,\n        default=os.getenv(\"SERVER_URL\", \"http://127.0.0.1:8000\"),\n        help=\"URL of the DreamWeaver Server (default: env SERVER_URL or http://127.0.0.1:8000)\"\n    )\n    parser.add_argument(\n        \"--Actor_id\",",
         "detail": "CharacterClient.main",
         "documentation": {}
     },
