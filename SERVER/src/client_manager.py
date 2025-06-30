@@ -5,7 +5,6 @@ import uuid
 import os
 import base64
 from datetime import datetime, timezone, timedelta
-import time
 import threading
 import asyncio # Added asyncio
 
@@ -53,12 +52,12 @@ class ClientManager:
         return bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
 
     def _perform_single_health_check_blocking(self, client_info: dict):
-        """Blocking version of health check, to be run in a thread."""
         pc_id = client_info.get("pc_id")
         ip_address = client_info.get("ip_address")
         client_port = client_info.get("client_port")
 
-        if not all([pc_id, ip_address, client_port]): return
+        if not all([pc_id, ip_address, client_port]):
+            return
 
         health_url = f"http://{ip_address}:{client_port}/health"
         new_status = "Error_API" # Default to error if checks fail
@@ -67,9 +66,12 @@ class ClientManager:
             response.raise_for_status()
             health_data = response.json()
 
-            if health_data.get("status") == "ok": new_status = "Online_Responsive"
-            elif health_data.get("status") == "degraded": new_status = "Error_API_Degraded"
-            # else: print(f"Health Check ({pc_id}): Unexpected health status '{health_data.get('status')}'")
+            if health_data.get("status") == "ok":
+                new_status = "Online_Responsive"
+            elif health_data.get("status") == "degraded":
+                new_status = "Error_API_Degraded"
+            # else:
+            #     print(f"Health Check ({pc_id}): Unexpected health status '{health_data.get('status')}'")
 
         except requests.exceptions.Timeout:
             # print(f"Health Check ({pc_id}): Timeout at {health_url}")
@@ -77,15 +79,14 @@ class ClientManager:
         except requests.exceptions.ConnectionError:
             # print(f"Health Check ({pc_id}): Connection error at {health_url}")
             new_status = "Error_Unreachable"
-        except requests.exceptions.RequestException as e:
-            # print(f"Health Check ({pc_id}): Request error at {health_url}: {e}")
+        except requests.exceptions.RequestException:
+            # print(f"Health Check ({pc_id}): Request error at {health_url}")
             new_status = "Error_API"
-        except Exception as e:
-            # print(f"Health Check ({pc_id}): Unexpected error: {e}")
+        except Exception:
+            # print(f"Health Check ({pc_id}): Unexpected error")
             new_status = "Error_API"
 
         self.db.update_client_status(pc_id, new_status)
-
 
     def _periodic_health_check_loop(self):
         print("ClientManager: Periodic health check thread started.")
@@ -101,7 +102,7 @@ class ClientManager:
                             last_seen_iso = client_data.get("last_seen")
                             if last_seen_iso:
                                 last_seen_dt = datetime.fromisoformat(last_seen_iso)
-                                if datetime.now(timezone.utc) - last_seen_dt > timedelta(seconds=HEARTBEAT_INTERVAL_SECONDS * 2.5): # HEARTBEAT_INTERVAL_SECONDS (60) from client
+                                if datetime.now(timezone.utc) - last_seen_dt > timedelta(seconds=CLIENT_HEALTH_CHECK_INTERVAL_SECONDS * 2.5):
                                     print(f"Health Check: Client {client_data.get('pc_id')} unresponsive (stale heartbeat). Status: Offline.")
                                     self.db.update_client_status(client_data.get('pc_id'), "Offline")
             except Exception as e:
@@ -158,7 +159,8 @@ class ClientManager:
                         audio_filename = f"{client_pc_id}_{uuid.uuid4()}.wav"
                         audio_path = os.path.join(audio_dir, audio_filename)
                         decoded_audio_data = base64.b64decode(encoded_audio_data)
-                        with open(audio_path, "wb") as f: f.write(decoded_audio_data)
+                        with open(audio_path, "wb") as f:
+                            f.write(decoded_audio_data)
                         pygame.mixer.Sound(audio_path).play()
                     await asyncio.to_thread(_handle_audio)
 

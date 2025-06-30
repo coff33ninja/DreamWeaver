@@ -73,9 +73,13 @@ class CSM:
 
             context_for_client = character_texts.copy() # Context up to this point
 
+            # Defensive: Ensure no None is passed to send_to_client
+            if client_pc_id is None or client_ip is None or client_port is None:
+                print(f"CSM: Skipping client due to missing info: pc_id={client_pc_id}, ip={client_ip}, port={client_port}")
+                continue
             # ClientManager.send_to_client is now async
             task = self.client_manager.send_to_client(
-                client_pc_id, client_ip, client_port, narration_text, context_for_client
+                str(client_pc_id), str(client_ip), int(client_port), narration_text, context_for_client
             )
             client_response_tasks.append((client_char_name, client_pc_id, task))
 
@@ -154,8 +158,8 @@ if __name__ == '__main__':
 
         # Mock ClientManager response
         original_cm_send_to_client = csm.client_manager.send_to_client
-        async def mock_cm_send_to_client(pc_id, ip, port, narration, context):
-            return f"{pc_id} says hi via async mock!"
+        async def mock_cm_send_to_client(client_pc_id, client_ip, client_port, narration, character_texts):
+            return f"{client_pc_id} says hi via async mock!"
         csm.client_manager.send_to_client = mock_cm_send_to_client
 
         # Mock get_clients_for_story_progression

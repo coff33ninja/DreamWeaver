@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field # Added Field
+from pydantic import BaseModel
 from typing import Optional # For optional fields
 
 from .database import Database
@@ -28,19 +28,46 @@ def get_client_manager(db: Database = Depends(get_db)):
 
 # --- Pydantic Models ---
 class SaveTrainingDataRequest(BaseModel):
-    dataset: dict = Field(..., example={"input": "Narrator: The wind howls.", "output": "I shiver."})
-    pc_id: str = Field(..., example="PC2")
+    dataset: dict
+    pc_id: str
     token: str
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "dataset": {"input": "Narrator: The wind howls.", "output": "I shiver."},
+                "pc_id": "PC2",
+                "token": "your_token_here"
+            }
+        }
 
 class RegisterClientRequest(BaseModel):
-    pc_id: str = Field(..., example="PC2")
+    pc_id: str
     token: str
-    client_port: int = Field(..., example=8001, description="The port number the client is listening on.")
+    client_port: int
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "pc_id": "PC2",
+                "token": "your_token_here",
+                "client_port": 8001
+            }
+        }
 
 class HeartbeatRequest(BaseModel):
-    pc_id: str = Field(..., example="PC2")
+    pc_id: str
     token: str
-    status: Optional[str] = Field(None, example="Idle", description="Optional: Client's current operational status.")
+    status: Optional[str] = None
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "pc_id": "PC2",
+                "token": "your_token_here",
+                "status": "Idle"
+            }
+        }
 
 
 # --- API Endpoints ---
@@ -88,7 +115,7 @@ async def register_client_endpoint( # Renamed to avoid conflict with db.register
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
-    client_ip = http_request.client.host
+    client_ip = http_request.client.host if http_request.client else "unknown"
     if not client_manager.validate_token(request_data.pc_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid token for registration")
 

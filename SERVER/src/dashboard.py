@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from .database import Database # Assuming Database class is in database.py
 from .config import DB_PATH
 import psutil
-from datetime import datetime, timezone, timedelta # Added timedelta
+from datetime import datetime, timezone  # Removed unused timedelta
 
 router = APIRouter()
 
@@ -76,7 +76,7 @@ async def get_dashboard_page():
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.
-    html_content = """
+    html_content = r"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -129,7 +129,7 @@ async def get_dashboard_page():
                     <tr><td colspan="4" class="loader">Loading client statuses...</td></tr>
                 </tbody>
             </table>
-            <div id="client-error" class.error-message" style="display:none;"></div>
+            <div id="client-error" class="error-message" style="display:none;"></div>
         </div>
 
         <script>
@@ -152,10 +152,10 @@ async def get_dashboard_page():
 
                         const perf = data.server_performance;
                         const perfGrid = document.getElementById('perf-grid');
-                        perfGrid.innerHTML = \`
-                            <div class="perf-card"><strong>CPU Usage</strong> \${perf.cpu_usage_percent.toFixed(1)}%</div>
-                            <div class="perf-card"><strong>Memory Usage</strong> \${perf.memory_usage_percent.toFixed(1)}% (\${perf.memory_used_gb} GB / \${perf.memory_total_gb} GB)</div>
-                        \`;
+                        perfGrid.innerHTML = `
+                            <div class="perf-card"><strong>CPU Usage</strong> ${perf.cpu_usage_percent.toFixed(1)}%</div>
+                            <div class="perf-card"><strong>Memory Usage</strong> ${perf.memory_usage_percent.toFixed(1)}% (${perf.memory_used_gb} GB / ${perf.memory_total_gb} GB)</div>
+                        `;
 
                         const tableBody = document.querySelector("#client-status-table tbody");
                         if (data.client_statuses && data.client_statuses.length > 0) {
@@ -163,12 +163,12 @@ async def get_dashboard_page():
                             data.client_statuses.forEach(client => {
                                 const statusClass = formatStatusClass(client.status);
                                 const ipPort = client.ip_address || 'N/A'; // Already combined or N/A from server
-                                const row = \`<tr>
-                                    <td>\${client.pc_id || 'N/A'}</td>
-                                    <td class="\${statusClass}">\${client.status || 'Unknown'}</td>
-                                    <td>\${ipPort}</td>
-                                    <td>\${client.last_seen || 'Never'}</td>
-                                </tr>\`;
+                                const row = `<tr>
+                                    <td>${client.pc_id || 'N/A'}</td>
+                                    <td class="${statusClass}">${client.status || 'Unknown'}</td>
+                                    <td>${ipPort}</td>
+                                    <td>${client.last_seen || 'Never'}</td>
+                                </tr>`;
                                 tableBody.innerHTML += row;
                             });
                         } else {
@@ -192,5 +192,5 @@ async def get_dashboard_page():
         </script>
     </body>
     </html>
-    """;
+    """
     return HTMLResponse(content=html_content)

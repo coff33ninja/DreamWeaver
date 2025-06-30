@@ -1,6 +1,6 @@
 import os
-import whisper
-# from pyannote.audio import Pipeline # pyannote.audio can be heavy, let's simplify for now if not strictly needed or make it optional
+from whisper import load_model
+from pyannote.audio import Pipeline
 import asyncio # Added asyncio
 
 # Placeholder for narrator audio saving if not done by whisper itself
@@ -12,21 +12,20 @@ class Narrator:
     def __init__(self, model_size="base"):
         print(f"Narrator: Loading Whisper STT model '{model_size}'...")
         try:
-            self.stt_model = whisper.load_model(model_size)
+            self.stt_model = load_model(model_size)
             print("Narrator: Whisper STT model loaded.")
         except Exception as e:
             print(f"Narrator: Error loading Whisper STT model '{model_size}': {e}")
             self.stt_model = None
 
         # Diarization can be complex to set up and run, making it optional or simplified
-        self.diarization_pipeline = None
-        # try:
-        #     print("Narrator: Loading Pyannote Diarization pipeline...")
-        #     self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1") # Or other version
-        #     print("Narrator: Pyannote Diarization pipeline loaded.")
-        # except Exception as e:
-        #     print(f"Narrator: Warning - Pyannote Diarization pipeline failed to load: {e}. Diarization will be skipped.")
-        #     self.diarization_pipeline = None
+        try:
+            print("Narrator: Loading Pyannote Diarization pipeline...")
+            self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+            print("Narrator: Pyannote Diarization pipeline loaded.")
+        except Exception as e:
+            print(f"Narrator: Warning - Pyannote Diarization pipeline failed to load: {e}. Diarization will be skipped.")
+            self.diarization_pipeline = None
 
         self.default_speaker_name = "Narrator"
 
@@ -43,26 +42,26 @@ class Narrator:
         try:
             print(f"Narrator: Transcribing audio file: {audio_filepath}...")
             # Whisper's transcribe is CPU/GPU bound, run in a thread
-            transcription_result = await asyncio.to_thread(self.stt_model.transcribe, audio_filepath, fp16=False) # fp16=False for wider CPU compat
-            transcribed_text = transcription_result.get("text", "").strip()
+            transcription_result = await asyncio.to_thread(self.stt_model.transcribe, audio_filepath, fp16=False)
+            text_field = transcription_result.get("text", "")
+            if isinstance(text_field, list):
+                transcribed_text = " ".join(str(s) for s in text_field).strip()
+            else:
+                transcribed_text = str(text_field).strip()
             print(f"Narrator: Transcription complete. Text: '{transcribed_text[:50]}...'")
 
-            # Speaker diarization (simplified/optional for now)
+            # Speaker diarization
             speaker = self.default_speaker_name
-            # if self.diarization_pipeline and transcribed_text:
-            #     try:
-            #         print(f"Narrator: Performing diarization on {audio_filepath}...")
-            #         diarization_output = await asyncio.to_thread(self.diarization_pipeline, audio_filepath)
-            #         # Process diarization_output to get speaker label for the main segment.
-            #         # This can be complex; for simplicity, we might take the first speaker or most prominent.
-            #         # For now, we'll stick to default narrator.
-            #         # Example (very basic, needs actual logic from pyannote docs):
-            #         # if diarization_output:
-            #         #    first_turn = next(iter(diarization_output.itertracks(yield_label=True)), None)
-            #         #    if first_turn: speaker = first_turn[2] # speaker label
-            #         print(f"Narrator: Diarization complete. Determined speaker (placeholder): {speaker}")
-            #     except Exception as e:
-            #         print(f"Narrator: Error during diarization: {e}. Using default speaker.")
+            if self.diarization_pipeline and transcribed_text:
+                try:
+                    print(f"Narrator: Performing diarization on {audio_filepath}...")
+                    diarization_output = await asyncio.to_thread(self.diarization_pipeline, audio_filepath)
+                    first_turn = next(iter(diarization_output.itertracks(yield_label=True)), None)
+                    if first_turn:
+                        speaker = first_turn[2]  # speaker label
+                    print(f"Narrator: Diarization complete. Determined speaker: {speaker}")
+                except Exception as e:
+                    print(f"Narrator: Error during diarization: {e}. Using default speaker.")
 
             return {"text": transcribed_text, "audio_path": audio_filepath, "speaker": speaker}
 
@@ -86,7 +85,9 @@ if __name__ == '__main__':
         dummy_audio = "dummy_narrator_test_audio.wav"
         if not os.path.exists(dummy_audio):
             try:
-                import wave, struct, math
+                import wave
+                import struct
+                import math
                 sample_rate = 16000.0
                 duration = 1 # seconds
                 frequency = 440.0 # A4

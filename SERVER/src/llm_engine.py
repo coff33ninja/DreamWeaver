@@ -1,5 +1,10 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, BitsAndBytesConfig, DataCollatorForLanguageModeling
+from transformers.models.auto.modeling_auto import AutoModelForCausalLM
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.training_args import TrainingArguments
+from transformers.trainer import Trainer
+from transformers.utils.quantization_config import BitsAndBytesConfig
+from transformers.data.data_collator import DataCollatorForLanguageModeling
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
 from datasets import Dataset
 import os
@@ -90,8 +95,10 @@ class LLMEngine:
             return "[LLM_ERROR: NOT_INITIALIZED]"
 
         def _blocking_generate():
+            if self.model is None or self.tokenizer is None:
+                return "[LLM_ERROR: MODEL_OR_TOKENIZER_NOT_INITIALIZED]"
             inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True,
-                                    max_length=self.tokenizer.model_max_length - max_new_tokens - 5).to(self.model.device) # Added safety margin
+                                    max_length=self.tokenizer.model_max_length - max_new_tokens - 5).to(self.model.device)
             with torch.no_grad():
                 output_sequences = self.model.generate(
                     **inputs, max_new_tokens=max_new_tokens, num_return_sequences=1,
@@ -121,30 +128,36 @@ class LLMEngine:
             # Could proceed with just new_data_point if desired, but batch is better
             return
 
-        print(f"LLMEngine (Server/PC1): Initiating fine-tuning for PC1...")
+        print("LLMEngine (Server/PC1): Initiating fine-tuning for PC1...")
 
         # For this example, we'll use a simplified batch fine-tuning approach with all data for PC1
         all_training_data = self.db.get_training_data_for_pc("PC1")
         if not all_training_data: # Should include the new_data_point if already saved
-            print(f"LLMEngine (Server/PC1): No training data found for PC1. Adding current point.")
+            print("LLMEngine (Server/PC1): No training data found for PC1. Adding current point.")
             all_training_data = [new_data_point] # Use the new point if no history
         elif new_data_point not in all_training_data : # Avoid duplicates if new_data_point is already in db
              all_training_data.append(new_data_point)
 
 
         if not all_training_data:
-            print(f"LLMEngine (Server/PC1): No training data to fine-tune with for PC1.")
+            print("LLMEngine (Server/PC1): No training data to fine-tune with for PC1.")
             return
 
         def _blocking_fine_tune():
+            if self.model is None or self.tokenizer is None:
+                print("LLMEngine (Server/PC1): Model or tokenizer not initialized. Cannot fine-tune.")
+                return
+            tokenizer = self.tokenizer  # Local reference for clarity
             self.model.train() # Set model to training mode
 
-            formatted_texts = [f"{data['input']}{self.tokenizer.eos_token}{data['output']}{self.tokenizer.eos_token}" for data in all_training_data]
+            formatted_texts = [f"{data['input']}{tokenizer.eos_token}{data['output']}{tokenizer.eos_token}" for data in all_training_data]
             dataset = Dataset.from_list([{"text": text} for text in formatted_texts])
 
             def tokenize_function(examples):
-                return self.tokenizer(examples["text"], truncation=True, padding="max_length",
-                                      max_length=self.tokenizer.model_max_length or 512) # Ensure max_length
+                if tokenizer is None:
+                    raise RuntimeError("Tokenizer is not initialized.")
+                return tokenizer(examples["text"], truncation=True, padding="max_length",
+                                 max_length=tokenizer.model_max_length or 512) # Ensure max_length
 
             tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
@@ -169,10 +182,11 @@ class LLMEngine:
                 remove_unused_columns=False,
             )
 
-            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
+            data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
             trainer = Trainer(model=self.model, args=training_args, train_dataset=tokenized_dataset,
-                              tokenizer=self.tokenizer, data_collator=data_collator)
+                              data_collator=data_collator)
+            trainer.tokenizer = tokenizer  # Set tokenizer attribute directly for save_model/push_to_hub compatibility
 
             print(f"LLMEngine (Server/PC1): Starting fine-tuning for PC1 with {len(all_training_data)} data points...")
             trainer.train()
@@ -183,16 +197,17 @@ class LLMEngine:
                  self.model.save_pretrained(self.adapter_path)
                  print(f"LLMEngine (Server/PC1): LoRA adapters for PC1 saved to {self.adapter_path}")
             else:
-                 print(f"LLMEngine (Server/PC1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
+                 print("LLMEngine (Server/PC1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
 
             self.model.eval() # Set model back to evaluation mode
 
         try:
             await asyncio.to_thread(_blocking_fine_tune)
-            print(f"LLMEngine (Server/PC1): Fine-tuning process completed for PC1.")
+            print("LLMEngine (Server/PC1): Fine-tuning process completed for PC1.")
         except Exception as e:
             print(f"LLMEngine (Server/PC1): Error during fine-tuning for PC1: {e}")
-            if self.model: self.model.eval() # Ensure model is back in eval mode on error too
+            if self.model:
+                self.model.eval() # Ensure model is back in eval mode on error too
 
     # batch_fine_tune_pc1 can be removed or refactored if fine_tune now handles batching from DB
     # For now, let's assume fine_tune is the primary async method.

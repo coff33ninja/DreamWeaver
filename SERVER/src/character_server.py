@@ -12,7 +12,7 @@ class CharacterServer: # This is for PC1, the server's own character
         self.character_pc_id = "PC1" # Explicitly for PC1
         self.character = self.db.get_character(self.character_pc_id)
         if not self.character:
-            print(f"CharacterServer: WARNING - PC1 character data not found in DB. Using defaults.")
+            print("CharacterServer: WARNING - PC1 character data not found in DB. Using defaults.")
             # Define a more complete default, including llm_model
             self.character = {
                 "name": "PC1_Default", "personality": "server_default",
@@ -24,32 +24,39 @@ class CharacterServer: # This is for PC1, the server's own character
             # Optionally save this default to DB if it's truly missing
             self.db.save_character(**self.character) # Careful with pc_id vs pc key
 
-        # Initialize LLM and TTS for PC1
-        # LLMEngine init is blocking, TTSManager init is also blocking (model downloads)
-        # These should ideally be loaded asynchronously or in a background thread at server startup,
-        # not during CharacterServer init if it's on a critical path.
-        # For now, keeping it blocking here as per original structure, but flagging for future improvement.
-        self.llm = LLMEngine(model_name=self.character.get("llm_model"), db=self.db) # LLMEngine for PC1
-        self.tts = TTSManager(
-            tts_service_name=self.character.get("tts"),
-            model_name=self.character.get("tts_model"),
+        # LLM and TTS are initialized asynchronously for non-blocking startup
+        self.llm = None
+        self.tts = None
+
+    async def async_init(self):
+        """
+        Initialize LLM and TTS for PC1.
+        LLMEngine init is blocking, TTSManager init is also blocking (model downloads).
+        These should ideally be loaded asynchronously or in a background thread at server startup,
+        not during CharacterServer init if it's on a critical path.
+        For now, keeping it here as an explicit async method as per best practice.
+        """
+        loop = asyncio.get_event_loop()
+        self.llm = await loop.run_in_executor(None, lambda: LLMEngine(model_name=self.character.get("llm_model") or "", db=self.db))
+        self.tts = await loop.run_in_executor(None, lambda: TTSManager(
+            tts_service_name=self.character.get("tts") or "",
+            model_name=self.character.get("tts_model") or "",
             speaker_wav_path=os.path.join(REFERENCE_VOICES_AUDIO_PATH, self.character["reference_audio_filename"]) if self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename") else None,
             language=self.character.get("language", "en")
-        )
+        ))
 
         if not pygame.mixer.get_init():
             try:
                 pygame.mixer.init()
                 print("CharacterServer (PC1): Pygame mixer initialized.")
             except pygame.error as e:
-                 print(f"CharacterServer (PC1): Pygame mixer could not be initialized: {e}. Audio playback will fail.")
-
+                print(f"CharacterServer (PC1): Pygame mixer could not be initialized: {e}. Audio playback will fail.")
 
     async def generate_response(self, narration: str, other_texts: dict) -> str:
         if not self.character:
             print("CharacterServer (PC1): Character not loaded. Cannot generate response.")
             return ""
-        if not self.llm.is_initialized:
+        if not self.llm or not self.llm.is_initialized:
             print("CharacterServer (PC1): LLM not initialized. Cannot generate response.")
             return "[PC1_LLM_ERROR]"
 
@@ -62,16 +69,17 @@ class CharacterServer: # This is for PC1, the server's own character
 
         # LLM generate is now async
         # print(f"CharacterServer (PC1): Generating LLM response...")
-        text = await self.llm.generate(prompt, max_new_tokens=120)
+        text = await self.llm.generate(prompt, max_new_tokens=120) if self.llm else "[PC1_LLM_ERROR]"
 
         if text and text != "[LLM_ERROR: NOT_INITIALIZED]" and text != "[LLM_ERROR: GENERATION_FAILED]":
             # Save training data (DB op, could be threaded but usually fast)
             # For now, keep it blocking as it's quick.
             self.db.save_training_data({"input": prompt, "output": text}, self.character_pc_id)
 
-            # LLM fine_tune is now async
-            # print(f"CharacterServer (PC1): Initiating fine-tuning...")
-            await self.llm.fine_tune({"input": prompt, "output": text}, self.character_pc_id)
+            if self.llm:
+                # LLM fine_tune is now async
+                # print(f"CharacterServer (PC1): Initiating fine-tuning...")
+                await self.llm.fine_tune({"input": prompt, "output": text}, self.character_pc_id)
 
             # TTS output is now async
             # print(f"CharacterServer (PC1): Synthesizing audio output...")
@@ -81,7 +89,8 @@ class CharacterServer: # This is for PC1, the server's own character
 
     async def output_audio(self, text: str): # speaker_wav removed, TTSManager instance holds it for XTTS
         if not self.tts or not self.tts.is_initialized or not text or not self.character:
-            if not self.tts or not self.tts.is_initialized : print("CharacterServer (PC1): TTS not initialized or text empty. No audio.")
+            if not self.tts or not self.tts.is_initialized:
+                print("CharacterServer (PC1): TTS not initialized or text empty. No audio.")
             return
 
         # TTSManager's synthesize is now async and handles its own speaker_wav logic
@@ -95,9 +104,6 @@ class CharacterServer: # This is for PC1, the server's own character
         # Filename for the final audio in the character's directory
         final_audio_filename = f"{uuid.uuid4()}.wav"
         final_audio_path = os.path.join(character_audio_dir, final_audio_filename)
-
-        # TTSManager.synthesize expects just the filename for its temp storage
-        temp_audio_filename_for_tts = f"pc1_temp_{final_audio_filename}"
 
         # Use speaker_wav_for_synthesis if XTTS and ref audio exists
         speaker_wav_to_use = None
@@ -158,6 +164,7 @@ if __name__ == '__main__':
 
 
         cs = CharacterServer(db=DummyDB())
+        await cs.async_init()
         if cs.llm and cs.llm.is_initialized and cs.tts and cs.tts.is_initialized:
             print("CharacterServer initialized with LLM and TTS.")
             narration = "A test narration for PC1."
@@ -165,8 +172,10 @@ if __name__ == '__main__':
             print(f"PC1 Response to '{narration}': '{response}'")
         else:
             print("CharacterServer LLM or TTS failed to initialize.")
-            if cs.llm: print(f"LLM initialized: {cs.llm.is_initialized}")
-            if cs.tts: print(f"TTS initialized: {cs.tts.is_initialized}")
+            if cs.llm:
+                print(f"LLM initialized: {cs.llm.is_initialized}")
+            if cs.tts:
+                print(f"TTS initialized: {cs.tts.is_initialized}")
 
 
     asyncio.run(test_character_server())

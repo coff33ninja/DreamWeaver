@@ -1,8 +1,8 @@
 import gtts
 import os
 import torch
-from huggingface_hub import hf_hub_download
 import asyncio # Added asyncio
+from typing import Optional
 
 from .config import MODELS_PATH
 
@@ -12,21 +12,15 @@ except ImportError:
     CoquiTTS = None
     # print("Server TTSManager: Coqui TTS library not found. XTTSv2 will not be available.") # Less verbose
 
-try:
-    import piper.voice as piper_voice_lib # Renamed to avoid conflict
-except ImportError:
-    piper_voice_lib = None
-    # print("Server TTSManager: Piper TTS library not found. Piper will not be available.") # Less verbose
-
-PIPER_VOICES_REPO = "rhasspy/piper-voices"
 TTS_MODELS_PATH = os.path.join(MODELS_PATH, "tts")
 
 class TTSManager:
-    def __init__(self, tts_service_name: str, model_name: str = None, speaker_wav_path: str = None, language: str = "en"):
+    def __init__(self, tts_service_name: str, model_name: Optional[str] = None, speaker_wav_path: Optional[str] = None, language: str = "en"):
         self.service_name = tts_service_name
-        self.model_name = model_name
-        self.speaker_wav_path = speaker_wav_path
-        self.language = language # For gTTS and XTTS
+        self.model_name = model_name or ""  # Ensure string
+        self.speaker_wav_path = speaker_wav_path or ""  # Ensure string
+        # Always ensure language is a string, never None
+        self.language = language or "en" # For gTTS and XTTS
         self.tts_instance = None
         self.is_initialized = False # Flag
 
@@ -43,7 +37,7 @@ class TTSManager:
             if gtts:
                 self.tts_instance = self._gtts_synthesize_blocking # Store the blocking method
                 self.is_initialized = True
-                print(f"Server TTSManager: gTTS initialized.")
+                print("Server TTSManager: gTTS initialized.")
             else:
                 print("Server TTSManager: Error - gTTS service selected but library not found.")
             return
@@ -57,18 +51,7 @@ class TTSManager:
             print(f"Server TTSManager: Error - Could not find/download model '{self.model_name}' for '{self.service_name}'.")
             return
 
-        if self.service_name == "piper":
-            if piper_voice_lib:
-                try:
-                    self.tts_instance = piper_voice_lib.PiperVoice.load(model_path_or_name)
-                    self.is_initialized = True
-                    print(f"Server TTSManager: Piper TTS initialized with model: {model_path_or_name}")
-                except Exception as e:
-                    print(f"Server TTSManager: Error loading Piper model {model_path_or_name}: {e}")
-            else:
-                print("Server TTSManager: Error - Piper service selected but library not available.")
-
-        elif self.service_name == "xttsv2":
+        if self.service_name == "xttsv2":
             if CoquiTTS:
                 try:
                     # Coqui TTS model_name is the identifier it uses for its internal cache/downloader
@@ -83,53 +66,44 @@ class TTSManager:
         else:
             print(f"Server TTSManager: Unsupported TTS service '{self.service_name}'.")
 
-
     def _gtts_synthesize_blocking(self, text: str, output_path: str, lang: str):
         gtts.gTTS(text=text, lang=lang).save(output_path)
 
-    def _piper_synthesize_blocking(self, text: str, output_path: str):
-        with open(output_path, "wb") as f_out:
-            self.tts_instance.synthesize_wav(text, f_out)
+    def _xttsv2_synthesize_blocking(self, text: str, output_path: str, speaker_wav: Optional[str] = None, lang: str = "en"):
+        # Only proceed if tts_instance is valid and not a method (i.e., not gTTS)
+        if not self.tts_instance or callable(self.tts_instance) or not hasattr(self.tts_instance, 'tts_to_file'):
+            print("Server TTSManager: XTTSv2 instance is not initialized or invalid.")
+            return
+        # Ensure lang is always a string
+        lang_to_use = lang or "en"
+        languages = getattr(self.tts_instance, 'languages', None)
+        if languages and lang_to_use not in languages:
+            lang_to_use = languages[0]
 
-    def _xttsv2_synthesize_blocking(self, text: str, output_path: str, speaker_wav: str = None, lang: str = "en"):
-        # Determine language for XTTS, defaulting if necessary
-        lang_to_use = lang
-        if hasattr(self.tts_instance, 'languages') and self.tts_instance.languages:
-            if lang not in self.tts_instance.languages:
-                # print(f"Server TTSManager (XTTS): Language '{lang}' not in model languages {self.tts_instance.languages}. Using first: '{self.tts_instance.languages[0]}'")
-                lang_to_use = self.tts_instance.languages[0]
-
-        speaker_to_use = speaker_wav or self.speaker_wav_path # Use per-call speaker_wav if provided, else instance default
-        if speaker_to_use and os.path.exists(speaker_to_use):
+        speaker_to_use = speaker_wav or self.speaker_wav_path
+        if speaker_to_use and isinstance(speaker_to_use, str) and os.path.exists(speaker_to_use):
             self.tts_instance.tts_to_file(text=text, speaker_wav=speaker_to_use, language=lang_to_use, file_path=output_path)
-            # print(f"Server TTSManager: XTTSv2 synthesized to {output_path} using speaker: {speaker_to_use}")
         else:
-            if speaker_to_use: # If provided but not found
-                 print(f"Server TTSManager: Warning - XTTSv2 speaker_wav '{speaker_to_use}' not found. Using default voice.")
+            if speaker_to_use:
+                print(f"Server TTSManager: Warning - XTTSv2 speaker_wav '{speaker_to_use}' not found. Using default voice.")
             self.tts_instance.tts_to_file(text=text, language=lang_to_use, file_path=output_path)
-            # print(f"Server TTSManager: XTTSv2 synthesized to {output_path} using default voice for language {lang_to_use}.")
 
-
-    async def synthesize(self, text: str, output_path: str, speaker_wav_for_synthesis: str = None) -> bool:
+    async def synthesize(self, text: str, output_path: str, speaker_wav_for_synthesis: Optional[str] = None) -> bool:
         if not self.is_initialized or not self.tts_instance:
             print("Server TTSManager: Not initialized, cannot synthesize.")
             return False
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        # print(f"Server TTSManager: Async synthesizing to {output_path} using {self.service_name}")
-
         try:
             if self.service_name == "gtts":
                 await asyncio.to_thread(self._gtts_synthesize_blocking, text, output_path, self.language)
-            elif self.service_name == "piper":
-                await asyncio.to_thread(self._piper_synthesize_blocking, text, output_path)
             elif self.service_name == "xttsv2":
-                await asyncio.to_thread(self._xttsv2_synthesize_blocking, text, output_path, speaker_wav_for_synthesis, self.language)
+                # Ensure speaker_wav_for_synthesis is a string
+                speaker_wav = speaker_wav_for_synthesis or ""
+                await asyncio.to_thread(self._xttsv2_synthesize_blocking, text, output_path, speaker_wav, self.language)
             else:
                 print(f"Server TTSManager: No async synthesis method for '{self.service_name}'.")
                 return False
-
-            # print(f"Server TTSManager: Async synthesis complete for {output_path}.")
             return True
         except Exception as e:
             print(f"Server TTSManager: Error during async TTS synthesis with {self.service_name}: {e}")
@@ -147,24 +121,6 @@ class TTSManager:
         if service_name == "xttsv2":
             # Coqui handles its own downloads; TTS_HOME is set.
             return model_identifier
-
-        if service_name == "piper":
-            piper_model_dir = os.path.join(target_dir_base, model_identifier)
-            onnx_filename = f"{model_identifier}.onnx"
-            onnx_path = os.path.join(piper_model_dir, onnx_filename)
-            config_path = os.path.join(piper_model_dir, f"{onnx_filename}.json")
-
-            if os.path.exists(onnx_path) and os.path.exists(config_path):
-                return onnx_path
-
-            print(f"Server TTSManager: Downloading Piper model '{model_identifier}' to {piper_model_dir}")
-            try:
-                hf_hub_download(repo_id=PIPER_VOICES_REPO, filename=onnx_filename, local_dir=piper_model_dir, local_dir_use_symlinks=False)
-                hf_hub_download(repo_id=PIPER_VOICES_REPO, filename=f"{onnx_filename}.json", local_dir=piper_model_dir, local_dir_use_symlinks=False)
-                return onnx_path
-            except Exception as e:
-                print(f"Server TTSManager: Failed to download Piper model '{model_identifier}': {e}")
-                return None
         return None
 
     @staticmethod
@@ -172,8 +128,6 @@ class TTSManager:
         services = []
         if gtts:
             services.append("gtts")
-        if piper_voice_lib:
-            services.append("piper")
         if CoquiTTS:
             services.append("xttsv2")
         return services
@@ -182,8 +136,6 @@ class TTSManager:
     def get_available_models(service_name: str): # This is mostly for UI hints
         if service_name == "gtts":
             return ["N/A (uses language codes)"]
-        if service_name == "piper":
-            return ["en_US-ryan-high", "en_US-lessac-medium"]
         if service_name == "xttsv2":
             return ["tts_models/multilingual/multi-dataset/xtts_v2"]
         return []
@@ -203,15 +155,6 @@ if __name__ == "__main__":
                 out_g = os.path.join(test_output_dir, "server_gtts_async_test.mp3")
                 if await tts_g.synthesize("Hola mundo desde el servidor.", out_g):
                     print(f"gTTS async test audio saved to {out_g}")
-
-        if "piper" in TTSManager.list_services():
-            print("\nTesting Piper (async)...")
-            # Make sure "en_US-ryan-high" model is downloaded or downloadable to server's MODELS_PATH/tts/piper/
-            tts_p = TTSManager(tts_service_name="piper", model_name="en_US-ryan-high")
-            if tts_p.is_initialized:
-                out_p = os.path.join(test_output_dir, "server_piper_async_test.wav")
-                if await tts_p.synthesize("Hello from server-side Piper, asynchronously.", out_p):
-                    print(f"Piper async test audio saved to {out_p}")
 
         if "xttsv2" in TTSManager.list_services():
             print("\nTesting XTTSv2 (async)...")
