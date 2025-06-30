@@ -4,16 +4,16 @@ from datetime import datetime
 import json
 from .config import DB_PATH, ADAPTERS_PATH, BASE_CHECKPOINT_PATH, BASE_DATA_PATH # Import from config
 
-# Path for server-specific adapters (PC1)
-# Now configurable via CheckpointManager arguments for model and PC ID.
+# Path for server-specific adapters (Actor1)
+# Now configurable via CheckpointManager arguments for model and Actor ID.
 
 class CheckpointManager:
-    def __init__(self, server_model_name="TinyLLaMA", server_pc_id="PC1"):
+    def __init__(self, server_model_name="TinyLLaMA", server_Actor_id="Actor1"):
         self.server_model_name = server_model_name
-        self.server_pc_id = server_pc_id
-        self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_pc_id)
+        self.server_Actor_id = server_Actor_id
+        self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_Actor_id)
         os.makedirs(BASE_CHECKPOINT_PATH, exist_ok=True)
-        # Ensure the specific server adapter path for PC1 also exists, as it's a target for copying
+        # Ensure the specific server adapter path for Actor1 also exists, as it's a target for copying
         os.makedirs(self.server_adapter_specific_path, exist_ok=True)
 
 
@@ -39,7 +39,7 @@ class CheckpointManager:
 
             # 2. Save the server's LLM adapters
             if os.path.exists(self.server_adapter_specific_path): # Use SERVER_ADAPTER_SPECIFIC_PATH
-                shutil.copytree(self.server_adapter_specific_path, os.path.join(checkpoint_dir, f"{self.server_pc_id}_adapters"))
+                shutil.copytree(self.server_adapter_specific_path, os.path.join(checkpoint_dir, f"{self.server_Actor_id}_adapters"))
             else:
                 print(f"Warning: Server LLM adapters not found at {self.server_adapter_specific_path}. Skipping adapter save.")
 
@@ -63,13 +63,13 @@ class CheckpointManager:
 
 
             # 2. Restore the server's LLM adapters
-            adapters_in_checkpoint = os.path.join(checkpoint_dir, f"{self.server_pc_id}_adapters")
+            adapters_in_checkpoint = os.path.join(checkpoint_dir, f"{self.server_Actor_id}_adapters")
             if os.path.exists(adapters_in_checkpoint):
                 if os.path.exists(self.server_adapter_specific_path): # Use SERVER_ADAPTER_SPECIFIC_PATH
                     shutil.rmtree(self.server_adapter_specific_path) # Remove existing adapters before copying
                 shutil.copytree(adapters_in_checkpoint, self.server_adapter_specific_path) # Use SERVER_ADAPTER_SPECIFIC_PATH
             else:
-                print(f"Warning: No {self.server_pc_id} adapters found in checkpoint '{checkpoint_name}'. Skipping adapter load.")
+                print(f"Warning: No {self.server_Actor_id} adapters found in checkpoint '{checkpoint_name}'. Skipping adapter load.")
 
             return f"Checkpoint '{checkpoint_name}' loaded. PLEASE RESTART THE APPLICATION for changes to take effect."
         except Exception as e:

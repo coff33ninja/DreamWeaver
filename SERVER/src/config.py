@@ -22,6 +22,25 @@ ADAPTERS_PATH = os.path.join(MODELS_PATH, "adapters")
 # Checkpoints path
 BASE_CHECKPOINT_PATH = os.getenv("DREAMWEAVER_CHECKPOINT_PATH", os.path.join(PROJECT_ROOT, "checkpoints"))
 
+# --- DreamWeaver Configurable Options ---
+DEFAULT_WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
+DIARIZATION_ENABLED = os.getenv("DIARIZATION_ENABLED", "1") == "1"
+
+# Additional narrator/model config options
+DIARIZATION_MODEL = os.getenv("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
+AUDIO_FORMAT = os.getenv("AUDIO_FORMAT", ".wav")
+MAX_DIARIZATION_RETRIES = int(os.getenv("MAX_DIARIZATION_RETRIES", "3"))
+
+# List of editable config options for UI
+EDITABLE_CONFIG_OPTIONS = {
+    "WHISPER_MODEL_SIZE": DEFAULT_WHISPER_MODEL_SIZE,
+    "DIARIZATION_ENABLED": DIARIZATION_ENABLED,
+    "DIARIZATION_MODEL": DIARIZATION_MODEL,
+    "AUDIO_FORMAT": AUDIO_FORMAT,
+    "MAX_DIARIZATION_RETRIES": MAX_DIARIZATION_RETRIES,
+    # Add more as needed
+}
+
 # Ensure necessary directories exist
 os.makedirs(BASE_DATA_PATH, exist_ok=True)
 os.makedirs(AUDIO_PATH, exist_ok=True)
@@ -44,3 +63,6 @@ if __name__ == "__main__":
     print(f"MODELS_PATH: {MODELS_PATH}")
     print(f"ADAPTERS_PATH: {ADAPTERS_PATH}")
     print(f"BASE_CHECKPOINT_PATH: {BASE_CHECKPOINT_PATH}")
+    print(f"DEFAULT_WHISPER_MODEL_SIZE: {DEFAULT_WHISPER_MODEL_SIZE}")
+    print(f"DIARIZATION_ENABLED: {DIARIZATION_ENABLED}")
+    print(f"EDITABLE_CONFIG_OPTIONS: {EDITABLE_CONFIG_OPTIONS}")

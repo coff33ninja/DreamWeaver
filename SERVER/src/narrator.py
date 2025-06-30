@@ -4,10 +4,12 @@ from pyannote.audio import Pipeline
 import asyncio # Added asyncio
 import re
 import webbrowser
-from .config import NARRATOR_AUDIO_PATH
+from .config import NARRATOR_AUDIO_PATH, DEFAULT_WHISPER_MODEL_SIZE, DIARIZATION_ENABLED, DIARIZATION_MODEL, MAX_DIARIZATION_RETRIES
 import uuid
 class Narrator:
-    def __init__(self, model_size="base"):
+    def __init__(self, model_size=None):
+        if model_size is None:
+            model_size = DEFAULT_WHISPER_MODEL_SIZE
         print(f"Narrator: Loading Whisper STT model '{model_size}'...")
         try:
             self.stt_model = load_model(model_size)
@@ -17,37 +19,40 @@ class Narrator:
             self.stt_model = None
 
         # Diarization can be complex to set up and run, making it optional or simplified
-        # --- Advanced Diarization Pipeline Loader ---
-        max_retries = 3
-        retry_count = 0
-        while retry_count < max_retries:
-            try:
-                print("Narrator: Loading Pyannote Diarization pipeline...")
-                self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
-                print("Narrator: Pyannote Diarization pipeline loaded.")
-                break
-            except Exception as e:
-                print(f"\n[Narrator] Pyannote Diarization pipeline failed to load (attempt {retry_count+1}/{max_retries}): {e}\n")
-                # --- Open any URLs in the error message (e.g., TOS, token, or gated model pages) ---
-                urls = re.findall(r'https?://[^\s]+', str(e))
-                if urls:
-                    for url in urls:
-                        print(f"[Narrator] Opening required page: {url}")
-                        webbrowser.open(url)
-                    print("[Narrator] Please complete any required actions in your browser (e.g., accept TOS, login, or generate a token).\n")
-                else:
-                    print("[Narrator] No actionable URLs found in the error message.")
-                user_input = input("Type 'r' to retry, 's' to skip diarization, or just press Enter to retry: ").strip().lower()
-                if user_input == 's':
-                    print("[Narrator] Skipping diarization pipeline setup.")
-                    self.diarization_pipeline = None
+        self.diarization_pipeline = None
+        if DIARIZATION_ENABLED:
+            # --- Advanced Diarization Pipeline Loader ---
+            max_retries = MAX_DIARIZATION_RETRIES
+            retry_count = 0
+            while retry_count < max_retries:
+                try:
+                    print(f"Narrator: Loading Pyannote Diarization pipeline ({DIARIZATION_MODEL})...")
+                    self.diarization_pipeline = Pipeline.from_pretrained(DIARIZATION_MODEL)
+                    print("Narrator: Pyannote Diarization pipeline loaded.")
                     break
-                retry_count += 1
-        else:
-            print("[Narrator] Maximum retries reached. Diarization will be skipped.")
-            self.diarization_pipeline = None
+                except Exception as e:
+                    print(f"\n[Narrator] Pyannote Diarization pipeline failed to load (attempt {retry_count+1}/{max_retries}): {e}\n")
+                    # --- Open any URLs in the error message (e.g., TOS, token, or gated model pages) ---
+                    urls = re.findall(r'https?://[^\s]+', str(e))
+                    if urls:
+                        for url in urls:
+                            print(f"[Narrator] Opening required page: {url}")
+                            webbrowser.open(url)
+                        print("[Narrator] Please complete any required actions in your browser (e.g., accept TOS, login, or generate a token).\n")
+                    else:
+                        print("[Narrator] No actionable URLs found in the error message.")
+                    user_input = input("Type 'r' to retry, 's' to skip diarization, or just press Enter to retry: ").strip().lower()
+                    if user_input == 's':
+                        print("[Narrator] Skipping diarization pipeline setup.")
+                        self.diarization_pipeline = None
+                        break
+                    retry_count += 1
+            else:
+                print("[Narrator] Maximum retries reached. Diarization will be skipped.")
+                self.diarization_pipeline = None
 
         self.default_speaker_name = "Narrator"
+        self.last_transcription = None  # Store last transcription for correction
 
     async def process_narration(self, audio_filepath: str) -> dict:
         """
@@ -83,6 +88,7 @@ class Narrator:
             else:
                 transcribed_text = str(text_field).strip()
             print(f"Narrator: Transcription complete. Text: '{transcribed_text[:50]}...'")
+            self.last_transcription = transcribed_text  # Store for correction
 
             # Speaker diarization
             speaker = self.default_speaker_name
@@ -102,6 +108,11 @@ class Narrator:
         except Exception as e:
             print(f"Narrator: Error processing narration for {audio_filepath}: {e}")
             return {"text": "", "audio_path": dest_path, "speaker": self.default_speaker_name}
+
+    def correct_last_transcription(self, new_text: str):
+        """Update the last transcription with user-corrected text."""
+        self.last_transcription = new_text
+        print(f"Narrator: Last transcription corrected to: {new_text}")
 
 if __name__ == '__main__':
     # This test requires a sample audio file.

@@ -48,7 +48,7 @@ async def get_story_playback_data_async():
 
 # --- Asynchronous Gradio Event Handlers ---
 
-async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, pc_id, progress=gr.Progress(track_tqdm=True)):
+async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, Actor_id, progress=gr.Progress(track_tqdm=True)):
     if db_instance is None:
         raise RuntimeError("Database instance not initialized. Call launch_interface() first.")
     if client_manager_instance is None:
@@ -63,7 +63,7 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
         sane_name = "".join(c if c.isalnum() else "_" for c in name)
         original_filename = reference_audio_file.name
         _, ext = os.path.splitext(original_filename)
-        reference_audio_filename = f"{sane_name}_{pc_id}_{os.urandom(4).hex()}{ext}"
+        reference_audio_filename = f"{sane_name}_{Actor_id}_{os.urandom(4).hex()}{ext}"
         destination_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, reference_audio_filename)
 
         try:
@@ -82,20 +82,20 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
     await asyncio.to_thread(
         db_instance.save_character,
         name, personality, goals, backstory, tts_service, tts_model,
-        reference_audio_filename, pc_id,
+        reference_audio_filename, Actor_id,
         None  # llm_model is not provided by UI yet
     )
 
     token_msg_part = ""
-    if pc_id != "PC1":
+    if Actor_id != "Actor1":
         # Token generation is fast (secrets.token_hex + DB write)
-        token = await asyncio.to_thread(client_manager_instance.generate_token, pc_id)
+        token = await asyncio.to_thread(client_manager_instance.generate_token, Actor_id)
         if token:
-            token_msg_part = f" Token for {pc_id}: {token}"
+            token_msg_part = f" Token for {Actor_id}: {token}"
 
     if hasattr(progress, '__call__'):
         progress(1, desc="Character created!")
-    return f"Character '{name}' for '{pc_id}' created successfully.{token_msg_part}"
+    return f"Character '{name}' for '{Actor_id}' created successfully.{token_msg_part}"
 
 
 async def story_interface_async(audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)):
@@ -216,7 +216,7 @@ def launch_interface():
                 with gr.Row():
                     with gr.Column(scale=2):
                         char_name = gr.Textbox(label="Character Name", placeholder="E.g., 'Elara'")
-                        char_pc_id = gr.Dropdown(["PC1"] + [f"PC{i}" for i in range(2, 11)], label="Assign to PC ID", value="PC1")
+                        char_Actor_id = gr.Dropdown(["Actor1"] + [f"Actor{i}" for i in range(2, 11)], label="Assign to Actor ID", value="Actor1")
                         char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service")
                         char_tts_model = gr.Dropdown([], label="TTS Model")
                         char_ref_audio = gr.File(label="Reference Audio (XTTSv2)", type="filepath", visible=False)
@@ -233,7 +233,7 @@ def launch_interface():
 
                 create_char_btn.click(
                     create_character_async,
-                    inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_pc_id],
+                    inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_Actor_id],
                     outputs=char_creation_status
                 )
 
@@ -246,7 +246,9 @@ def launch_interface():
                         story_chaos_slider = gr.Slider(minimum=0, maximum=10, value=1, step=1, label="Chaos Level")
                         process_story_btn = gr.Button("Process Narration", variant="primary")
                     with gr.Column(scale=3):
-                        narration_output_text = gr.Textbox(label="Narrator's Words", lines=3, interactive=False)
+                        narration_output_text = gr.Textbox(label="Narrator's Words", lines=3, interactive=True)
+                        save_correction_btn = gr.Button("Save Correction", variant="secondary")
+                        correction_status = gr.Textbox(label="Correction Status", interactive=False)
                         character_responses_json = gr.JSON(label="Character Dialogues") # Changed from Textbox
 
                 process_story_btn.click(
@@ -254,6 +256,22 @@ def launch_interface():
                     inputs=[story_audio_input, story_chaos_slider],
                     outputs=[narration_output_text, character_responses_json]
                 )
+
+                # --- Correction Handler ---
+                async def save_correction_async(correction_text, progress=gr.Progress(track_tqdm=True)):
+                    progress(0, desc="Saving correction...")
+                    # Persist correction to DB
+                    if csm_instance is not None:
+                        updated = await asyncio.to_thread(csm_instance.update_last_narration_text, correction_text)
+                        if updated:
+                            progress(1, desc="Correction saved.")
+                            return "Correction saved and persisted!"
+                        else:
+                            progress(1, desc="No narrator entry found.")
+                            return "No narrator entry found to update."
+                    progress(1, desc="CSM not initialized.")
+                    return "CSM not initialized."
+                save_correction_btn.click(save_correction_async, inputs=[narration_output_text], outputs=[correction_status])
 
             with gr.TabItem("Story Playback & History"):
                 # ... (Story Playback UI - get_story_playback_data_sync is likely fine for initial load and refresh unless very slow) ...
@@ -398,6 +416,25 @@ def launch_interface():
                 save_token_btn.click(save_token_async, inputs=[api_provider_dropdown, token_input], outputs=[save_token_status, env_status_text, current_env_vars_display, token_input])
                 save_token_btn.click(show_restart, inputs=[], outputs=[restart_required_text, restart_btn])
                 restart_btn.click(restart_server_async, inputs=[], outputs=[])
+
+            with gr.TabItem("Config & Model Options"):
+                gr.Markdown("## Edit Config & Model Options")
+                from .config import EDITABLE_CONFIG_OPTIONS
+                config_keys = list(EDITABLE_CONFIG_OPTIONS.keys())
+                config_values = [str(EDITABLE_CONFIG_OPTIONS[k]) for k in config_keys]
+                config_inputs = [gr.Textbox(label=k, value=v) for k, v in zip(config_keys, config_values)]
+                save_config_btn = gr.Button("Save Config Changes", variant="primary")
+                config_status = gr.Textbox(label="Config Save Status", interactive=False)
+
+                async def save_config_async(*new_values):
+                    # Save new config values to .env or another persistent store
+                    lines = []
+                    for k, v in zip(config_keys, new_values):
+                        lines.append(f"{k}={v}")
+                    # Save to .env for persistence
+                    status_msg = await asyncio.to_thread(env_manager.save_env_vars, "\n".join(lines))
+                    return status_msg
+                save_config_btn.click(save_config_async, inputs=config_inputs, outputs=[config_status])
 
         gr.Markdown("---")
         gr.Markdown("View [Server Dashboard](/dashboard) (Server Perf & Client Status)")

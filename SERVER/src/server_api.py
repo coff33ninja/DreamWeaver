@@ -29,41 +29,41 @@ def get_client_manager(db: Database = Depends(get_db)):
 # --- Pydantic Models ---
 class SaveTrainingDataRequest(BaseModel):
     dataset: dict
-    pc_id: str
+    Actor_id: str
     token: str
 
     class Config:
         json_schema_extra = {
             "example": {
                 "dataset": {"input": "Narrator: The wind howls.", "output": "I shiver."},
-                "pc_id": "PC2",
+                "Actor_id": "Actor2",
                 "token": "your_token_here"
             }
         }
 
 class RegisterClientRequest(BaseModel):
-    pc_id: str
+    Actor_id: str
     token: str
     client_port: int
 
     class Config:
         json_schema_extra = {
             "example": {
-                "pc_id": "PC2",
+                "Actor_id": "Actor2",
                 "token": "your_token_here",
                 "client_port": 8001
             }
         }
 
 class HeartbeatRequest(BaseModel):
-    pc_id: str
+    Actor_id: str
     token: str
     status: Optional[str] = None
 
     class Config:
         json_schema_extra = {
             "example": {
-                "pc_id": "PC2",
+                "Actor_id": "Actor2",
                 "token": "your_token_here",
                 "status": "Idle"
             }
@@ -73,21 +73,21 @@ class HeartbeatRequest(BaseModel):
 # --- API Endpoints ---
 @app.get("/get_traits", summary="Fetch Character Traits")
 async def get_traits(
-    pc_id: str,
+    Actor_id: str,
     token: str,
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
     """
     Endpoint for clients to fetch their assigned character traits.
-    Requires a valid `pc_id` and `token` for authentication.
+    Requires a valid `Actor_id` and `token` for authentication.
     """
-    if not client_manager.validate_token(pc_id, token): # validate_token needs to be in ClientManager
+    if not client_manager.validate_token(Actor_id, token): # validate_token needs to be in ClientManager
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    character = db.get_character(pc_id) # Assumes pc_id is the primary key for characters
+    character = db.get_character(Actor_id) # Assumes Actor_id is the primary key for characters
     if not character:
-        raise HTTPException(status_code=404, detail=f"Character for PC ID '{pc_id}' not found")
+        raise HTTPException(status_code=404, detail=f"Character for Actor ID '{Actor_id}' not found")
     return character
 
 
@@ -97,12 +97,12 @@ async def save_training_data(
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
-    if not client_manager.validate_token(request_data.pc_id, request_data.token):
+    if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
-        db.save_training_data(request_data.dataset, request_data.pc_id)
-        return {"message": f"Training data for {request_data.pc_id} saved successfully"}
+        db.save_training_data(request_data.dataset, request_data.Actor_id)
+        return {"message": f"Training data for {request_data.Actor_id} saved successfully"}
     except Exception as e:
         # Log the exception e
         raise HTTPException(status_code=500, detail=f"Failed to save training data: {str(e)}")
@@ -116,16 +116,16 @@ async def register_client_endpoint( # Renamed to avoid conflict with db.register
     client_manager: ClientManager = Depends(get_client_manager)
 ):
     client_ip = http_request.client.host if http_request.client else "unknown"
-    if not client_manager.validate_token(request_data.pc_id, request_data.token):
+    if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid token for registration")
 
     try:
         # Database method now handles inserting/updating client_port
-        db.register_client(request_data.pc_id, client_ip, request_data.client_port)
-        return {"message": f"Client {request_data.pc_id} registered from {client_ip}:{request_data.client_port}. Status: Online."}
+        db.register_client(request_data.Actor_id, client_ip, request_data.client_port)
+        return {"message": f"Client {request_data.Actor_id} registered from {client_ip}:{request_data.client_port}. Status: Online."}
     except Exception as e:
         # Log the exception e
-        raise HTTPException(status_code=500, detail=f"Failed to register client {request_data.pc_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to register client {request_data.Actor_id}: {str(e)}")
 
 
 @app.post("/heartbeat", summary="Client Heartbeat")
@@ -134,31 +134,31 @@ async def client_heartbeat(
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
-    if not client_manager.validate_token(request_data.pc_id, request_data.token):
+    if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid token for heartbeat")
 
     try:
         timestamp_utc_iso = datetime.now(timezone.utc).isoformat()
         # db.update_client_status now handles setting status to 'Online' and updating last_seen
-        db.update_client_status(request_data.pc_id, "Online", timestamp_utc_iso)
-        return {"message": f"Heartbeat received from {request_data.pc_id}. Status: Online."}
+        db.update_client_status(request_data.Actor_id, "Online", timestamp_utc_iso)
+        return {"message": f"Heartbeat received from {request_data.Actor_id}. Status: Online."}
     except Exception as e:
         # Log the exception e
-        raise HTTPException(status_code=500, detail=f"Error processing heartbeat for {request_data.pc_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing heartbeat for {request_data.Actor_id}: {str(e)}")
 
 
 @app.get("/get_reference_audio/{filename}", summary="Download Reference Audio for Voice Cloning")
 async def get_reference_audio(
     filename: str,
-    pc_id: str, # Added pc_id as query param
+    Actor_id: str, # Added Actor_id as query param
     token: str, # Added token as query param
     client_manager: ClientManager = Depends(get_client_manager) # No db needed if just validating token
 ):
     """
     Endpoint for authenticated clients to download reference audio files.
-    Requires `pc_id` and `token` for validation.
+    Requires `Actor_id` and `token` for validation.
     """
-    if not client_manager.validate_token(pc_id, token):
+    if not client_manager.validate_token(Actor_id, token):
         raise HTTPException(status_code=401, detail="Invalid or expired token for audio download")
 
     # Basic security check for filename (already in plan, good to have here)

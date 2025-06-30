@@ -27,7 +27,7 @@ async def get_system_status(db: Database = Depends(get_db)):
     memory_info = psutil.virtual_memory()
 
     # Client Statuses from database
-    # get_all_client_statuses() should now return pc_id, ip_address, client_port, last_seen, status
+    # get_all_client_statuses() should now return Actor_id, ip_address, client_port, last_seen, status
     raw_clients = db.get_all_client_statuses()
 
     processed_clients = []
@@ -35,7 +35,7 @@ async def get_system_status(db: Database = Depends(get_db)):
         for client_data in raw_clients:
             # Convert Row object to dict if necessary, or access by attribute/key
             # Assuming client_data is already a dict-like object from db.get_all_client_statuses()
-            pc_id = client_data.get("pc_id", "Unknown PC")
+            Actor_id = client_data.get("Actor_id", "Unknown Actor")
             ip_addr = client_data.get("ip_address", "N/A")
             port = client_data.get("client_port", "N/A")
             last_seen_iso = client_data.get("last_seen")
@@ -52,7 +52,7 @@ async def get_system_status(db: Database = Depends(get_db)):
                     last_seen_display = last_seen_iso # Show raw if parsing fails
 
             processed_clients.append({
-                "pc_id": pc_id,
+                "Actor_id": Actor_id,
                 "ip_address": f"{ip_addr}:{port}" if ip_addr != "N/A" and port != "N/A" else ip_addr,
                 "last_seen": last_seen_display,
                 "status": current_status # Directly use the status from DB
@@ -119,7 +119,7 @@ async def get_dashboard_page():
             <table id="client-status-table">
                 <thead>
                     <tr>
-                        <th>Client PC ID</th>
+                        <th>Client Actor ID</th>
                         <th>Status</th>
                         <th>IP Address : Port</th>
                         <th>Last Seen (UTC)</th>
@@ -164,7 +164,7 @@ async def get_dashboard_page():
                                 const statusClass = formatStatusClass(client.status);
                                 const ipPort = client.ip_address || 'N/A'; // Already combined or N/A from server
                                 const row = `<tr>
-                                    <td>${client.pc_id || 'N/A'}</td>
+                                    <td>${client.Actor_id || 'N/A'}</td>
                                     <td class="${statusClass}">${client.status || 'Unknown'}</td>
                                     <td>${ipPort}</td>
                                     <td>${client.last_seen || 'Never'}</td>

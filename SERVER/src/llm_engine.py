@@ -17,7 +17,7 @@ class LLMEngine:
         self.db = db
         self.model_name = model_name
         sane_model_name = self.model_name.replace("/", "_") # For path safety
-        self.adapter_path = os.path.join(ADAPTERS_PATH, sane_model_name, "PC1") # Server LLM is for PC1
+        self.adapter_path = os.path.join(ADAPTERS_PATH, sane_model_name, "Actor1") # Server LLM is for Actor1
         self.base_model_cache_path = os.path.join(MODELS_PATH, "llm_base_models") # Centralized cache for base models
 
         os.makedirs(self.adapter_path, exist_ok=True)
@@ -30,7 +30,7 @@ class LLMEngine:
 
     def _load_model(self):
         """Loads the model and tokenizer. This is a blocking operation."""
-        print(f"LLMEngine (Server/PC1): Loading model '{self.model_name}'...")
+        print(f"LLMEngine (Server/Actor1): Loading model '{self.model_name}'...")
         try:
             bnb_config = None
             if torch.cuda.is_available():
@@ -40,7 +40,7 @@ class LLMEngine:
                     bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
                     bnb_4bit_use_double_quant=False,
                 )
-                print("LLMEngine (Server/PC1): CUDA available, using BitsAndBytes 4-bit quantization.")
+                print("LLMEngine (Server/Actor1): CUDA available, using BitsAndBytes 4-bit quantization.")
 
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name,
@@ -61,13 +61,13 @@ class LLMEngine:
             if torch.cuda.is_available(): # PEFT k-bit training prep only if CUDA
                 self.model = prepare_model_for_kbit_training(self.model)
 
-            # Try to load existing adapters for PC1
+            # Try to load existing adapters for Actor1
             adapter_config_file = os.path.join(self.adapter_path, "adapter_config.json")
             if os.path.exists(adapter_config_file):
-                print(f"LLMEngine (Server/PC1): Loading existing LoRA adapters from {self.adapter_path}")
+                print(f"LLMEngine (Server/Actor1): Loading existing LoRA adapters from {self.adapter_path}")
                 self.model = PeftModel.from_pretrained(self.model, self.adapter_path)
             else:
-                print(f"LLMEngine (Server/PC1): No existing adapters found for PC1 at {self.adapter_path}. Using base model or initializing new PEFT.")
+                print(f"LLMEngine (Server/Actor1): No existing adapters found for Actor1 at {self.adapter_path}. Using base model or initializing new PEFT.")
                 # Optionally initialize with a default LoRA config for future fine-tuning
                 lora_config = LoraConfig(
                     r=16, lora_alpha=32,
@@ -78,12 +78,12 @@ class LLMEngine:
 
             self.model.eval() # Set to evaluation mode
             self.is_initialized = True
-            print(f"LLMEngine (Server/PC1): Model '{self.model_name}' loaded successfully. Device: {self.model.device}")
+            print(f"LLMEngine (Server/Actor1): Model '{self.model_name}' loaded successfully. Device: {self.model.device}")
             if hasattr(self.model, 'print_trainable_parameters'):
                 self.model.print_trainable_parameters()
 
         except Exception as e:
-            print(f"LLMEngine (Server/PC1): FATAL Error loading LLM model '{self.model_name}': {e}")
+            print(f"LLMEngine (Server/Actor1): FATAL Error loading LLM model '{self.model_name}': {e}")
             self.model = None
             self.tokenizer = None
             self.is_initialized = False
@@ -91,7 +91,7 @@ class LLMEngine:
 
     async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
         if not self.is_initialized or not self.model or not self.tokenizer:
-            print("LLMEngine (Server/PC1): Not initialized. Cannot generate text.")
+            print("LLMEngine (Server/Actor1): Not initialized. Cannot generate text.")
             return "[LLM_ERROR: NOT_INITIALIZED]"
 
         def _blocking_generate():
@@ -108,44 +108,44 @@ class LLMEngine:
             return self.tokenizer.decode(output_sequences[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
 
         try:
-            # print(f"LLMEngine (Server/PC1): Generating response for prompt (first 50 chars): '{prompt[:50]}...'")
+            # print(f"LLMEngine (Server/Actor1): Generating response for prompt (first 50 chars): '{prompt[:50]}...'")
             response_text = await asyncio.to_thread(_blocking_generate)
-            # print(f"LLMEngine (Server/PC1): Generated response (first 50 chars): '{response_text[:50]}...'")
+            # print(f"LLMEngine (Server/Actor1): Generated response (first 50 chars): '{response_text[:50]}...'")
             return response_text
         except Exception as e:
-            print(f"LLMEngine (Server/PC1): Error during text generation: {e}")
+            print(f"LLMEngine (Server/Actor1): Error during text generation: {e}")
             return "[LLM_ERROR: GENERATION_FAILED]"
 
-    async def fine_tune(self, new_data_point: dict, pc_id: str):
+    async def fine_tune(self, new_data_point: dict, Actor_id: str):
         if not self.is_initialized or not self.model or not self.tokenizer:
-            print("LLMEngine (Server/PC1): Not initialized. Cannot fine-tune.")
+            print("LLMEngine (Server/Actor1): Not initialized. Cannot fine-tune.")
             return
-        if pc_id != "PC1": # This engine instance is only for PC1
-            print(f"LLMEngine (Server/PC1): Fine-tuning attempt for '{pc_id}' ignored (engine is for PC1).")
+        if Actor_id != "Actor1": # This engine instance is only for Actor1
+            print(f"LLMEngine (Server/Actor1): Fine-tuning attempt for '{Actor_id}' ignored (engine is for Actor1).")
             return
         if not self.db:
-            print("LLMEngine (Server/PC1): Database not available. Cannot fetch full dataset for fine-tuning.")
+            print("LLMEngine (Server/Actor1): Database not available. Cannot fetch full dataset for fine-tuning.")
             # Could proceed with just new_data_point if desired, but batch is better
             return
 
-        print("LLMEngine (Server/PC1): Initiating fine-tuning for PC1...")
+        print("LLMEngine (Server/Actor1): Initiating fine-tuning for Actor1...")
 
-        # For this example, we'll use a simplified batch fine-tuning approach with all data for PC1
-        all_training_data = self.db.get_training_data_for_pc("PC1")
+        # For this example, we'll use a simplified batch fine-tuning approach with all data for Actor1
+        all_training_data = self.db.get_training_data_for_Actor("Actor1")
         if not all_training_data: # Should include the new_data_point if already saved
-            print("LLMEngine (Server/PC1): No training data found for PC1. Adding current point.")
+            print("LLMEngine (Server/Actor1): No training data found for Actor1. Adding current point.")
             all_training_data = [new_data_point] # Use the new point if no history
         elif new_data_point not in all_training_data : # Avoid duplicates if new_data_point is already in db
              all_training_data.append(new_data_point)
 
 
         if not all_training_data:
-            print("LLMEngine (Server/PC1): No training data to fine-tune with for PC1.")
+            print("LLMEngine (Server/Actor1): No training data to fine-tune with for Actor1.")
             return
 
         def _blocking_fine_tune():
             if self.model is None or self.tokenizer is None:
-                print("LLMEngine (Server/PC1): Model or tokenizer not initialized. Cannot fine-tune.")
+                print("LLMEngine (Server/Actor1): Model or tokenizer not initialized. Cannot fine-tune.")
                 return
             tokenizer = self.tokenizer  # Local reference for clarity
             self.model.train() # Set model to training mode
@@ -169,7 +169,7 @@ class LLMEngine:
 
 
             training_args = TrainingArguments(
-                output_dir=os.path.join("./results_server_ft", pc_id, self.model_name.replace("/", "_")),
+                output_dir=os.path.join("./results_server_ft", Actor_id, self.model_name.replace("/", "_")),
                 per_device_train_batch_size=batch_size,
                 gradient_accumulation_steps=ga_steps,
                 num_train_epochs=num_epochs,
@@ -188,37 +188,37 @@ class LLMEngine:
                               data_collator=data_collator)
             trainer.tokenizer = tokenizer  # Set tokenizer attribute directly for save_model/push_to_hub compatibility
 
-            print(f"LLMEngine (Server/PC1): Starting fine-tuning for PC1 with {len(all_training_data)} data points...")
+            print(f"LLMEngine (Server/Actor1): Starting fine-tuning for Actor1 with {len(all_training_data)} data points...")
             trainer.train()
 
             # Save LoRA adapters
             os.makedirs(self.adapter_path, exist_ok=True)
             if hasattr(self.model, 'save_pretrained'): # Check if it's a PeftModel
                  self.model.save_pretrained(self.adapter_path)
-                 print(f"LLMEngine (Server/PC1): LoRA adapters for PC1 saved to {self.adapter_path}")
+                 print(f"LLMEngine (Server/Actor1): LoRA adapters for Actor1 saved to {self.adapter_path}")
             else:
-                 print("LLMEngine (Server/PC1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
+                 print("LLMEngine (Server/Actor1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
 
             self.model.eval() # Set model back to evaluation mode
 
         try:
             await asyncio.to_thread(_blocking_fine_tune)
-            print("LLMEngine (Server/PC1): Fine-tuning process completed for PC1.")
+            print("LLMEngine (Server/Actor1): Fine-tuning process completed for Actor1.")
         except Exception as e:
-            print(f"LLMEngine (Server/PC1): Error during fine-tuning for PC1: {e}")
+            print(f"LLMEngine (Server/Actor1): Error during fine-tuning for Actor1: {e}")
             if self.model:
                 self.model.eval() # Ensure model is back in eval mode on error too
 
-    # batch_fine_tune_pc1 can be removed or refactored if fine_tune now handles batching from DB
+    # batch_fine_tune_Actor1 can be removed or refactored if fine_tune now handles batching from DB
     # For now, let's assume fine_tune is the primary async method.
 
 if __name__ == "__main__":
     # Basic test (requires DB setup for fine-tuning part)
     async def main_test():
-        print("LLMEngine (Server/PC1) Test:")
+        print("LLMEngine (Server/Actor1) Test:")
         # Dummy DB for testing generate, fine_tune would need a real one or mock
         class DummyDB:
-            def get_training_data_for_pc(self, pc_id): return []
+            def get_training_data_for_Actor(self, Actor_id): return []
 
         engine = LLMEngine(db=DummyDB()) # Provide a dummy DB
         if engine.is_initialized:
@@ -230,8 +230,8 @@ if __name__ == "__main__":
             # Test fine_tune (will just log with DummyDB or try to add to empty list)
             # For a real test, you'd need a DB with some data.
             # print("\nTesting fine_tune (placeholder)...")
-            # await engine.fine_tune({"input": "Test input", "output": "Test output"}, "PC1")
+            # await engine.fine_tune({"input": "Test input", "output": "Test output"}, "Actor1")
         else:
-            print("LLMEngine (Server/PC1) failed to initialize for test.")
+            print("LLMEngine (Server/Actor1) failed to initialize for test.")
 
     asyncio.run(main_test())

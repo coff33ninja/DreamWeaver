@@ -72,7 +72,7 @@ class Database:
                 name TEXT NOT NULL,
                 personality TEXT, goals TEXT, backstory TEXT, tts TEXT, tts_model TEXT,
                 reference_audio_filename TEXT,
-                pc_id TEXT NOT NULL UNIQUE,
+                Actor_id TEXT NOT NULL UNIQUE,
                 llm_model TEXT -- Added for character-specific LLM model choice
             )
         """)
@@ -92,8 +92,8 @@ class Database:
         self._execute_query("""
             CREATE TABLE IF NOT EXISTS training_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pc_id TEXT NOT NULL, input_text TEXT NOT NULL, output_text TEXT NOT NULL,
-                FOREIGN KEY (pc_id) REFERENCES characters(pc_id)
+                Actor_id TEXT NOT NULL, input_text TEXT NOT NULL, output_text TEXT NOT NULL,
+                FOREIGN KEY (Actor_id) REFERENCES characters(Actor_id)
             )
         """)
 
@@ -107,13 +107,13 @@ class Database:
         # 'Deactivated': Admin manually deactivated this client slot.
         self._execute_query("""
             CREATE TABLE IF NOT EXISTS client_tokens (
-                pc_id TEXT PRIMARY KEY,
+                Actor_id TEXT PRIMARY KEY,
                 token TEXT NOT NULL UNIQUE,
                 ip_address TEXT,
                 client_port INTEGER,
                 last_seen DATETIME,
                 status TEXT DEFAULT 'Registered', -- Default for new tokens
-                FOREIGN KEY (pc_id) REFERENCES characters(pc_id)
+                FOREIGN KEY (Actor_id) REFERENCES characters(Actor_id)
             )
         """)
         self._ensure_column("client_tokens", "client_port", "INTEGER")
@@ -121,21 +121,21 @@ class Database:
 
         self._get_conn().commit()
 
-    def save_character(self, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc_id, llm_model=None):
+    def save_character(self, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model=None):
         query = """
-            INSERT INTO characters (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc_id, llm_model)
+            INSERT INTO characters (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(pc_id) DO UPDATE SET
+            ON CONFLICT(Actor_id) DO UPDATE SET
                 name=excluded.name, personality=excluded.personality, goals=excluded.goals, backstory=excluded.backstory,
                 tts=excluded.tts, tts_model=excluded.tts_model, reference_audio_filename=excluded.reference_audio_filename,
                 llm_model=excluded.llm_model
         """
-        self._execute_query(query, (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc_id, llm_model), commit=True)
-        print(f"Character '{name}' for pc_id '{pc_id}' saved/updated.")
+        self._execute_query(query, (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model), commit=True)
+        print(f"Character '{name}' for Actor_id '{Actor_id}' saved/updated.")
 
-    def get_character(self, pc_id):
+    def get_character(self, Actor_id):
         # Ensure llm_model is selected
-        row = self._execute_query("SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc_id, llm_model FROM characters WHERE pc_id=?", (pc_id,), fetchone=True)
+        row = self._execute_query("SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model FROM characters WHERE Actor_id=?", (Actor_id,), fetchone=True)
         return dict(row) if row else None
 
     def save_story_entry(self, speaker, text, narrator_audio_path=None):
@@ -152,77 +152,77 @@ class Database:
         rows = self._execute_query("SELECT id, speaker, text, timestamp, narrator_audio_path FROM story_log ORDER BY timestamp ASC", fetchall=True)
         return [dict(row) for row in rows] if rows else []
 
-    def save_training_data(self, dataset, pc_id):
-        query = "INSERT INTO training_data (pc_id, input_text, output_text) VALUES (?, ?, ?)"
-        self._execute_query(query, (pc_id, dataset["input"], dataset["output"]), commit=True)
+    def save_training_data(self, dataset, Actor_id):
+        query = "INSERT INTO training_data (Actor_id, input_text, output_text) VALUES (?, ?, ?)"
+        self._execute_query(query, (Actor_id, dataset["input"], dataset["output"]), commit=True)
 
-    def get_training_data_for_pc(self, pc_id):
-        rows = self._execute_query("SELECT input_text, output_text FROM training_data WHERE pc_id=?", (pc_id,), fetchall=True)
+    def get_training_data_for_Actor(self, Actor_id):
+        rows = self._execute_query("SELECT input_text, output_text FROM training_data WHERE Actor_id=?", (Actor_id,), fetchall=True)
         return [{"input": row["input_text"], "output": row["output_text"]} for row in rows] if rows else []
 
-    def save_client_token(self, pc_id, token):
+    def save_client_token(self, Actor_id, token):
         """Saves a new token, defaults status to 'Registered'."""
-        # Ensure character exists or create a placeholder if it's PC1
-        if pc_id == "PC1" and not self.get_character("PC1"):
+        # Ensure character exists or create a placeholder if it's Actor1
+        if Actor_id == "Actor1" and not self.get_character("Actor1"):
             self.save_character(name="ServerChar", personality="Host", goals="Manage story", backstory="Server's own character",
-                                tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, pc_id="PC1", llm_model=None)
+                                tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, Actor_id="Actor1", llm_model=None)
 
         query = """
-            INSERT INTO client_tokens (pc_id, token, status, last_seen) VALUES (?, ?, 'Registered', ?)
-            ON CONFLICT(pc_id) DO UPDATE SET token=excluded.token, status='Registered', last_seen=excluded.last_seen
+            INSERT INTO client_tokens (Actor_id, token, status, last_seen) VALUES (?, ?, 'Registered', ?)
+            ON CONFLICT(Actor_id) DO UPDATE SET token=excluded.token, status='Registered', last_seen=excluded.last_seen
         """
-        self._execute_query(query, (pc_id, token, datetime.now(timezone.utc).isoformat()), commit=True)
-        print(f"Token for '{pc_id}' saved. Status: Registered.")
+        self._execute_query(query, (Actor_id, token, datetime.now(timezone.utc).isoformat()), commit=True)
+        print(f"Token for '{Actor_id}' saved. Status: Registered.")
 
-    def get_client_token_details(self, pc_id):
-        row = self._execute_query("SELECT token, status, ip_address, client_port, last_seen FROM client_tokens WHERE pc_id=?", (pc_id,), fetchone=True)
+    def get_client_token_details(self, Actor_id):
+        row = self._execute_query("SELECT token, status, ip_address, client_port, last_seen FROM client_tokens WHERE Actor_id=?", (Actor_id,), fetchone=True)
         return dict(row) if row else None
 
-    def get_token(self, pc_id):
-        details = self.get_client_token_details(pc_id)
+    def get_token(self, Actor_id):
+        details = self.get_client_token_details(Actor_id)
         return details['token'] if details else None
 
-    def register_client(self, pc_id, ip_address, client_port):
+    def register_client(self, Actor_id, ip_address, client_port):
         """Updates IP, port, and last_seen for a client. Sets status to 'Online_Heartbeat' initially."""
         # Server will verify API responsiveness separately to move to 'Online_Responsive'
         timestamp_utc_iso = datetime.now(timezone.utc).isoformat()
         query = """
             UPDATE client_tokens
             SET ip_address = ?, client_port = ?, last_seen = ?, status = 'Online_Heartbeat'
-            WHERE pc_id = ?
+            WHERE Actor_id = ?
         """
-        self._execute_query(query, (ip_address, client_port, timestamp_utc_iso, pc_id), commit=True)
-        print(f"Client '{pc_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
+        self._execute_query(query, (ip_address, client_port, timestamp_utc_iso, Actor_id), commit=True)
+        print(f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
 
-    def update_client_status(self, pc_id, new_status, last_seen_iso=None):
+    def update_client_status(self, Actor_id, new_status, last_seen_iso=None):
         """Updates the status and optionally last_seen for a client."""
         if last_seen_iso is None:
             last_seen_iso = datetime.now(timezone.utc).isoformat()
 
-        query = "UPDATE client_tokens SET status = ?, last_seen = ? WHERE pc_id = ?"
-        self._execute_query(query, (new_status, last_seen_iso, pc_id), commit=True)
-        # print(f"Status for {pc_id} updated to {new_status}.")
+        query = "UPDATE client_tokens SET status = ?, last_seen = ? WHERE Actor_id = ?"
+        self._execute_query(query, (new_status, last_seen_iso, Actor_id), commit=True)
+        # print(f"Status for {Actor_id} updated to {new_status}.")
 
 
     def get_clients_for_story_progression(self):
         """
         Gets clients that are fully responsive and ready for story interaction.
-        Excludes PC1 as it's handled by CharacterServer.
+        Excludes Actor1 as it's handled by CharacterServer.
         """
         # Define "recent" more dynamically, e.g., 2.5 * heartbeat interval (assuming 60s)
         # This could be passed from config or ClientManager if it knows the heartbeat interval
         recent_threshold = (datetime.now(timezone.utc) - timedelta(seconds=150)).isoformat()
         query = """
-            SELECT pc_id, ip_address, client_port
+            SELECT Actor_id, ip_address, client_port
             FROM client_tokens
-            WHERE status = 'Online_Responsive' AND last_seen >= ? AND pc_id != 'PC1'
+            WHERE status = 'Online_Responsive' AND last_seen >= ? AND Actor_id != 'Actor1'
         """
         rows = self._execute_query(query, (recent_threshold,), fetchall=True)
         return [dict(row) for row in rows] if rows else []
 
     def get_all_client_statuses(self):
         """Retrieves all client details for dashboard or admin purposes."""
-        query = "SELECT pc_id, ip_address, client_port, last_seen, status FROM client_tokens WHERE pc_id != 'PC1' ORDER BY pc_id ASC"
+        query = "SELECT Actor_id, ip_address, client_port, last_seen, status FROM client_tokens WHERE Actor_id != 'Actor1' ORDER BY Actor_id ASC"
         rows = self._execute_query(query, fetchall=True)
         return [dict(row) for row in rows] if rows else []
 
@@ -233,3 +233,20 @@ class Database:
 
     def __del__(self):
         self.close()
+
+    def update_story_entry(self, entry_id, new_text=None, new_audio_path=None):
+        """Update the text and/or audio path of a story_log entry by id."""
+        sets = []
+        params = []
+        if new_text is not None:
+            sets.append("text = ?")
+            params.append(new_text)
+        if new_audio_path is not None:
+            sets.append("narrator_audio_path = ?")
+            params.append(new_audio_path)
+        if not sets:
+            return False
+        params.append(entry_id)
+        query = f"UPDATE story_log SET {', '.join(sets)} WHERE id = ?"
+        self._execute_query(query, tuple(params), commit=True)
+        return True
