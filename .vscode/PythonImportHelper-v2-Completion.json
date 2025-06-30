@@ -549,14 +549,6 @@
         "documentation": {}
     },
     {
-        "label": "hf_hub_download",
-        "importPath": "huggingface_hub",
-        "description": "huggingface_hub",
-        "isExtraImport": true,
-        "detail": "huggingface_hub",
-        "documentation": {}
-    },
-    {
         "label": "argparse",
         "kind": 6,
         "isExtraImport": true,
@@ -4409,15 +4401,6 @@
         "importPath": "CharacterClient.src.tts_manager",
         "description": "CharacterClient.src.tts_manager",
         "peekOfCode": "class TTSManager:\n    def __init__(self, tts_service_name: str, model_name: str = None, language: str = 'en'):\n        self.service_name = tts_service_name\n        self.model_name = model_name\n        self.language = language\n        self.tts_instance = None\n        self.is_initialized = False\n        os.environ['TTS_HOME'] = CLIENT_TTS_MODELS_PATH # For Coqui TTS\n        os.makedirs(os.path.join(CLIENT_TTS_MODELS_PATH, \"tts_models\"), exist_ok=True)\n        # print(f\"Client TTSManager: Initializing for service '{self.service_name}'...\")",
-        "detail": "CharacterClient.src.tts_manager",
-        "documentation": {}
-    },
-    {
-        "label": "PIPER_VOICES_REPO",
-        "kind": 5,
-        "importPath": "CharacterClient.src.tts_manager",
-        "description": "CharacterClient.src.tts_manager",
-        "peekOfCode": "PIPER_VOICES_REPO = \"rhasspy/piper-voices\"\nclass TTSManager:\n    def __init__(self, tts_service_name: str, model_name: str = None, language: str = 'en'):\n        self.service_name = tts_service_name\n        self.model_name = model_name\n        self.language = language\n        self.tts_instance = None\n        self.is_initialized = False\n        os.environ['TTS_HOME'] = CLIENT_TTS_MODELS_PATH # For Coqui TTS\n        os.makedirs(os.path.join(CLIENT_TTS_MODELS_PATH, \"tts_models\"), exist_ok=True)",
         "detail": "CharacterClient.src.tts_manager",
         "documentation": {}
     },
