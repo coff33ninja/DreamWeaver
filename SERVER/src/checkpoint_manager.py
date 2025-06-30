@@ -5,14 +5,16 @@ import json
 from .config import DB_PATH, ADAPTERS_PATH, BASE_CHECKPOINT_PATH, BASE_DATA_PATH # Import from config
 
 # Path for server-specific adapters (PC1)
-# TODO: Make "TinyLLaMA" and "PC1" dynamic or configurable if multiple server models are supported.
-SERVER_ADAPTER_SPECIFIC_PATH = os.path.join(ADAPTERS_PATH, "TinyLLaMA", "PC1")
+# Now configurable via CheckpointManager arguments for model and PC ID.
 
 class CheckpointManager:
-    def __init__(self):
+    def __init__(self, server_model_name="TinyLLaMA", server_pc_id="PC1"):
+        self.server_model_name = server_model_name
+        self.server_pc_id = server_pc_id
+        self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_pc_id)
         os.makedirs(BASE_CHECKPOINT_PATH, exist_ok=True)
         # Ensure the specific server adapter path for PC1 also exists, as it's a target for copying
-        os.makedirs(SERVER_ADAPTER_SPECIFIC_PATH, exist_ok=True)
+        os.makedirs(self.server_adapter_specific_path, exist_ok=True)
 
 
     def list_checkpoints(self):
@@ -36,10 +38,10 @@ class CheckpointManager:
                 shutil.copy(DB_PATH, os.path.join(checkpoint_dir, "dream_weaver.db"))
 
             # 2. Save the server's LLM adapters
-            if os.path.exists(SERVER_ADAPTER_SPECIFIC_PATH): # Use SERVER_ADAPTER_SPECIFIC_PATH
-                shutil.copytree(SERVER_ADAPTER_SPECIFIC_PATH, os.path.join(checkpoint_dir, "PC1_adapters"))
+            if os.path.exists(self.server_adapter_specific_path): # Use SERVER_ADAPTER_SPECIFIC_PATH
+                shutil.copytree(self.server_adapter_specific_path, os.path.join(checkpoint_dir, f"{self.server_pc_id}_adapters"))
             else:
-                print(f"Warning: Server LLM adapters not found at {SERVER_ADAPTER_SPECIFIC_PATH}. Skipping adapter save.")
+                print(f"Warning: Server LLM adapters not found at {self.server_adapter_specific_path}. Skipping adapter save.")
 
             return f"Checkpoint '{checkpoint_name}' saved successfully.", self.list_checkpoints()
         except Exception as e:
@@ -61,13 +63,13 @@ class CheckpointManager:
 
 
             # 2. Restore the server's LLM adapters
-            adapters_in_checkpoint = os.path.join(checkpoint_dir, "PC1_adapters")
+            adapters_in_checkpoint = os.path.join(checkpoint_dir, f"{self.server_pc_id}_adapters")
             if os.path.exists(adapters_in_checkpoint):
-                if os.path.exists(SERVER_ADAPTER_SPECIFIC_PATH): # Use SERVER_ADAPTER_SPECIFIC_PATH
-                    shutil.rmtree(SERVER_ADAPTER_SPECIFIC_PATH) # Remove existing adapters before copying
-                shutil.copytree(adapters_in_checkpoint, SERVER_ADAPTER_SPECIFIC_PATH) # Use SERVER_ADAPTER_SPECIFIC_PATH
+                if os.path.exists(self.server_adapter_specific_path): # Use SERVER_ADAPTER_SPECIFIC_PATH
+                    shutil.rmtree(self.server_adapter_specific_path) # Remove existing adapters before copying
+                shutil.copytree(adapters_in_checkpoint, self.server_adapter_specific_path) # Use SERVER_ADAPTER_SPECIFIC_PATH
             else:
-                print(f"Warning: No PC1 adapters found in checkpoint '{checkpoint_name}'. Skipping adapter load.")
+                print(f"Warning: No {self.server_pc_id} adapters found in checkpoint '{checkpoint_name}'. Skipping adapter load.")
 
             return f"Checkpoint '{checkpoint_name}' loaded. PLEASE RESTART THE APPLICATION for changes to take effect."
         except Exception as e:

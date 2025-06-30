@@ -132,7 +132,7 @@ async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm
         progress(0, desc=f"Loading checkpoint '{checkpoint_name}'...")
     status = await asyncio.to_thread(checkpoint_manager.load_checkpoint, checkpoint_name)
     new_story_data = []
-    if "loaded" in status.lower() and "restart" not in status.lower():
+    if status and "loaded" in status.lower() and "restart" not in status.lower():
         if hasattr(progress, '__call__'):
             progress(0.8, desc="Refreshing story history...")
         new_story_data = await asyncio.to_thread(get_story_playback_data_sync)
