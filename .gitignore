@@ -1,2 +1,5 @@
 /CharacterClient/venv
 /SERVER/venv
+/SERVER/.venv
+/SERVER/.vscode
+/SERVER/src/__pycache__
