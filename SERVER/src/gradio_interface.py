@@ -10,14 +10,11 @@ import os
 import asyncio # Added asyncio
 
 # --- Instances ---
-# These are global instances; care must be taken if server scales to multiple workers.
-# For typical Gradio/FastAPI on Uvicorn with multiple workers, these might need
-# to be managed differently (e.g., per-request or using a shared service pattern).
-# However, for a single-worker setup or simple multi-threading, this can work.
-db_instance = Database(DB_PATH)
-client_manager_instance = ClientManager(db_instance) # ClientManager needs db
-csm_instance = CSM() # CSM initializes its own db, narrator, character_server, client_manager
-checkpoint_manager = CheckpointManager() # CheckpointManager uses paths from server config
+# These are now initialized inside launch_interface for process safety.
+db_instance = None
+client_manager_instance = None
+csm_instance = None
+checkpoint_manager = None
 
 # --- Helper Functions (mostly synchronous as they are simple UI updates or fast DB calls) ---
 def update_model_dropdown(service_name: str):
@@ -30,6 +27,8 @@ def get_story_playback_data_sync(): # Renamed to indicate it's synchronous
     """Fetches story history from DB and formats it for Gradio Chatbot."""
     # This is a DB read, usually fast. If it becomes slow for very long stories,
     # it could be made async with to_thread and a progress indicator.
+    if db_instance is None:
+        raise RuntimeError("Database instance not initialized. Call launch_interface() first.")
     history_raw = db_instance.get_story_history()
     chatbot_messages = []
     if not history_raw:
@@ -53,7 +52,10 @@ def get_story_playback_data_sync(): # Renamed to indicate it's synchronous
 # --- Asynchronous Gradio Event Handlers ---
 
 async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, pc_id, progress=gr.Progress(track_tqdm=True)):
-    """Asynchronously creates a character, handles file copy with progress."""
+    if db_instance is None:
+        raise RuntimeError("Database instance not initialized. Call launch_interface() first.")
+    if client_manager_instance is None:
+        raise RuntimeError("ClientManager instance not initialized. Call launch_interface() first.")
     progress(0, desc="Initializing character creation...")
 
     reference_audio_filename = None
@@ -100,6 +102,8 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
 
 
 async def story_interface_async(audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)):
+    if csm_instance is None:
+        raise RuntimeError("CSM instance not initialized. Call launch_interface() first.")
     if audio_input_path is None:
         return "No audio input. Record or upload narration.", {}, {}
     if hasattr(progress, '__call__'):
@@ -118,6 +122,8 @@ async def story_interface_async(audio_input_path, chaos_level_value, progress=gr
         return f"Error: {e}", {}, {}
 
 async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=True)):
+    if checkpoint_manager is None:
+        raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
         progress(0, desc="Saving checkpoint...")
     status, new_choices = await asyncio.to_thread(checkpoint_manager.save_checkpoint, name_prefix)
@@ -126,6 +132,8 @@ async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=Tru
     return status, {"choices": new_choices, "value": new_choices[0] if new_choices else None}
 
 async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm=True)):
+    if checkpoint_manager is None:
+        raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if not checkpoint_name:
         return "Please select a checkpoint to load.", []
     if hasattr(progress, '__call__'):
@@ -141,6 +149,8 @@ async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm
     return status, new_story_data
 
 async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True)):
+    if checkpoint_manager is None:
+        raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
         progress(0, desc=f"Exporting story as {export_format}...")
     status, filename = await asyncio.to_thread(checkpoint_manager.export_story, export_format)
@@ -150,6 +160,12 @@ async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True
 
 # --- Gradio UI Launch ---
 def launch_interface():
+    global db_instance, client_manager_instance, csm_instance, checkpoint_manager
+    db_instance = Database(DB_PATH)
+    client_manager_instance = ClientManager(db_instance)
+    csm_instance = CSM()
+    checkpoint_manager = CheckpointManager()
+
     import gradio.themes as themes
     with gr.Blocks(theme=themes.Soft(primary_hue=themes.colors.indigo, secondary_hue=themes.colors.blue)) as demo:
         gr.Markdown("# Dream Weaver Interface")
