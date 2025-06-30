@@ -4,10 +4,12 @@ from .database import Database
 from .tts_manager import TTSManager # Server's TTSManager
 from .client_manager import ClientManager
 from .checkpoint_manager import CheckpointManager
+from . import env_manager
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
 import shutil
 import os
 import asyncio # Added asyncio
+import sys
 
 # --- Instances ---
 # These are now initialized inside launch_interface for process safety.
@@ -15,6 +17,7 @@ db_instance = None
 client_manager_instance = None
 csm_instance = None
 checkpoint_manager = None
+env_manager_instance = None # Not really an instance, but follows the pattern
 
 # --- Helper Functions (mostly synchronous as they are simple UI updates or fast DB calls) ---
 def update_model_dropdown(service_name: str):
@@ -23,30 +26,24 @@ def update_model_dropdown(service_name: str):
     default_value = models[0] if models else None
     return {"choices": models, "value": default_value}
 
-def get_story_playback_data_sync(): # Renamed to indicate it's synchronous
-    """Fetches story history from DB and formats it for Gradio Chatbot."""
-    # This is a DB read, usually fast. If it becomes slow for very long stories,
-    # it could be made async with to_thread and a progress indicator.
+async def get_story_playback_data_async():
+    """Fetches story history from DB and formats it for Gradio Chatbot asynchronously."""
+    # This DB read is usually fast. For very long stories, running in a thread avoids blocking the event loop.
     if db_instance is None:
-        raise RuntimeError("Database instance not initialized. Call launch_interface() first.")
-    history_raw = db_instance.get_story_history()
+        raise RuntimeError(
+            "Database instance not initialized. Call launch_interface() first."
+        )
+    history_raw = await asyncio.to_thread(db_instance.get_story_history)
     chatbot_messages = []
     if not history_raw:
-        return [["System", "No story history found."]]
-
+        return [{"role": "system", "content": "No story history found."}]
     for entry in history_raw:
         speaker = entry.get("speaker", "Unknown")
         text = entry.get("text", "")
         timestamp = entry.get("timestamp", "")
-        # Format for chatbot
         formatted_text = f"_{timestamp}_ \n**{speaker}:** {text}"
-        if speaker.lower() == "narrator":
-            chatbot_messages.append([formatted_text, None])
-        else:
-            if chatbot_messages and chatbot_messages[-1][0] is not None and chatbot_messages[-1][1] is None:
-                 chatbot_messages[-1][1] = formatted_text
-            else:
-                chatbot_messages.append([None, formatted_text])
+        role = "user" if speaker.lower() == "narrator" else "assistant"
+        chatbot_messages.append({"role": role, "content": formatted_text})
     return chatbot_messages
 
 # --- Asynchronous Gradio Event Handlers ---
@@ -143,7 +140,7 @@ async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm
     if status and "loaded" in status.lower() and "restart" not in status.lower():
         if hasattr(progress, '__call__'):
             progress(0.8, desc="Refreshing story history...")
-        new_story_data = await asyncio.to_thread(get_story_playback_data_sync)
+        new_story_data = await get_story_playback_data_async()
     if hasattr(progress, '__call__'):
         progress(1, desc=f"Checkpoint '{checkpoint_name}' load attempt finished.")
     return status, new_story_data
@@ -158,13 +155,55 @@ async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True
         progress(1, desc="Story export finished.")
     return status, {"value": filename if filename else "", "visible": bool(filename)}
 
+async def get_env_vars_async():
+    """Async wrapper to load and display .env variables."""
+    status = await asyncio.to_thread(env_manager.get_env_file_status)
+    masked_vars = await asyncio.to_thread(env_manager.load_env_vars, mask_sensitive=True)
+
+    vars_display_str = "\n".join([f"{k}={v}" for k, v in masked_vars.items()])
+    if not vars_display_str:
+        vars_display_str = "# No variables found or .env file does not exist."
+
+    return status, vars_display_str
+
+async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
+    """Async wrapper to save .env variables."""
+    progress(0, desc="Saving .env file...")
+    status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_vars_str)
+    progress(1, desc="Save complete.")
+
+    # After saving, refresh the display
+    new_status, new_vars_display = await get_env_vars_async()
+
+    return status_msg, new_status, new_vars_display
+
+async def set_api_provider_async(selected_provider, progress=gr.Progress()):
+    """Async handler to update API_PROVIDER in .env file."""
+    progress(0, desc="Updating API provider...")
+    new_var = f"API_PROVIDER={selected_provider}"
+    status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
+    progress(1, desc="Provider updated.")
+    # After saving, refresh the display
+    new_status, new_vars_display = await get_env_vars_async()
+    return status_msg, new_status, new_vars_display, selected_provider
+
+async def restart_server_async(progress=gr.Progress()):
+    progress(0, desc="Restarting server...")
+    await asyncio.sleep(1)
+    progress(1, desc="Server restarting now.")
+    # Attempt to restart the current process
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+    return "Server is restarting..."
+
 # --- Gradio UI Launch ---
 def launch_interface():
-    global db_instance, client_manager_instance, csm_instance, checkpoint_manager
+    global db_instance, client_manager_instance, csm_instance, checkpoint_manager, env_manager_instance
     db_instance = Database(DB_PATH)
     client_manager_instance = ClientManager(db_instance)
     csm_instance = CSM()
     checkpoint_manager = CheckpointManager()
+    # env_manager is a module of functions, no instance needed, but keeping pattern
+    env_manager_instance = env_manager
 
     import gradio.themes as themes
     with gr.Blocks(theme=themes.Soft(primary_hue=themes.colors.indigo, secondary_hue=themes.colors.blue)) as demo:
@@ -219,13 +258,18 @@ def launch_interface():
             with gr.TabItem("Story Playback & History"):
                 # ... (Story Playback UI - get_story_playback_data_sync is likely fine for initial load and refresh unless very slow) ...
                 gr.Markdown("## Review Story History")
-                story_playback_chatbot = gr.Chatbot(label="Full Story Log", height=600, show_copy_button=True, bubble_full_width=False)
+                story_playback_chatbot = gr.Chatbot(
+                    label="Full Story Log",
+                    height=600,
+                    show_copy_button=True,
+                    type="messages",
+                )
                 refresh_story_btn = gr.Button("Refresh Story History")
 
                 # Making this async too for consistency, though DB reads are usually fast.
                 async def refresh_story_async_wrapper(progress=gr.Progress()):
                     progress(0, desc="Fetching history...")
-                    data = await asyncio.to_thread(get_story_playback_data_sync)
+                    data = await get_story_playback_data_async()
                     progress(1, desc="History loaded.")
                     return data
 
@@ -269,6 +313,91 @@ def launch_interface():
                             inputs=[export_format_radio],
                             outputs=[export_status_text, export_filename_display]
                         )
+
+            with gr.TabItem("API Keys & .env"):
+                gr.Markdown("## Manage Environment Variables (.env)")
+                gr.Markdown(
+                    "Add or update environment variables here, such as `HUGGING_FACE_HUB_TOKEN` or `NASA_API_KEY`. "
+                    "Values for keys containing 'TOKEN', 'KEY', or 'SECRET' will be masked for security. "
+                    "**A server restart is required for any changes to take effect.**"
+                )
+
+                env_status_text = gr.Textbox(label=".env File Status", interactive=False)
+
+                # --- API Provider Dropdown ---
+                api_providers = ["huggingface", "openai", "google", "custom"]
+                provider_token_vars = {
+                    "huggingface": ("HUGGING_FACE_HUB_TOKEN", "Hugging Face Token", "hf_..."),
+                    "openai": ("OPENAI_API_KEY", "OpenAI API Key", "sk-..."),
+                    "google": ("GOOGLE_API_KEY", "Google API Key", "AIza..."),
+                    "custom": ("CUSTOM_API_TOKEN", "Custom API Token", "token...")
+                }
+                def get_current_provider():
+                    env_vars = env_manager.load_env_vars(mask_sensitive=False)
+                    return env_vars.get("API_PROVIDER", api_providers[0])
+                api_provider_dropdown = gr.Dropdown(api_providers, label="API Provider", value=get_current_provider())
+                api_provider_status = gr.Textbox(label="API Provider Status", interactive=False)
+
+                # Dynamic token input
+                def get_token_field(provider):
+                    var, label, placeholder = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
+                    return {"visible": True, "label": label, "placeholder": placeholder, "value": ""}
+                def hide_token_field():
+                    return {"visible": False}
+                token_input = gr.Textbox(label="API Token", visible=True, placeholder="token...")
+
+                # Show/hide and relabel token input on provider change
+                def update_token_field(provider):
+                    if provider in provider_token_vars:
+                        var, label, placeholder = provider_token_vars[provider]
+                        return {"visible": True, "label": label, "placeholder": placeholder, "value": ""}
+                    return {"visible": False}
+                api_provider_dropdown.change(update_token_field, inputs=[api_provider_dropdown], outputs=[token_input])
+
+                # Save token handler
+                async def save_token_async(provider, token, progress=gr.Progress()):
+                    progress(0, desc="Saving token...")
+                    var, _, _ = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
+                    new_var = f"{var}={token}"
+                    status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
+                    progress(1, desc="Token saved.")
+                    new_status, new_vars_display = await get_env_vars_async()
+                    return status_msg, new_status, new_vars_display, ""
+                save_token_btn = gr.Button("Save API Token", variant="primary")
+                save_token_status = gr.Textbox(label="Token Save Status", interactive=False)
+
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### Current Variables (Masked)")
+                        current_env_vars_display = gr.Textbox(
+                            label="Current .env Content",
+                            lines=10,
+                            interactive=False,
+                            placeholder="# .env file content will be shown here."
+                        )
+                    with gr.Column():
+                        gr.Markdown("### Add or Update Variables")
+                        new_env_vars_input = gr.Textbox(
+                            label="New or Updated Variables (one per line)",
+                            lines=10,
+                            placeholder="HUGGING_FACE_HUB_TOKEN=hf_...\nANOTHER_KEY=some_value"
+                        )
+
+                save_env_btn = gr.Button("Save to .env", variant="primary")
+                save_status_text = gr.Textbox(label="Save Status", interactive=False)
+                restart_required_text = gr.Markdown("**Restart required for changes to take effect.**", visible=False)
+                restart_btn = gr.Button("Restart Server", variant="stop", visible=False)
+
+                # Event Handlers for this tab
+                def show_restart():
+                    return {"visible": True}, {"visible": True}
+                demo.load(get_env_vars_async, inputs=[], outputs=[env_status_text, current_env_vars_display])
+                save_env_btn.click(save_env_vars_async, inputs=[new_env_vars_input], outputs=[save_status_text, env_status_text, current_env_vars_display])
+                save_env_btn.click(show_restart, inputs=[], outputs=[restart_required_text, restart_btn])
+                api_provider_dropdown.change(set_api_provider_async, inputs=[api_provider_dropdown], outputs=[api_provider_status, env_status_text, current_env_vars_display, api_provider_dropdown])
+                save_token_btn.click(save_token_async, inputs=[api_provider_dropdown, token_input], outputs=[save_token_status, env_status_text, current_env_vars_display, token_input])
+                save_token_btn.click(show_restart, inputs=[], outputs=[restart_required_text, restart_btn])
+                restart_btn.click(restart_server_async, inputs=[], outputs=[])
 
         gr.Markdown("---")
         gr.Markdown("View [Server Dashboard](/dashboard) (Server Perf & Client Status)")

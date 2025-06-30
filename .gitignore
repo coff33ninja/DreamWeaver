@@ -3,3 +3,4 @@
 /SERVER/.venv
 /SERVER/.vscode
 /SERVER/src/__pycache__
+/CharacterClient/.venv

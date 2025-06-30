@@ -1,7 +1,7 @@
 import os
 
 # Determine the project root directory, assuming this config.py is in SERVER/src
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Base path for all data
 BASE_DATA_PATH = os.getenv("DREAMWEAVER_DATA_PATH", os.path.join(PROJECT_ROOT, "data"))

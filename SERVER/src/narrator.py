@@ -2,12 +2,10 @@ import os
 from whisper import load_model
 from pyannote.audio import Pipeline
 import asyncio # Added asyncio
-
-# Placeholder for narrator audio saving if not done by whisper itself
-# from .config import NARRATOR_AUDIO_PATH # Example, if narrator saves its own audio
-# import os
-# import uuid
-
+import re
+import webbrowser
+from .config import NARRATOR_AUDIO_PATH
+import uuid
 class Narrator:
     def __init__(self, model_size="base"):
         print(f"Narrator: Loading Whisper STT model '{model_size}'...")
@@ -19,12 +17,34 @@ class Narrator:
             self.stt_model = None
 
         # Diarization can be complex to set up and run, making it optional or simplified
-        try:
-            print("Narrator: Loading Pyannote Diarization pipeline...")
-            self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
-            print("Narrator: Pyannote Diarization pipeline loaded.")
-        except Exception as e:
-            print(f"Narrator: Warning - Pyannote Diarization pipeline failed to load: {e}. Diarization will be skipped.")
+        # --- Advanced Diarization Pipeline Loader ---
+        max_retries = 3
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                print("Narrator: Loading Pyannote Diarization pipeline...")
+                self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+                print("Narrator: Pyannote Diarization pipeline loaded.")
+                break
+            except Exception as e:
+                print(f"\n[Narrator] Pyannote Diarization pipeline failed to load (attempt {retry_count+1}/{max_retries}): {e}\n")
+                # --- Open any URLs in the error message (e.g., TOS, token, or gated model pages) ---
+                urls = re.findall(r'https?://[^\s]+', str(e))
+                if urls:
+                    for url in urls:
+                        print(f"[Narrator] Opening required page: {url}")
+                        webbrowser.open(url)
+                    print("[Narrator] Please complete any required actions in your browser (e.g., accept TOS, login, or generate a token).\n")
+                else:
+                    print("[Narrator] No actionable URLs found in the error message.")
+                user_input = input("Type 'r' to retry, 's' to skip diarization, or just press Enter to retry: ").strip().lower()
+                if user_input == 's':
+                    print("[Narrator] Skipping diarization pipeline setup.")
+                    self.diarization_pipeline = None
+                    break
+                retry_count += 1
+        else:
+            print("[Narrator] Maximum retries reached. Diarization will be skipped.")
             self.diarization_pipeline = None
 
         self.default_speaker_name = "Narrator"
@@ -34,10 +54,24 @@ class Narrator:
         Performs Speech-to-Text (STT) on the given audio file.
         Optionally performs diarization if configured.
         Returns a dictionary: {"text": "transcribed text", "audio_path": "path_to_input_audio", "speaker": "speaker_name"}
+        Also saves a copy of the audio to NARRATOR_AUDIO_PATH with a unique filename.
         """
         if not self.stt_model:
             print("Narrator: STT model not loaded. Cannot process narration.")
             return {"text": "", "audio_path": audio_filepath, "speaker": self.default_speaker_name}
+
+        # Save a copy of the audio file to NARRATOR_AUDIO_PATH
+        try:
+            os.makedirs(NARRATOR_AUDIO_PATH, exist_ok=True)
+            ext = os.path.splitext(audio_filepath)[1]
+            unique_name = f"narration_{uuid.uuid4().hex}{ext}"
+            dest_path = os.path.join(NARRATOR_AUDIO_PATH, unique_name)
+            with open(audio_filepath, "rb") as src, open(dest_path, "wb") as dst:
+                dst.write(src.read())
+            print(f"Narrator: Saved a copy of the audio to {dest_path}")
+        except Exception as e:
+            print(f"Narrator: Failed to save audio copy: {e}")
+            dest_path = audio_filepath  # fallback
 
         try:
             print(f"Narrator: Transcribing audio file: {audio_filepath}...")
@@ -63,11 +97,11 @@ class Narrator:
                 except Exception as e:
                     print(f"Narrator: Error during diarization: {e}. Using default speaker.")
 
-            return {"text": transcribed_text, "audio_path": audio_filepath, "speaker": speaker}
+            return {"text": transcribed_text, "audio_path": dest_path, "speaker": speaker}
 
         except Exception as e:
             print(f"Narrator: Error processing narration for {audio_filepath}: {e}")
-            return {"text": "", "audio_path": audio_filepath, "speaker": self.default_speaker_name}
+            return {"text": "", "audio_path": dest_path, "speaker": self.default_speaker_name}
 
 if __name__ == '__main__':
     # This test requires a sample audio file.

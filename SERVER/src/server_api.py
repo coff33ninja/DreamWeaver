@@ -33,7 +33,7 @@ class SaveTrainingDataRequest(BaseModel):
     token: str
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "dataset": {"input": "Narrator: The wind howls.", "output": "I shiver."},
                 "pc_id": "PC2",
@@ -47,7 +47,7 @@ class RegisterClientRequest(BaseModel):
     client_port: int
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "pc_id": "PC2",
                 "token": "your_token_here",
@@ -61,7 +61,7 @@ class HeartbeatRequest(BaseModel):
     status: Optional[str] = None
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "pc_id": "PC2",
                 "token": "your_token_here",

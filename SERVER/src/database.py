@@ -1,23 +1,40 @@
 import sqlite3
+import threading
 from datetime import datetime, timezone, timedelta
 
 class Database:
     def __init__(self, db_path):
         self.db_path = db_path
-        try:
-            self.conn = sqlite3.connect(db_path)
-            self.conn.row_factory = sqlite3.Row
-        except sqlite3.Error as e:
-            print(f"Error connecting to database at {db_path}: {e}")
-            raise
-        self._ensure_schema() # Changed from create_tables to _ensure_schema for clarity
+        self._thread_local = threading.local()
+        # The initial connection for the main thread is made here to ensure the schema exists.
+        # Other threads will create their own connections on first use.
+        self._get_conn()
+        self._ensure_schema()
+        print("Database schema ensured.")
+
+    def _get_conn(self):
+        """
+        Gets a database connection for the current thread.
+        If one doesn't exist, it creates it.
+        """
+        if not hasattr(self._thread_local, 'conn'):
+            try:
+                # Each thread gets its own connection. No need for check_same_thread=False.
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                self._thread_local.conn = conn
+            except sqlite3.Error as e:
+                print(f"Error connecting to database in thread {threading.get_ident()}: {e}")
+                raise
+        return self._thread_local.conn
 
     def _execute_query(self, query, params=None, commit=False, fetchone=False, fetchall=False):
+        conn = self._get_conn()
         try:
-            cursor = self.conn.cursor()
+            cursor = conn.cursor()
             cursor.execute(query, params or ())
             if commit:
-                self.conn.commit()
+                conn.commit()
             if fetchone:
                 return cursor.fetchone()
             if fetchall:
@@ -102,8 +119,7 @@ class Database:
         self._ensure_column("client_tokens", "client_port", "INTEGER")
         self._ensure_column("client_tokens", "status", "TEXT DEFAULT 'Registered'") # Ensure default is set if column added
 
-        self.conn.commit()
-        print("Database schema ensured.")
+        self._get_conn().commit()
 
     def save_character(self, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, pc_id, llm_model=None):
         query = """
@@ -211,9 +227,9 @@ class Database:
         return [dict(row) for row in rows] if rows else []
 
     def close(self):
-        if self.conn:
-            self.conn.close()
-            # print("Database connection closed.") # Can be noisy
+        if hasattr(self._thread_local, 'conn'):
+            self._thread_local.conn.close()
+            del self._thread_local.conn
 
     def __del__(self):
         self.close()
