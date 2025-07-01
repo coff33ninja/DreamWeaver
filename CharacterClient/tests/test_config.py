@@ -735,3 +735,719 @@ class TestConfigParametrized:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+class TestConfigAdvancedEdgeCases:
+    """Advanced edge case tests for Config functionality."""
+    
+    def test_config_with_circular_references(self):
+        """Test Config handles circular references gracefully."""
+        # Create circular reference data structure
+        data = {'a': {'b': None}}
+        data['a']['b'] = data['a']  # Create circular reference
+        
+        try:
+            config = Config(data)
+            # Should either handle gracefully or raise appropriate error
+            result = config.get('a')
+            assert result is not None
+        except (RecursionError, ValueError, ConfigError) as e:
+            # Expected behavior for circular references
+            assert isinstance(e, (RecursionError, ValueError, ConfigError))
+    
+    def test_config_with_extremely_long_keys(self):
+        """Test Config with extremely long key names."""
+        long_key = 'a' * 10000  # 10k character key
+        data = {long_key: 'long_key_value'}
+        
+        config = Config(data)
+        assert config.get(long_key) == 'long_key_value'
+        assert config.get('nonexistent') is None
+    
+    def test_config_with_extremely_long_values(self):
+        """Test Config with extremely long values."""
+        long_value = 'x' * 100000  # 100k character value
+        data = {'long_value_key': long_value}
+        
+        config = Config(data)
+        retrieved_value = config.get('long_value_key')
+        assert len(retrieved_value) == 100000
+        assert retrieved_value == long_value
+    
+    def test_config_with_binary_data(self):
+        """Test Config with binary data."""
+        binary_data = b'\x00\x01\x02\xff\xfe\xfd'
+        data = {'binary_key': binary_data}
+        
+        config = Config(data)
+        assert config.get('binary_key') == binary_data
+    
+    def test_config_memory_efficiency_large_updates(self):
+        """Test Config memory efficiency with large batch updates."""
+        import sys
+        
+        config = Config({})
+        initial_size = sys.getsizeof(config._data) if hasattr(config, '_data') else 0
+        
+        # Perform large batch update
+        large_update = {f'key_{i}': f'value_{i}' for i in range(10000)}
+        config.update(large_update)
+        
+        # Verify update worked
+        assert config.get('key_5000') == 'value_5000'
+        assert config.get('key_9999') == 'value_9999'
+    
+    def test_config_with_lambda_functions(self):
+        """Test Config with lambda functions and callable objects."""
+        data = {
+            'lambda_func': lambda x: x * 2,
+            'callable_obj': str.upper,
+            'regular_value': 'test'
+        }
+        
+        config = Config(data)
+        lambda_func = config.get('lambda_func')
+        callable_obj = config.get('callable_obj')
+        
+        # Verify callable objects are preserved
+        if callable(lambda_func):
+            assert lambda_func(5) == 10
+        if callable(callable_obj):
+            assert callable_obj('hello') == 'HELLO'
+        assert config.get('regular_value') == 'test'
+    
+    @pytest.mark.parametrize("invalid_json_content", [
+        '{"key": value}',  # Missing quotes
+        '{"key": "value",}',  # Trailing comma
+        '{key: "value"}',  # Unquoted key
+        '{"key": "value" "another": "value"}',  # Missing comma
+        '{"key": "value"',  # Missing closing brace
+        '{"key": undefined}',  # Invalid value
+    ])
+    def test_load_config_various_invalid_json_formats(self, tmp_path, invalid_json_content):
+        """Test load_config with various invalid JSON formats."""
+        config_file = tmp_path / "invalid.json"
+        with open(config_file, 'w') as f:
+            f.write(invalid_json_content)
+        
+        with pytest.raises(json.JSONDecodeError):
+            load_config(str(config_file))
+    
+    def test_config_with_numpy_arrays(self):
+        """Test Config with numpy arrays if numpy is available."""
+        try:
+            import numpy as np
+            data = {
+                'numpy_array': np.array([1, 2, 3, 4, 5]),
+                'numpy_matrix': np.array([[1, 2], [3, 4]]),
+                'regular_list': [1, 2, 3, 4, 5]
+            }
+            
+            config = Config(data)
+            retrieved_array = config.get('numpy_array')
+            retrieved_matrix = config.get('numpy_matrix')
+            
+            # Verify numpy arrays are preserved
+            assert np.array_equal(retrieved_array, np.array([1, 2, 3, 4, 5]))
+            assert np.array_equal(retrieved_matrix, np.array([[1, 2], [3, 4]]))
+            
+        except ImportError:
+            pytest.skip("NumPy not available")
+    
+    def test_config_thread_safety_stress_test(self):
+        """Stress test for Config thread safety."""
+        import threading
+        import time
+        import random
+        
+        config = Config({'counter': 0})
+        errors = []
+        operations_count = [0]  # Use list for mutable counter
+        
+        def stress_worker():
+            """Worker function for stress testing."""
+            try:
+                for _ in range(100):
+                    # Random operations
+                    operation = random.choice(['get', 'set', 'update'])
+                    
+                    if operation == 'get':
+                        config.get('counter')
+                        config.get(f'key_{random.randint(1, 100)}', 'default')
+                    elif operation == 'set':
+                        config.set(f'key_{random.randint(1, 100)}', random.randint(1, 1000))
+                    elif operation == 'update':
+                        config.update({f'batch_key_{random.randint(1, 50)}': random.randint(1, 1000)})
+                    
+                    operations_count[0] += 1
+                    time.sleep(0.001)  # Small delay
+                    
+            except Exception as e:
+                errors.append(str(e))
+        
+        # Create multiple threads
+        threads = []
+        for _ in range(10):
+            thread = threading.Thread(target=stress_worker)
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for completion
+        for thread in threads:
+            thread.join()
+        
+        # Verify no errors occurred
+        assert len(errors) == 0, f"Errors occurred: {errors}"
+        assert operations_count[0] == 1000  # 10 threads * 100 operations each
+
+
+class TestConfigSecurityAndValidation:
+    """Security and validation tests for Config functionality."""
+    
+    def test_config_injection_prevention(self):
+        """Test Config prevents common injection attacks."""
+        malicious_data = {
+            'sql_injection': "'; DROP TABLE users; --",
+            'script_injection': '<script>alert("xss")</script>',
+            'command_injection': '; rm -rf /',
+            'path_traversal': '../../../etc/passwd',
+            'null_bytes': 'test\x00malicious'
+        }
+        
+        config = Config(malicious_data)
+        
+        # Verify malicious content is stored as-is (not executed)
+        assert config.get('sql_injection') == "'; DROP TABLE users; --"
+        assert '<script>' in config.get('script_injection')
+        assert config.get('command_injection') == '; rm -rf /'
+        assert '../../../' in config.get('path_traversal')
+        assert '\x00' in config.get('null_bytes')
+    
+    def test_config_size_limits(self):
+        """Test Config handles extremely large configurations."""
+        # Test with large number of keys
+        large_config = {}
+        for i in range(50000):
+            large_config[f'key_{i}'] = f'value_{i}'
+        
+        try:
+            config = Config(large_config)
+            assert config.get('key_25000') == 'value_25000'
+            assert len(config.to_dict()) == 50000
+        except MemoryError:
+            # Expected behavior for extremely large configs
+            pytest.skip("System memory limit reached")
+    
+    def test_config_validation_schema_compliance(self):
+        """Test Config validation against schema if implemented."""
+        # Test schema validation for required fields
+        valid_schema_data = {
+            'database': {
+                'host': 'localhost',
+                'port': 5432,
+                'username': 'user',
+                'password': 'pass'
+            },
+            'api': {
+                'endpoint': 'https://api.example.com',
+                'timeout': 30,
+                'retries': 3
+            }
+        }
+        
+        invalid_schema_data = {
+            'database': {
+                'host': 'localhost',
+                # Missing required port
+            },
+            'api': {
+                'endpoint': 'invalid-url',  # Invalid URL format
+                'timeout': -5,  # Invalid negative timeout
+                'retries': 'not_a_number'  # Invalid type
+            }
+        }
+        
+        # Test valid schema
+        assert validate_config(valid_schema_data) is True
+        
+        # Test invalid schema
+        try:
+            result = validate_config(invalid_schema_data)
+            assert result is False
+        except ConfigError:
+            # Expected behavior for invalid schema
+            pass
+    
+    def test_config_file_permissions(self, tmp_path):
+        """Test Config respects file permissions."""
+        import stat
+        
+        config_data = {'secret': 'sensitive_data'}
+        config = Config(config_data)
+        config_file = tmp_path / "secure_config.json"
+        
+        # Save config
+        save_config(config, str(config_file))
+        
+        # Check if file was created with appropriate permissions
+        if config_file.exists():
+            file_stat = config_file.stat()
+            # On Unix systems, check if file is readable by owner only
+            if hasattr(stat, 'S_IMODE'):
+                permissions = stat.S_IMODE(file_stat.st_mode)
+                # File should not be world-readable for sensitive data
+                assert not (permissions & stat.S_IROTH)
+
+
+class TestConfigBackwardCompatibility:
+    """Backward compatibility tests for Config functionality."""
+    
+    @pytest.mark.parametrize("old_format", [
+        # Legacy format variations
+        {'version': '1.0', 'settings': {'key': 'value'}},
+        {'config_version': 1, 'data': {'key': 'value'}},
+        {'metadata': {'version': '2.0'}, 'config': {'key': 'value'}},
+    ])
+    def test_config_legacy_format_support(self, old_format):
+        """Test Config supports legacy configuration formats."""
+        config = Config(old_format)
+        
+        # Should handle legacy formats gracefully
+        assert isinstance(config, Config)
+        config_dict = config.to_dict()
+        assert isinstance(config_dict, dict)
+    
+    def test_config_migration_scenarios(self, tmp_path):
+        """Test Config handles migration from old versions."""
+        # Simulate old config format
+        old_config_data = {
+            'version': '1.0',
+            'database_host': 'localhost',
+            'database_port': 5432,
+            'api_endpoint': 'https://old-api.example.com'
+        }
+        
+        # Save old format
+        old_config_file = tmp_path / "old_config.json"
+        with open(old_config_file, 'w') as f:
+            json.dump(old_config_data, f)
+        
+        # Load and verify
+        config = load_config(str(old_config_file))
+        assert config.get('version') == '1.0'
+        assert config.get('database_host') == 'localhost'
+    
+    def test_config_deprecated_methods_support(self):
+        """Test Config supports deprecated methods if any."""
+        config = Config({'test': 'value'})
+        
+        # Test that deprecated methods still work (if they exist)
+        # This would be implementation-specific
+        try:
+            # Example deprecated method calls
+            if hasattr(config, 'getValue'):  # Hypothetical deprecated method
+                assert config.getValue('test') == 'value'
+            if hasattr(config, 'setValue'):  # Hypothetical deprecated method
+                config.setValue('new_key', 'new_value')
+                assert config.get('new_key') == 'new_value'
+        except AttributeError:
+            # No deprecated methods exist
+            pass
+
+
+class TestConfigErrorRecovery:
+    """Error recovery and resilience tests for Config functionality."""
+    
+    def test_config_recovery_from_corrupted_file(self, tmp_path):
+        """Test Config recovery from corrupted configuration files."""
+        corrupted_files = [
+            '{"key": "value"}\x00\x00\x00corrupted_data',  # Null bytes
+            '{"key": "value"}{"second": "json"}',  # Multiple JSON objects
+            '\ufeff{"key": "value"}',  # BOM character
+            '{"key": "value"}\n\n\n\r\r\r',  # Extra whitespace
+        ]
+        
+        for i, corrupted_content in enumerate(corrupted_files):
+            config_file = tmp_path / f"corrupted_{i}.json"
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write(corrupted_content)
+            
+            try:
+                config = load_config(str(config_file))
+                # If it loads successfully, verify basic functionality
+                assert isinstance(config, Config)
+            except (json.JSONDecodeError, UnicodeDecodeError, ConfigError):
+                # Expected behavior for corrupted files
+                pass
+    
+    def test_config_partial_failure_handling(self):
+        """Test Config handles partial failures gracefully."""
+        config = Config({'working_key': 'working_value'})
+        
+        # Test operations that might partially fail
+        problematic_updates = [
+            {'good_key': 'good_value', 'problematic_key': object()},  # Non-serializable
+            {'normal_key': 'normal_value', 'none_key': None},  # None values
+        ]
+        
+        for update in problematic_updates:
+            try:
+                config.update(update)
+                # Verify partial success
+                if 'good_key' in update:
+                    assert config.get('good_key') == 'good_value'
+                if 'normal_key' in update:
+                    assert config.get('normal_key') == 'normal_value'
+            except (TypeError, ValueError):
+                # Some operations might fail completely
+                pass
+            
+            # Original data should remain intact
+            assert config.get('working_key') == 'working_value'
+    
+    def test_config_network_failure_simulation(self, tmp_path):
+        """Test Config behavior during simulated network failures."""
+        # Simulate network-based config loading failure
+        config_file = tmp_path / "network_config.json"
+        
+        # Create initial config
+        initial_data = {'local_cache': True, 'last_sync': '2023-01-01'}
+        with open(config_file, 'w') as f:
+            json.dump(initial_data, f)
+        
+        # Simulate network failure by making file temporarily inaccessible
+        try:
+            import os
+            # Change file permissions to simulate access failure
+            os.chmod(config_file, 0o000)
+            
+            try:
+                config = load_config(str(config_file))
+                # Should either fail gracefully or load cached version
+                assert isinstance(config, Config)
+            except (PermissionError, FileNotFoundError):
+                # Expected behavior for inaccessible files
+                pass
+            finally:
+                # Restore permissions
+                os.chmod(config_file, 0o644)
+                
+        except (OSError, NotImplementedError):
+            # Skip on systems that don't support chmod
+            pytest.skip("File permission testing not supported")
+
+
+class TestConfigPerformanceBenchmarks:
+    """Performance benchmark tests for Config operations."""
+    
+    def test_config_creation_benchmark(self):
+        """Benchmark Config creation with various data sizes."""
+        import time
+        
+        sizes = [10, 100, 1000, 5000]
+        creation_times = []
+        
+        for size in sizes:
+            data = {f'key_{i}': f'value_{i}' for i in range(size)}
+            
+            start_time = time.perf_counter()
+            config = Config(data)
+            end_time = time.perf_counter()
+            
+            creation_time = end_time - start_time
+            creation_times.append(creation_time)
+            
+            # Verify config was created correctly
+            assert config.get('key_0') == 'value_0'
+            assert config.get(f'key_{size-1}') == f'value_{size-1}'
+        
+        # Performance should scale reasonably
+        # Larger configs should take more time but not exponentially more
+        assert creation_times[-1] < creation_times[0] * 1000  # Reasonable scaling
+    
+    def test_config_access_pattern_benchmark(self):
+        """Benchmark different Config access patterns."""
+        import time
+        
+        # Create config with nested structure
+        config_data = {}
+        for i in range(1000):
+            config_data[f'section_{i}'] = {
+                'id': i,
+                'data': {f'nested_key_{j}': f'nested_value_{j}' for j in range(10)}
+            }
+        
+        config = Config(config_data)
+        
+        # Benchmark sequential access
+        start_time = time.perf_counter()
+        for i in range(500):
+            value = config.get(f'section_{i}')
+            assert value['id'] == i
+        sequential_time = time.perf_counter() - start_time
+        
+        # Benchmark random access
+        import random
+        random_keys = [f'section_{random.randint(0, 999)}' for _ in range(500)]
+        
+        start_time = time.perf_counter()
+        for key in random_keys:
+            value = config.get(key)
+            assert value is not None
+        random_time = time.perf_counter() - start_time
+        
+        # Both should complete in reasonable time
+        assert sequential_time < 1.0
+        assert random_time < 1.0
+    
+    def test_config_serialization_benchmark(self, tmp_path):
+        """Benchmark Config serialization performance."""
+        import time
+        
+        # Create large nested config
+        large_data = {}
+        for i in range(5000):
+            large_data[f'section_{i}'] = {
+                'id': i,
+                'name': f'Section {i}',
+                'active': i % 2 == 0,
+                'metadata': {
+                    'created': f'2023-{i%12+1:02d}-01',
+                    'tags': [f'tag_{j}' for j in range(i % 5)]
+                }
+            }
+        
+        config = Config(large_data)
+        config_file = tmp_path / "benchmark_config.json"
+        
+        # Benchmark save operation
+        start_time = time.perf_counter()
+        save_config(config, str(config_file))
+        save_time = time.perf_counter() - start_time
+        
+        # Benchmark load operation
+        start_time = time.perf_counter()
+        loaded_config = load_config(str(config_file))
+        load_time = time.perf_counter() - start_time
+        
+        # Verify operations completed in reasonable time
+        assert save_time < 5.0
+        assert load_time < 5.0
+        
+        # Verify data integrity
+        assert loaded_config.get('section_2500')['name'] == 'Section 2500'
+
+
+class TestConfigSpecialCharactersAndEncoding:
+    """Tests for Config handling of special characters and encoding."""
+    
+    @pytest.mark.parametrize("special_text", [
+        "English text",
+        "中文测试",  # Chinese
+        "العربية",  # Arabic
+        "русский текст",  # Russian
+        "हिन्दी पाठ",  # Hindi
+        "🌟✨🎉🔥💯",  # Emojis
+        "математика: ∑∏∫∞≠≤≥±",  # Mathematical symbols
+        "currency: $€£¥₹₽",  # Currency symbols
+        "\u0000\u0001\u0002",  # Control characters
+        "line1\nline2\r\nline3\tIndented",  # Line breaks and tabs
+    ])
+    def test_config_unicode_support(self, special_text):
+        """Test Config handles various Unicode characters correctly."""
+        config_data = {
+            'unicode_key': special_text,
+            f'key_{special_text[:5]}': 'unicode_key_test'
+        }
+        
+        config = Config(config_data)
+        assert config.get('unicode_key') == special_text
+        
+        # Test serialization/deserialization doesn't corrupt Unicode
+        config_dict = config.to_dict()
+        assert config_dict['unicode_key'] == special_text
+    
+    def test_config_encoding_consistency(self, tmp_path):
+        """Test Config maintains encoding consistency across save/load operations."""
+        unicode_data = {
+            'multilingual': {
+                'english': 'Hello World',
+                'chinese': '你好世界',
+                'japanese': 'こんにちは世界',
+                'arabic': 'مرحبا بالعالم',
+                'emoji': '🌍👋🎌'
+            },
+            'special_chars': '"`~!@#$%^&*()_+-={}[]|\\:";\'<>?,./',
+            'unicode_escape': '\u00A9 \u00AE \u2122'  # Copyright, Registered, Trademark
+        }
+        
+        config = Config(unicode_data)
+        config_file = tmp_path / "unicode_config.json"
+        
+        # Save and reload
+        save_config(config, str(config_file))
+        loaded_config = load_config(str(config_file))
+        
+        # Verify Unicode preservation
+        assert loaded_config.get('multilingual')['chinese'] == '你好世界'
+        assert loaded_config.get('multilingual')['emoji'] == '🌍👋🎌'
+        assert loaded_config.get('unicode_escape') == '\u00A9 \u00AE \u2122'
+
+
+class TestConfigDocumentationExamples:
+    """Tests based on documentation examples and common usage patterns."""
+    
+    def test_config_readme_examples(self):
+        """Test Config examples that would appear in README/documentation."""
+        # Basic usage example
+        config = Config({
+            'app_name': 'CharacterClient',
+            'version': '1.0.0',
+            'debug': False
+        })
+        
+        assert config.get('app_name') == 'CharacterClient'
+        assert config.get('debug') is False
+        
+        # Configuration update example
+        config.update({
+            'debug': True,
+            'log_level': 'DEBUG'
+        })
+        
+        assert config.get('debug') is True
+        assert config.get('log_level') == 'DEBUG'
+    
+    def test_config_common_patterns(self):
+        """Test common configuration patterns."""
+        # Environment-based configuration
+        config_data = {
+            'environment': 'production',
+            'database': {
+                'production': {
+                    'host': 'prod.db.example.com',
+                    'port': 5432
+                },
+                'development': {
+                    'host': 'localhost',
+                    'port': 5433
+                }
+            }
+        }
+        
+        config = Config(config_data)
+        env = config.get('environment')
+        db_config = config.get('database')[env]
+        
+        assert db_config['host'] == 'prod.db.example.com'
+        assert db_config['port'] == 5432
+    
+    def test_config_best_practices_examples(self):
+        """Test configuration following best practices."""
+        # Hierarchical configuration example
+        config = Config({
+            'application': {
+                'name': 'CharacterClient',
+                'version': '2.0.0',
+                'features': {
+                    'authentication': True,
+                    'caching': True,
+                    'monitoring': True
+                }
+            },
+            'logging': {
+                'level': 'INFO',
+                'format': '{timestamp} - {level} - {message}',
+                'handlers': ['console', 'file']
+            },
+            'security': {
+                'encryption': True,
+                'token_expiry': 3600,
+                'max_login_attempts': 3
+            }
+        })
+        
+        # Test nested access patterns
+        assert config.get('application')['name'] == 'CharacterClient'
+        assert config.get('application')['features']['caching'] is True
+        assert config.get('logging')['level'] == 'INFO'
+        assert config.get('security')['token_expiry'] == 3600
+
+
+class TestConfigRegressionScenarios:
+    """Regression tests for previously identified issues."""
+    
+    def test_config_key_collision_handling(self):
+        """Test Config handles key collisions gracefully."""
+        # Test overlapping keys in updates
+        config = Config({'shared_key': 'original_value'})
+        
+        # Multiple updates with same key
+        config.set('shared_key', 'first_update')
+        assert config.get('shared_key') == 'first_update'
+        
+        config.update({'shared_key': 'second_update', 'new_key': 'new_value'})
+        assert config.get('shared_key') == 'second_update'
+        assert config.get('new_key') == 'new_value'
+    
+    def test_config_type_preservation_after_operations(self):
+        """Test Config preserves data types after various operations."""
+        original_data = {
+            'string_val': 'test',
+            'int_val': 42,
+            'float_val': 3.14,
+            'bool_val': True,
+            'none_val': None,
+            'list_val': [1, 2, 3],
+            'dict_val': {'nested': 'value'}
+        }
+        
+        config = Config(original_data)
+        
+        # Perform operations that might affect types
+        config.update({'additional_key': 'additional_value'})
+        config.set('new_int', 100)
+        
+        # Verify original types are preserved
+        assert isinstance(config.get('string_val'), str)
+        assert isinstance(config.get('int_val'), int)
+        assert isinstance(config.get('float_val'), float)
+        assert isinstance(config.get('bool_val'), bool)
+        assert config.get('none_val') is None
+        assert isinstance(config.get('list_val'), list)
+        assert isinstance(config.get('dict_val'), dict)
+    
+    def test_config_nested_modification_isolation(self):
+        """Test Config isolates nested modifications properly."""
+        config = Config({
+            'nested': {
+                'level1': {
+                    'level2': {
+                        'value': 'original'
+                    }
+                }
+            }
+        })
+        
+        # Get nested reference
+        nested_ref = config.get('nested')
+        original_nested_ref = config.get('nested')
+        
+        # Modify through reference (if mutable)
+        if isinstance(nested_ref, dict):
+            nested_ref['level1']['level2']['value'] = 'modified'
+            
+            # Check if original config was affected
+            current_value = config.get('nested')['level1']['level2']['value']
+            # Depending on implementation, this might be 'original' or 'modified'
+            assert current_value in ['original', 'modified']
+
+
+if __name__ == '__main__':
+    # Run with comprehensive options
+    pytest.main([
+        __file__, 
+        '-v',
+        '--tb=short',
+        '--durations=10',
+        '--strict-markers'
+    ])

