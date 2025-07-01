@@ -31,18 +31,29 @@ class CharacterClient:
         self.tts = None
         self.llm = None
         self.local_reference_audio_path: Optional[str] = None
+        # Initialization is now non-blocking. Use async_init() after construction.
+        print(f"CharacterClient created for Actor_ID: {self.Actor_id} (call async_init() to finish setup)")
 
-        # Note: __init__ itself cannot be async.
-        # Blocking operations during init (like initial model loading in LLM/TTS) will still block here.
-        # A more advanced pattern would involve an async factory or an explicit async `await self.async_init()` call.
-        # For now, keeping init largely synchronous for LLM/TTS model loading.
-        print(f"Initializing CharacterClient for Actor_ID: {self.Actor_id} to connect to SERVER: {self.server_url}")
+    @classmethod
+    async def create(cls, token: str, Actor_id: str, server_url: str, client_port: int):
+        """Async factory for CharacterClient."""
+        self = cls(token, Actor_id, server_url, client_port)
+        await self.async_init()
+        return self
 
-        # _register_with_server and fetch_traits are blocking but involve network I/O.
-        # These could be made async and awaited in an async factory or a separate startup method if desired.
-        if not self._register_with_server_blocking():
+    async def async_init(self):
+        # Perform all blocking/model loading operations here, using asyncio.to_thread for blocking I/O
+        def _register():
+            return self._register_with_server_blocking()
+        def _fetch():
+            return self._fetch_traits_blocking()
+        def _download():
+            return self._download_reference_audio_blocking()
+
+        registered = await asyncio.to_thread(_register)
+        if not registered:
             print(f"CRITICAL: Client {self.Actor_id} failed to register. Functionality may be impaired.")
-        self.character = self._fetch_traits_blocking()
+        self.character = await asyncio.to_thread(_fetch)
         if not self.character:
             print(f"CRITICAL: Failed to fetch character traits for {self.Actor_id}. Using defaults.")
             self.character = {
@@ -54,10 +65,8 @@ class CharacterClient:
                 "language": "en",
                 "llm_model": None
             }
-
         if self.character and self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename"):
-            self._download_reference_audio_blocking() # Blocking for init
-        # Pass speaker_wav_path to TTSManager for XTTSv2
+            await asyncio.to_thread(_download)
         tts_model = self.character.get("tts_model") or "en"
         tts_service = self.character.get("tts", "gtts")
         tts_language = self.character.get("language", "en")
@@ -73,6 +82,7 @@ class CharacterClient:
             model_name=llm_model,
             Actor_id=self.Actor_id
         )
+        print(f"CharacterClient for {self.Actor_id} async-initialized (LLM Ready: {self.llm.is_initialized if self.llm else 'N/A'}, TTS Ready: {self.tts.is_initialized if self.tts else 'N/A'}).")
 
     # --- Blocking I/O methods for use during __init__ or when async context isn't readily available ---
     def _download_reference_audio_blocking(self):
@@ -267,23 +277,25 @@ def initialize_character_client(token: str, Actor_id: str, server_url: str, clie
     global _heartbeat_task_instance
     if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:
         ensure_client_directories()
-        client_instance = CharacterClient(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)
-        app.state.character_client_instance = client_instance
-
-        llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else "N/A"
-        tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else "N/A"
-        print(f"CharacterClient for {Actor_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).")
-
-        if _heartbeat_task_instance is None or _heartbeat_task_instance.done():
-            if client_instance:
+        # Use the async factory to create and initialize the client
+        async def _init():
+            client_instance = await CharacterClient.create(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)
+            app.state.character_client_instance = client_instance
+            llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else "N/A"
+            tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else "N/A"
+            print(f"CharacterClient for {Actor_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).")
+            if globals()["_heartbeat_task_instance"] is None or globals()["_heartbeat_task_instance"].done():
                 try:
                     loop = asyncio.get_running_loop()
-                    _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client_instance))
+                    globals()["_heartbeat_task_instance"] = loop.create_task(_heartbeat_task_runner(client_instance))
                     print(f"Async heartbeat task scheduled for client {Actor_id}.")
                 except RuntimeError:
-                     print(f"WARNING: No running event loop for async heartbeat task of {Actor_id}.")
-                     _heartbeat_task_instance = asyncio.create_task(_heartbeat_task_runner(client_instance))
-            else:
-                 print(f"Heartbeat task NOT scheduled for {Actor_id} due to client init failure.")
+                    print(f"WARNING: No running event loop for async heartbeat task of {Actor_id}.")
+                    globals()["_heartbeat_task_instance"] = asyncio.create_task(_heartbeat_task_runner(client_instance))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_init())
+        except RuntimeError:
+            asyncio.run(_init())
     else:
         print(f"CharacterClient for {Actor_id} already initialized.")
