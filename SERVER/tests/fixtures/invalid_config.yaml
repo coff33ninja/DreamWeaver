@@ -1,0 +1,5 @@
+database:
+  host: localhost
+  port: 5432
+- invalid_yaml_structure
+  missing_key_value
