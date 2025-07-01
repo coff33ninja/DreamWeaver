@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in FastAPI dependencies, ensuring the connection is closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,12 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Retrieve current server performance metrics and a detailed list of client statuses.
+    
+    Returns:
+        dict: A dictionary containing:
+            - server_performance: CPU usage percentage, memory usage percentage, used and total memory in GB.
+            - client_statuses: List of clients with actor ID, combined IP address and port, last seen timestamp (UTC), and status. Status values include: 'Registered', 'Offline', 'Online_Heartbeat', 'Online_Responsive', 'Error_API', 'Error_Unreachable', and 'Deactivated'.
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +77,11 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Serves the HTML page for the Hive monitoring dashboard, providing the frontend interface for viewing server performance and client statuses.
+    
+    The page includes embedded JavaScript that periodically fetches status data from the backend and updates the dashboard in real time.
+    Returns:
+        HTMLResponse: The rendered dashboard page.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.

@@ -16,6 +16,9 @@ app.include_router(dashboard_router)
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yield a database connection for use in API endpoint dependencies, ensuring the connection is closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -24,6 +27,9 @@ def get_db():
 
 # Dependency to get a ClientManager instance
 def get_client_manager(db: Database = Depends(get_db)):
+    """
+    Return a ClientManager instance initialized with the provided database connection.
+    """
     return ClientManager(db) # ClientManager now also uses the new DB methods
 
 # --- Pydantic Models ---
@@ -79,8 +85,13 @@ async def get_traits(
     client_manager: ClientManager = Depends(get_client_manager)
 ):
     """
-    Endpoint for clients to fetch their assigned character traits.
-    Requires a valid `Actor_id` and `token` for authentication.
+    Retrieve character traits for a client identified by Actor_id after validating authentication.
+    
+    Returns:
+        dict: Character traits data for the specified Actor_id if authentication succeeds.
+    
+    Raises:
+        HTTPException: If the token is invalid (401) or the character is not found (404).
     """
     if not client_manager.validate_token(Actor_id, token): # validate_token needs to be in ClientManager
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -97,6 +108,11 @@ async def save_training_data(
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
+    """
+    Save training data submitted by a client after validating authentication.
+    
+    Validates the provided token for the specified Actor_id and stores the submitted dataset in the database. Returns a success message upon completion or raises an HTTP 401 error if authentication fails, and HTTP 500 if saving the data encounters an error.
+    """
     if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -115,6 +131,14 @@ async def register_client_endpoint( # Renamed to avoid conflict with db.register
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
+    """
+    Register a client with the server using the provided Actor ID, token, and client port.
+    
+    Validates the client's token, records the client's IP address and port, and updates the database with the registration information. Returns a confirmation message upon successful registration.
+    
+    Raises:
+        HTTPException: If the token is invalid (401) or registration fails (500).
+    """
     client_ip = http_request.client.host if http_request.client else "unknown"
     if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid token for registration")
@@ -134,6 +158,15 @@ async def client_heartbeat(
     db: Database = Depends(get_db),
     client_manager: ClientManager = Depends(get_client_manager)
 ):
+    """
+    Handle client heartbeat signals by updating the client's status to "Online" and recording the current timestamp.
+    
+    Raises:
+    	HTTPException: If the provided token is invalid (401) or if an error occurs while updating the client status (500).
+    	
+    Returns:
+    	dict: Confirmation message indicating the heartbeat was received and the client is marked as online.
+    """
     if not client_manager.validate_token(request_data.Actor_id, request_data.token):
         raise HTTPException(status_code=401, detail="Invalid token for heartbeat")
 
@@ -155,8 +188,15 @@ async def get_reference_audio(
     client_manager: ClientManager = Depends(get_client_manager) # No db needed if just validating token
 ):
     """
-    Endpoint for authenticated clients to download reference audio files.
-    Requires `Actor_id` and `token` for validation.
+    Provides authenticated clients with access to reference audio files for voice cloning.
+    
+    Requires valid `Actor_id` and `token` query parameters for authentication. Validates the requested filename to prevent path traversal and ensures the file exists within the allowed reference audio directory. Returns the audio file as a WAV stream if all checks pass.
+    
+    Parameters:
+        filename (str): Name of the reference audio file to download.
+    
+    Returns:
+        FileResponse: The requested audio file as a streaming response with media type `audio/wav`.
     """
     if not client_manager.validate_token(Actor_id, token):
         raise HTTPException(status_code=401, detail="Invalid or expired token for audio download")

@@ -4,6 +4,9 @@ from datetime import datetime, timezone, timedelta
 
 class Database:
     def __init__(self, db_path):
+        """
+        Initialize the Database instance with the specified SQLite file path, set up thread-local storage for connections, and ensure the required database schema exists.
+        """
         self.db_path = db_path
         self._thread_local = threading.local()
         # The initial connection for the main thread is made here to ensure the schema exists.
@@ -14,8 +17,10 @@ class Database:
 
     def _get_conn(self):
         """
-        Gets a database connection for the current thread.
-        If one doesn't exist, it creates it.
+        Retrieve or create a SQLite database connection specific to the current thread.
+        
+        Returns:
+            sqlite3.Connection: The thread-local SQLite connection object.
         """
         if not hasattr(self._thread_local, 'conn'):
             try:
@@ -29,6 +34,19 @@ class Database:
         return self._thread_local.conn
 
     def _execute_query(self, query, params=None, commit=False, fetchone=False, fetchall=False):
+        """
+        Execute a SQL query with optional parameters and flexible result handling.
+        
+        Parameters:
+            query (str): The SQL query to execute.
+            params (tuple or list, optional): Parameters to substitute into the query.
+            commit (bool): If True, commits the transaction after execution.
+            fetchone (bool): If True, returns a single result row as a dictionary.
+            fetchall (bool): If True, returns all result rows as a list of dictionaries.
+        
+        Returns:
+            The query result based on the fetch options: a single row, a list of rows, the cursor object, or None if an error occurs.
+        """
         conn = self._get_conn()
         try:
             cursor = conn.cursor()
@@ -45,7 +63,14 @@ class Database:
             return None
 
     def _ensure_column(self, table_name, column_name, column_definition):
-        """Helper to add a column if it doesn't exist."""
+        """
+        Ensures that a specified column exists in a given table, adding it with the provided definition if missing.
+        
+        Parameters:
+            table_name (str): Name of the table to check or modify.
+            column_name (str): Name of the column to ensure exists.
+            column_definition (str): SQL definition for the column if it needs to be added.
+        """
         try:
             # Check if column exists (more robust way for SQLite)
             cursor = self._execute_query(f"PRAGMA table_info({table_name});", fetchall=True)
@@ -65,7 +90,11 @@ class Database:
 
 
     def _ensure_schema(self):
-        """Ensures all tables and specified columns exist."""
+        """
+        Create required tables and ensure all necessary columns exist in the database schema.
+        
+        This method creates the `characters`, `story_log`, `training_data`, and `client_tokens` tables if they do not already exist, and adds any missing columns needed for current application features. It also sets up default values and foreign key relationships as appropriate.
+        """
         self._execute_query("""
             CREATE TABLE IF NOT EXISTS characters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +151,11 @@ class Database:
         self._get_conn().commit()
 
     def save_character(self, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model=None):
+        """
+        Insert a new character or update an existing character's details in the database based on the provided Actor_id.
+        
+        If a character with the given Actor_id already exists, its attributes are updated; otherwise, a new character record is created.
+        """
         query = """
             INSERT INTO characters (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -135,33 +169,79 @@ class Database:
 
     def get_character(self, Actor_id):
         # Ensure llm_model is selected
+        """
+        Retrieve a character's details by their Actor ID.
+        
+        Parameters:
+            Actor_id (str): The unique identifier for the character.
+        
+        Returns:
+            dict or None: A dictionary containing the character's attributes if found, otherwise None.
+        """
         row = self._execute_query("SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model FROM characters WHERE Actor_id=?", (Actor_id,), fetchone=True)
         return dict(row) if row else None
 
     def save_story_entry(self, speaker, text, narrator_audio_path=None):
+        """
+        Insert a new entry into the story log with the specified speaker, text, optional narrator audio path, and the current UTC timestamp.
+        """
         query = "INSERT INTO story_log (speaker, text, narrator_audio_path, timestamp) VALUES (?, ?, ?, ?)"
         self._execute_query(query, (speaker, text, narrator_audio_path, datetime.now(timezone.utc).isoformat()), commit=True)
 
     def save_story(self, narration_text, character_texts, narrator_audio_path=None):
+        """
+        Saves a story progression by recording a narrator entry and corresponding character entries in the story log.
+        
+        Parameters:
+            narration_text (str): The narration text to be saved as the narrator's entry.
+            character_texts (dict): A mapping of character names to their respective dialogue or story text.
+            narrator_audio_path (str, optional): Path to the narrator's audio file, if available.
+        """
         self.save_story_entry("Narrator", narration_text, narrator_audio_path)
         for char_name, char_text in character_texts.items():
             self.save_story_entry(char_name, char_text)
         # print("Story progress saved.") # Can be too verbose
 
     def get_story_history(self):
+        """
+        Retrieve the complete story log history as a list of entries.
+        
+        Returns:
+            List[dict]: A list of dictionaries, each containing the fields 'id', 'speaker', 'text', 'timestamp', and 'narrator_audio_path' for each story log entry, ordered by ascending timestamp.
+        """
         rows = self._execute_query("SELECT id, speaker, text, timestamp, narrator_audio_path FROM story_log ORDER BY timestamp ASC", fetchall=True)
         return [dict(row) for row in rows] if rows else []
 
     def save_training_data(self, dataset, Actor_id):
+        """
+        Insert a new training data record for the specified Actor.
+        
+        Parameters:
+            dataset (dict): Dictionary containing 'input' and 'output' text fields.
+            Actor_id (str): Identifier for the actor associated with the training data.
+        """
         query = "INSERT INTO training_data (Actor_id, input_text, output_text) VALUES (?, ?, ?)"
         self._execute_query(query, (Actor_id, dataset["input"], dataset["output"]), commit=True)
 
     def get_training_data_for_Actor(self, Actor_id):
+        """
+        Retrieve all training data entries for a specified Actor.
+        
+        Parameters:
+            Actor_id (str): The unique identifier for the Actor whose training data is to be retrieved.
+        
+        Returns:
+            List[dict]: A list of dictionaries, each containing 'input' and 'output' keys with corresponding text values. Returns an empty list if no entries are found.
+        """
         rows = self._execute_query("SELECT input_text, output_text FROM training_data WHERE Actor_id=?", (Actor_id,), fetchall=True)
         return [{"input": row["input_text"], "output": row["output_text"]} for row in rows] if rows else []
 
     def save_client_token(self, Actor_id, token):
-        """Saves a new token, defaults status to 'Registered'."""
+        """
+        Saves or updates a client token for the specified Actor_id, setting its status to 'Registered' and updating the last seen timestamp.
+        
+        If the Actor_id is "Actor1" and no corresponding character exists, creates a placeholder character entry before saving the token.
+        """
         # Ensure character exists or create a placeholder if it's Actor1
         if Actor_id == "Actor1" and not self.get_character("Actor1"):
             self.save_character(name="ServerChar", personality="Host", goals="Manage story", backstory="Server's own character",
@@ -175,15 +255,34 @@ class Database:
         print(f"Token for '{Actor_id}' saved. Status: Registered.")
 
     def get_client_token_details(self, Actor_id):
+        """
+        Retrieve the client token details for a given Actor ID.
+        
+        Returns:
+            dict: A dictionary containing the token, status, IP address, client port, and last seen timestamp if found; otherwise, None.
+        """
         row = self._execute_query("SELECT token, status, ip_address, client_port, last_seen FROM client_tokens WHERE Actor_id=?", (Actor_id,), fetchone=True)
         return dict(row) if row else None
 
     def get_token(self, Actor_id):
+        """
+        Retrieve the token string associated with the specified Actor ID.
+        
+        Returns:
+            str or None: The token if found, otherwise None.
+        """
         details = self.get_client_token_details(Actor_id)
         return details['token'] if details else None
 
     def register_client(self, Actor_id, ip_address, client_port):
-        """Updates IP, port, and last_seen for a client. Sets status to 'Online_Heartbeat' initially."""
+        """
+        Registers or updates a client by setting its IP address, port, last seen timestamp, and status to 'Online_Heartbeat'.
+        
+        Parameters:
+            Actor_id (str): Unique identifier for the client.
+            ip_address (str): IP address of the client.
+            client_port (int): Port number used by the client.
+        """
         # Server will verify API responsiveness separately to move to 'Online_Responsive'
         timestamp_utc_iso = datetime.now(timezone.utc).isoformat()
         query = """
@@ -195,7 +294,14 @@ class Database:
         print(f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
 
     def update_client_status(self, Actor_id, new_status, last_seen_iso=None):
-        """Updates the status and optionally last_seen for a client."""
+        """
+        Update the status and optionally the last seen timestamp for a client token.
+        
+        Parameters:
+            Actor_id (str): The unique identifier for the client.
+            new_status (str): The new status to set for the client.
+            last_seen_iso (str, optional): ISO 8601 timestamp for the last seen time. If not provided, the current UTC time is used.
+        """
         if last_seen_iso is None:
             last_seen_iso = datetime.now(timezone.utc).isoformat()
 
@@ -206,8 +312,10 @@ class Database:
 
     def get_clients_for_story_progression(self):
         """
-        Gets clients that are fully responsive and ready for story interaction.
-        Excludes Actor1 as it's handled by CharacterServer.
+        Retrieve a list of clients that are currently responsive and eligible for story progression, excluding "Actor1".
+        
+        Returns:
+            List[dict]: A list of dictionaries containing 'Actor_id', 'ip_address', and 'client_port' for each responsive client.
         """
         # Define "recent" more dynamically, e.g., 2.5 * heartbeat interval (assuming 60s)
         # This could be passed from config or ClientManager if it knows the heartbeat interval
@@ -221,21 +329,42 @@ class Database:
         return [dict(row) for row in rows] if rows else []
 
     def get_all_client_statuses(self):
-        """Retrieves all client details for dashboard or admin purposes."""
+        """
+        Retrieve the status and connection details of all clients except "Actor1".
+        
+        Returns:
+            A list of dictionaries, each containing the Actor ID, IP address, client port, last seen timestamp, and status for each client.
+        """
         query = "SELECT Actor_id, ip_address, client_port, last_seen, status FROM client_tokens WHERE Actor_id != 'Actor1' ORDER BY Actor_id ASC"
         rows = self._execute_query(query, fetchall=True)
         return [dict(row) for row in rows] if rows else []
 
     def close(self):
+        """
+        Closes the current thread's SQLite database connection if it exists.
+        """
         if hasattr(self._thread_local, 'conn'):
             self._thread_local.conn.close()
             del self._thread_local.conn
 
     def __del__(self):
+        """
+        Ensures the database connection is closed when the Database object is deleted.
+        """
         self.close()
 
     def update_story_entry(self, entry_id, new_text=None, new_audio_path=None):
-        """Update the text and/or audio path of a story_log entry by id."""
+        """
+        Update the text and/or narrator audio path of a story log entry identified by its ID.
+        
+        Parameters:
+            entry_id (int): The unique identifier of the story log entry to update.
+            new_text (str, optional): The new text to set for the entry.
+            new_audio_path (str, optional): The new narrator audio file path to set.
+        
+        Returns:
+            bool: True if the entry was updated, False if no update parameters were provided.
+        """
         sets = []
         params = []
         if new_text is not None:
