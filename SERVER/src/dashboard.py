@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in FastAPI dependencies, ensuring it is closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,12 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Retrieve current server performance metrics and detailed statuses for all clients.
+    
+    Returns:
+        dict: A dictionary containing:
+            - 'server_performance': CPU usage percent, memory usage percent, used and total memory in GB.
+            - 'client_statuses': List of client dictionaries, each with actor ID, IP address (and port), last seen time (UTC), and status category.
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +77,9 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Serves the main HTML dashboard page for monitoring server performance and client statuses.
+    
+    The page includes a dark-themed layout, a server performance section, and a client status table. It uses embedded JavaScript to periodically fetch and display real-time status data from the backend API.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.

@@ -8,6 +8,14 @@ from .config import NARRATOR_AUDIO_PATH, DEFAULT_WHISPER_MODEL_SIZE, DIARIZATION
 import uuid
 class Narrator:
     def __init__(self, model_size=None):
+        """
+        Initialize the Narrator instance, loading the Whisper STT model and optionally setting up the Pyannote diarization pipeline.
+        
+        If diarization is enabled, attempts to load the diarization pipeline with a retry mechanism. On failure, prompts the user to complete required actions (such as accepting terms or logging in) by opening URLs found in error messages, and allows the user to retry or skip diarization setup. Sets a default speaker name and prepares storage for the last transcription.
+        
+        Parameters:
+            model_size (str, optional): The Whisper model size to load. If not provided, uses the configured default.
+        """
         if model_size is None:
             model_size = DEFAULT_WHISPER_MODEL_SIZE
         print(f"Narrator: Loading Whisper STT model '{model_size}'...")
@@ -56,10 +64,18 @@ class Narrator:
 
     async def process_narration(self, audio_filepath: str) -> dict:
         """
-        Performs Speech-to-Text (STT) on the given audio file.
-        Optionally performs diarization if configured.
-        Returns a dictionary: {"text": "transcribed text", "audio_path": "path_to_input_audio", "speaker": "speaker_name"}
-        Also saves a copy of the audio to NARRATOR_AUDIO_PATH with a unique filename.
+        Transcribes speech from an audio file and optionally identifies the primary speaker.
+        
+        Processes the given audio file using the Whisper STT model to generate a text transcription. If speaker diarization is enabled and available, determines the most prominent speaker in the audio. Saves a uniquely named copy of the audio file to a configured directory.
+        
+        Parameters:
+            audio_filepath (str): Path to the input audio file.
+        
+        Returns:
+            dict: A dictionary with keys:
+                - "text": The transcribed text.
+                - "audio_path": Path to the saved copy of the audio file.
+                - "speaker": The identified speaker label, or a default if diarization is unavailable.
         """
         if not self.stt_model:
             print("Narrator: STT model not loaded. Cannot process narration.")
@@ -116,7 +132,12 @@ class Narrator:
             return {"text": "", "audio_path": dest_path, "speaker": self.default_speaker_name}
 
     def correct_last_transcription(self, new_text: str):
-        """Update the last transcription with user-corrected text."""
+        """
+        Update the stored last transcription with a user-provided corrected text.
+        
+        Parameters:
+            new_text (str): The corrected transcription text to store.
+        """
         self.last_transcription = new_text
         print(f"Narrator: Last transcription corrected to: {new_text}")
 
@@ -126,6 +147,11 @@ if __name__ == '__main__':
     # E.g., using ffmpeg: ffmpeg -f lavfi -i "anoisesrc=d=5:c=1:r=16000:a=0.1" dummy_narrator_audio.wav
 
     async def test_narrator():
+        """
+        Asynchronously tests the Narrator class by generating a dummy audio file, performing transcription and diarization, and printing the results.
+        
+        Creates a 1-second 440 Hz sine wave WAV file if it does not exist, then uses the Narrator to process the file. Skips the test if the STT model fails to load or if audio file creation fails.
+        """
         print("Testing Narrator...")
         narrator_instance = Narrator(model_size="tiny") # Use tiny for faster test
         if not narrator_instance.stt_model:

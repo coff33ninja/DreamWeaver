@@ -12,14 +12,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 @pytest.fixture(scope="session")
 def temp_data_dir():
-    """Session-scoped temporary directory fixture."""
+    """
+    Provides a session-scoped temporary directory for use in tests.
+    
+    Yields:
+        str: The path to the temporary directory, which is automatically cleaned up after the test session.
+    """
     with tempfile.TemporaryDirectory() as temp_dir:
         yield temp_dir
 
 
 @pytest.fixture
 def mock_file_system():
-    """Mock file system operations."""
+    """
+    Pytest fixture that mocks file system operations to isolate tests from actual file I/O.
+    
+    This fixture patches `open`, `os.path.exists` (always returns True), `os.makedirs`, and JSON load/dump functions for the duration of the test.
+    """
     with patch('builtins.open'), \
          patch('os.path.exists', return_value=True), \
          patch('os.makedirs'), \
@@ -30,7 +39,12 @@ def mock_file_system():
 
 @pytest.fixture
 def sample_character_data():
-    """Sample character data for testing."""
+    """
+    Return a dictionary representing a sample character with predefined attributes for use in tests.
+    
+    Returns:
+        dict: A dictionary containing character attributes such as id, name, level, health, mana, experience, class, stats, and inventory.
+    """
     return {
         'id': 'sample-char-001',
         'name': 'Sample Hero',
@@ -57,7 +71,13 @@ def sample_character_data():
 
 @pytest.fixture
 def multiple_character_data():
-    """Multiple characters data for testing."""
+    """
+    Return a list of dictionaries representing multiple sample characters for testing.
+    
+    Each dictionary contains character attributes such as id, name, level, health, mana, class, stats, and inventory.
+    Returns:
+        List[dict]: List of character data dictionaries for use in tests involving multiple characters.
+    """
     return [
         {
             'id': 'multi-char-001',
@@ -93,12 +113,20 @@ def multiple_character_data():
 
 
 def pytest_runtest_setup(item):
-    """Setup hook for each test."""
+    """
+    Pytest hook called before each test for global setup.
+    
+    This function is a placeholder for any actions that need to occur before each test runs.
+    """
     # Add any global test setup here if needed
     pass
 
 
 def pytest_runtest_teardown(item):
-    """Teardown hook for each test."""
+    """
+    Pytest hook called after each test for global cleanup.
+    
+    This function is a placeholder for teardown logic to be executed after every test.
+    """
     # Add any global test cleanup here if needed
     pass
