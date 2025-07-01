@@ -5,7 +5,11 @@ class TestConfigSchema(unittest.TestCase):
     """Test configuration against predefined schemas."""
     
     def setUp(self):
-        """Set up schema definitions."""
+        """
+        Initializes the configuration schema definition for use in test cases.
+        
+        Defines a JSON schema as a Python dictionary specifying the required structure, types, and constraints for configuration data, including required and optional fields for 'database', 'server', and 'logging' sections.
+        """
         self.config_schema = {
             "type": "object",
             "properties": {
@@ -44,7 +48,9 @@ class TestConfigSchema(unittest.TestCase):
         }
         
     def test_valid_config_schema(self):
-        """Test that valid configuration passes schema validation."""
+        """
+        Verify that a configuration dictionary with all required fields and correct types passes manual schema validation checks.
+        """
         valid_config = {
             "database": {
                 "host": "localhost",
@@ -71,7 +77,9 @@ class TestConfigSchema(unittest.TestCase):
         self.assertIsInstance(valid_config["server"]["debug"], bool)
             
     def test_invalid_config_schema_missing_required(self):
-        """Test that configuration missing required fields fails validation."""
+        """
+        Verify that a configuration dictionary missing the required "database" section is correctly identified as invalid.
+        """
         invalid_config = {
             "server": {
                 "host": "localhost",
@@ -84,7 +92,11 @@ class TestConfigSchema(unittest.TestCase):
         self.assertNotIn("database", invalid_config)
             
     def test_invalid_config_schema_wrong_types(self):
-        """Test that configuration with wrong data types fails validation."""
+        """
+        Test that a configuration with incorrect data types for fields is detected as invalid.
+        
+        Specifically, verifies that the 'database.port' field is a string instead of the expected integer.
+        """
         invalid_config = {
             "database": {
                 "host": "localhost",
@@ -102,7 +114,11 @@ class TestConfigSchema(unittest.TestCase):
         self.assertNotIsInstance(invalid_config["database"]["port"], int)
             
     def test_invalid_config_schema_out_of_range(self):
-        """Test that configuration with out-of-range values fails validation."""
+        """
+        Test that a configuration with a database port value exceeding the valid range is detected as invalid.
+        
+        Asserts that the 'database.port' field is greater than 65535, indicating an out-of-range value.
+        """
         invalid_config = {
             "database": {
                 "host": "localhost",

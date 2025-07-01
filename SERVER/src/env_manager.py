@@ -5,20 +5,27 @@ from .config import PROJECT_ROOT
 ENV_FILE_PATH = os.path.join(PROJECT_ROOT, ".env")
 
 def get_env_file_status():
-    """Checks if the .env file exists and returns its status."""
+    """
+    Check whether the `.env` file exists at the project root and return a status message.
+    
+    Returns:
+        str: A message indicating if the `.env` file is found or will be created upon saving.
+    """
     if os.path.exists(ENV_FILE_PATH):
         return f".env file found at {ENV_FILE_PATH}"
     return f".env file not found. It will be created at {ENV_FILE_PATH} upon saving."
 
 def load_env_vars(mask_sensitive=False):
     """
-    Loads environment variables from the .env file.
-
-    Args:
-        mask_sensitive (bool): If True, masks values of keys containing 'TOKEN', 'KEY', or 'SECRET'.
-
+    Load environment variables from the `.env` file as a dictionary.
+    
+    If the `.env` file does not exist, returns an empty dictionary. Optionally masks values of keys containing "TOKEN", "KEY", or "SECRET" (case-insensitive) for security.
+    
+    Parameters:
+        mask_sensitive (bool): If True, masks sensitive variable values by partially hiding or replacing them.
+    
     Returns:
-        dict: A dictionary of environment variables.
+        dict: Dictionary of environment variable names and their corresponding values.
     """
     env_vars = {}
     if not os.path.exists(ENV_FILE_PATH):
@@ -40,8 +47,13 @@ def load_env_vars(mask_sensitive=False):
 
 def save_env_vars(new_vars_str: str):
     """
-    Saves or updates environment variables in the .env file from a string.
-    Each new variable should be on a new line, e.g., "KEY1=VALUE1\nKEY2=VALUE2".
+    Update or add environment variables in the `.env` file using assignments provided as a string.
+    
+    Parameters:
+        new_vars_str (str): Environment variable assignments, one per line in the format `KEY=VALUE`.
+    
+    Returns:
+        str: Success message if variables are saved, or an error message if saving fails.
     """
     try:
         existing_vars = load_env_vars(mask_sensitive=False)

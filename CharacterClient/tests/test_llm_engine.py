@@ -14,7 +14,9 @@ class TestLLMConfig:
     """Test suite for LLM configuration validation."""
     
     def test_config_creation_with_required_params(self):
-        """Test LLM config creation with minimum required parameters."""
+        """
+        Verify that an LLMConfig instance can be created with only the required parameters and that default values are set for optional fields.
+        """
         config = LLMConfig(
             model_name="gpt-3.5-turbo",
             api_key="sk-test123"
@@ -26,7 +28,9 @@ class TestLLMConfig:
         assert config.temperature == 0.7  # Default value
     
     def test_config_creation_with_all_params(self):
-        """Test LLM config creation with all parameters."""
+        """
+        Verifies that an LLMConfig instance is correctly created when all parameters are specified.
+        """
         config = LLMConfig(
             model_name="test-model",
             api_key="test-key",
@@ -45,7 +49,9 @@ class TestLLMConfig:
         assert config.retries == 5
     
     def test_config_invalid_temperature_too_high(self):
-        """Test config validation with temperature too high."""
+        """
+        Test that creating an LLMConfig with a temperature above the allowed maximum raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Temperature must be between 0 and 2"):
             LLMConfig(
                 model_name="test-model",
@@ -54,7 +60,9 @@ class TestLLMConfig:
             )
     
     def test_config_invalid_temperature_negative(self):
-        """Test config validation with negative temperature."""
+        """
+        Test that creating an LLMConfig with a negative temperature raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Temperature must be between 0 and 2"):
             LLMConfig(
                 model_name="test-model",
@@ -63,7 +71,9 @@ class TestLLMConfig:
             )
     
     def test_config_invalid_max_tokens_zero(self):
-        """Test config validation with zero max_tokens."""
+        """
+        Test that creating an LLMConfig with max_tokens set to zero raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Max tokens must be positive"):
             LLMConfig(
                 model_name="test-model",
@@ -72,7 +82,9 @@ class TestLLMConfig:
             )
     
     def test_config_invalid_max_tokens_negative(self):
-        """Test config validation with negative max_tokens."""
+        """
+        Test that creating an LLMConfig with a negative max_tokens value raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Max tokens must be positive"):
             LLMConfig(
                 model_name="test-model",
@@ -81,7 +93,9 @@ class TestLLMConfig:
             )
     
     def test_config_boundary_temperature_values(self):
-        """Test boundary values for temperature."""
+        """
+        Test that LLMConfig accepts temperature values at the minimum (0.0) and maximum (2.0) boundaries.
+        """
         # Test minimum boundary
         config1 = LLMConfig(model_name="test", api_key="key", temperature=0.0)
         assert config1.temperature == 0.0
@@ -95,7 +109,9 @@ class TestLLMResponse:
     """Test suite for LLM response objects."""
     
     def test_response_creation(self):
-        """Test LLM response creation."""
+        """
+        Test that an LLMResponse object is correctly created with specified text and metadata.
+        """
         response = LLMResponse(
             text="Hello, world!",
             metadata={"tokens": 15, "finish_reason": "stop"}
@@ -105,7 +121,9 @@ class TestLLMResponse:
         assert response.metadata["finish_reason"] == "stop"
     
     def test_response_empty_metadata(self):
-        """Test response creation with empty metadata."""
+        """
+        Test that an LLMResponse object is correctly created when provided with empty metadata.
+        """
         response = LLMResponse(text="Test", metadata={})
         assert response.text == "Test"
         assert response.metadata == {}
@@ -116,7 +134,9 @@ class TestLLMEngine:
     
     @pytest.fixture
     def default_config(self):
-        """Provide a default LLM configuration for testing."""
+        """
+        Returns a default `LLMConfig` instance with preset values for use in tests.
+        """
         return LLMConfig(
             model_name="test-model",
             api_key="test-key",
@@ -129,12 +149,16 @@ class TestLLMEngine:
     
     @pytest.fixture
     def llm_engine(self, default_config):
-        """Create an LLM engine instance for testing."""
+        """
+        Creates an instance of LLMEngine using the provided default configuration for use in tests.
+        """
         return LLMEngine(default_config)
     
     @pytest.fixture
     async def initialized_engine(self, llm_engine):
-        """Create and initialize an LLM engine for testing."""
+        """
+        Asynchronously creates and initializes an LLM engine instance for use in tests, yielding the initialized engine and ensuring cleanup after use.
+        """
         with patch('aiohttp.ClientSession') as mock_session:
             mock_session.return_value = AsyncMock()
             await llm_engine.initialize()
@@ -143,20 +167,28 @@ class TestLLMEngine:
     
     # Engine Creation and Initialization Tests
     def test_engine_creation_valid_config(self, default_config):
-        """Test LLM engine creation with valid config."""
+        """
+        Test that an LLMEngine instance is correctly created with a valid configuration.
+        
+        Verifies that the engine's configuration is set, it is not initialized, and no session exists upon creation.
+        """
         engine = LLMEngine(default_config)
         assert engine.config == default_config
         assert not engine.is_initialized
         assert engine.session is None
     
     def test_engine_creation_none_config(self):
-        """Test engine creation with None config should raise error."""
+        """
+        Test that creating an LLMEngine with a None configuration raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Config cannot be None"):
             LLMEngine(None)
     
     @pytest.mark.asyncio
     async def test_engine_initialization(self, llm_engine):
-        """Test successful engine initialization."""
+        """
+        Test that the LLM engine initializes successfully, creating a session and setting the initialized state.
+        """
         assert not llm_engine.is_initialized
         
         with patch('aiohttp.ClientSession') as mock_session:
@@ -169,7 +201,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_engine_double_initialization(self, llm_engine):
-        """Test that double initialization doesn't create multiple sessions."""
+        """
+        Test that calling initialize twice on the engine does not create multiple client sessions.
+        
+        Ensures that repeated initialization reuses the same session and does not result in duplicate resource allocation.
+        """
         with patch('aiohttp.ClientSession') as mock_session:
             mock_session.return_value = AsyncMock()
             
@@ -184,7 +220,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_async_context_manager(self, default_config):
-        """Test LLM engine as async context manager."""
+        """
+        Tests that the LLMEngine can be used as an async context manager, ensuring it initializes on entry and shuts down on exit.
+        """
         with patch('aiohttp.ClientSession') as mock_session:
             mock_session.return_value = AsyncMock()
             
@@ -198,7 +236,9 @@ class TestLLMEngine:
     # Text Generation Tests
     @pytest.mark.asyncio
     async def test_generate_simple_prompt(self, initialized_engine):
-        """Test basic text generation with simple prompt."""
+        """
+        Test that the engine generates text correctly for a simple prompt and returns a valid LLMResponse with expected metadata.
+        """
         prompt = "Hello, world!"
         mock_response = {
             'choices': [{'text': 'Hello! How can I help you?', 'finish_reason': 'stop'}],
@@ -223,31 +263,43 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_generate_empty_prompt(self, initialized_engine):
-        """Test generation with empty prompt should raise error."""
+        """
+        Test that generating text with an empty prompt raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Prompt cannot be empty"):
             await initialized_engine.generate("")
     
     @pytest.mark.asyncio
     async def test_generate_whitespace_only_prompt(self, initialized_engine):
-        """Test generation with whitespace-only prompt should raise error."""
+        """
+        Test that generating text with a whitespace-only prompt raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Prompt cannot be empty"):
             await initialized_engine.generate("   \n\t  ")
     
     @pytest.mark.asyncio
     async def test_generate_none_prompt(self, initialized_engine):
-        """Test generation with None prompt should raise error."""
+        """
+        Test that calling `generate` with a None prompt raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Prompt cannot be empty"):
             await initialized_engine.generate(None)
     
     @pytest.mark.asyncio
     async def test_generate_uninitialized_engine(self, llm_engine):
-        """Test generation with uninitialized engine should raise error."""
+        """
+        Test that calling `generate` on an uninitialized engine raises a RuntimeError.
+        """
         with pytest.raises(RuntimeError, match="Engine not initialized"):
             await llm_engine.generate("Test prompt")
     
     @pytest.mark.asyncio
     async def test_generate_with_custom_parameters(self, initialized_engine):
-        """Test generation with custom parameters."""
+        """
+        Tests that the generate method correctly handles custom parameter values and passes them to the API call.
+        
+        Verifies that the generated response matches the mock output and that the specified max_tokens, temperature, and top_p values are included in the API request.
+        """
         prompt = "Tell me a story"
         mock_response = {
             'choices': [{'text': 'Once upon a time...', 'finish_reason': 'stop'}],
@@ -274,7 +326,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_generate_very_long_prompt(self, initialized_engine):
-        """Test generation with extremely long prompt."""
+        """
+        Tests that the engine can generate a response for an extremely long prompt without errors.
+        
+        Verifies that the generated response contains the expected text and metadata when provided with a prompt of 10,000 characters.
+        """
         long_prompt = "A" * 10000
         mock_response = {
             'choices': [{'text': 'Response to long prompt', 'finish_reason': 'length'}],
@@ -290,7 +346,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_generate_special_characters(self, initialized_engine):
-        """Test generation with special characters and unicode."""
+        """
+        Tests that the generate method correctly handles prompts containing special characters and Unicode, ensuring the response includes expected Unicode content.
+        """
         special_prompt = "Hello 🌍! Test émojis and spéciål chars: ñáéíóú"
         mock_response = {
             'choices': [{'text': 'Response with émojis 🚀', 'finish_reason': 'stop'}],
@@ -307,7 +365,11 @@ class TestLLMEngine:
     # Chat Functionality Tests
     @pytest.mark.asyncio
     async def test_chat_single_message(self, initialized_engine):
-        """Test chat with single user message."""
+        """
+        Tests that the chat method returns the expected response and metadata when given a single user message.
+        
+        Verifies that the engine correctly processes a single-message conversation, returns the assistant's reply, and includes token usage in the metadata.
+        """
         messages = [{"role": "user", "content": "Hello!"}]
         mock_response = {
             'choices': [{'message': {'content': 'Hi there!'}, 'finish_reason': 'stop'}],
@@ -328,7 +390,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_conversation_history(self, initialized_engine):
-        """Test chat with conversation history."""
+        """
+        Tests that the chat method correctly handles a conversation history, sending all messages and returning the expected assistant response.
+        """
         messages = [
             {"role": "user", "content": "What's 2+2?"},
             {"role": "assistant", "content": "2+2 equals 4."},
@@ -348,7 +412,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_system_message(self, initialized_engine):
-        """Test chat with system message."""
+        """
+        Tests that the chat method correctly handles a conversation including a system message and returns the expected assistant response.
+        """
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "Hello!"}
@@ -366,20 +432,26 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_empty_messages(self, initialized_engine):
-        """Test chat with empty messages list should raise error."""
+        """
+        Test that calling chat with an empty messages list raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Messages cannot be empty"):
             await initialized_engine.chat([])
     
     @pytest.mark.asyncio
     async def test_chat_uninitialized_engine(self, llm_engine):
-        """Test chat with uninitialized engine should raise error."""
+        """
+        Test that calling `chat` on an uninitialized engine raises a RuntimeError.
+        """
         messages = [{"role": "user", "content": "Hello"}]
         with pytest.raises(RuntimeError, match="Engine not initialized"):
             await llm_engine.chat(messages)
     
     @pytest.mark.asyncio
     async def test_chat_invalid_message_missing_role(self, initialized_engine):
-        """Test chat with message missing role field."""
+        """
+        Test that the chat method raises a ValueError when a message is missing the 'role' field.
+        """
         messages = [{"content": "Missing role"}]
         
         with pytest.raises(ValueError, match="Each message must have 'role' and 'content' fields"):
@@ -387,7 +459,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_invalid_message_missing_content(self, initialized_engine):
-        """Test chat with message missing content field."""
+        """
+        Test that the chat method raises a ValueError when a message is missing the 'content' field.
+        """
         messages = [{"role": "user"}]
         
         with pytest.raises(ValueError, match="Each message must have 'role' and 'content' fields"):
@@ -395,7 +469,12 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_invalid_role(self, initialized_engine):
-        """Test chat with invalid role should raise error."""
+        """
+        Test that providing a message with an invalid role to the chat method raises a ValueError.
+        
+        Parameters:
+            initialized_engine: An initialized LLMEngine instance used for testing.
+        """
         messages = [{"role": "invalid_role", "content": "Hello"}]
         
         with pytest.raises(ValueError, match="Invalid role: invalid_role"):
@@ -404,7 +483,11 @@ class TestLLMEngine:
     # API Call and Error Handling Tests
     @pytest.mark.asyncio
     async def test_make_api_call_success(self, initialized_engine):
-        """Test successful API call."""
+        """
+        Tests that a successful API call returns the expected JSON response.
+        
+        Verifies that the engine's internal API call method correctly processes a valid response and that the HTTP POST request is made once.
+        """
         payload = {"model": "test", "prompt": "test"}
         expected_response = {"choices": [{"text": "response"}]}
         
@@ -423,7 +506,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_make_api_call_retry_on_client_error(self, initialized_engine):
-        """Test retry logic on client errors."""
+        """
+        Test that the API call method retries on client errors and succeeds after multiple failures.
+        
+        Simulates two consecutive client errors followed by a successful response, verifying that the retry logic is triggered and the final response is returned as expected.
+        """
         payload = {"model": "test", "prompt": "test"}
         
         with patch.object(initialized_engine.session, 'post') as mock_post:
@@ -449,7 +536,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_make_api_call_max_retries_exceeded(self, initialized_engine):
-        """Test behavior when max retries are exceeded."""
+        """
+        Test that the API call retries the maximum allowed times and raises an error if all attempts fail.
+        
+        Verifies that when persistent client errors occur, the engine retries the API call up to the configured maximum and then raises the last exception.
+        """
         payload = {"model": "test", "prompt": "test"}
         
         with patch.object(initialized_engine.session, 'post') as mock_post:
@@ -464,7 +555,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_make_api_call_timeout_error(self, initialized_engine):
-        """Test handling of timeout errors."""
+        """
+        Test that a timeout error during an API call raises an asyncio.TimeoutError.
+        
+        Verifies that when the engine's session post method raises a timeout, the exception is propagated by _make_api_call.
+        """
         payload = {"model": "test", "prompt": "test"}
         
         with patch.object(initialized_engine.session, 'post') as mock_post:
@@ -476,7 +571,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_make_api_call_rate_limit_handling(self, initialized_engine):
-        """Test handling of rate limit errors with exponential backoff."""
+        """
+        Test that the API call method correctly handles HTTP 429 rate limit errors by applying exponential backoff and retrying the request.
+        
+        Verifies that after receiving a rate limit response, the method waits for the appropriate backoff period before retrying, and ultimately returns the successful response.
+        """
         payload = {"model": "test", "prompt": "test"}
         
         # Mock rate limit response
@@ -504,7 +603,9 @@ class TestLLMEngine:
     # Response Validation Tests
     @pytest.mark.asyncio
     async def test_generate_no_choices_in_response(self, initialized_engine):
-        """Test handling of API response with no choices."""
+        """
+        Test that the generate method raises a ValueError when the API response contains no choices.
+        """
         with patch.object(initialized_engine, '_make_api_call', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = {"usage": {"total_tokens": 0}}
             
@@ -513,7 +614,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_generate_empty_choices_in_response(self, initialized_engine):
-        """Test handling of API response with empty choices list."""
+        """
+        Test that the generate method raises a ValueError when the API response contains an empty choices list.
+        """
         with patch.object(initialized_engine, '_make_api_call', new_callable=AsyncMock) as mock_call:
             mock_call.return_value = {"choices": [], "usage": {"total_tokens": 0}}
             
@@ -522,7 +625,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_no_choices_in_response(self, initialized_engine):
-        """Test chat handling of API response with no choices."""
+        """
+        Test that the chat method raises a ValueError when the API response contains no choices.
+        
+        Verifies that the engine correctly detects and handles responses missing the 'choices' field by raising an appropriate error.
+        """
         messages = [{"role": "user", "content": "Hello"}]
         
         with patch.object(initialized_engine, '_make_api_call', new_callable=AsyncMock) as mock_call:
@@ -533,7 +640,9 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_generate_missing_text_in_choice(self, initialized_engine):
-        """Test handling of choice without text field."""
+        """
+        Test that the generate method returns an empty string when the API response choice lacks a text field.
+        """
         mock_response = {
             'choices': [{'finish_reason': 'stop'}],  # Missing 'text' field
             'usage': {'total_tokens': 10}
@@ -547,7 +656,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_chat_missing_message_content(self, initialized_engine):
-        """Test handling of chat choice without message content."""
+        """
+        Test that the chat method returns an empty string when the API response message lacks content.
+        
+        Verifies that if the API response contains a choice with a message missing the 'content' field, the returned LLMResponse has an empty text value.
+        """
         messages = [{"role": "user", "content": "Hello"}]
         mock_response = {
             'choices': [{'message': {}, 'finish_reason': 'stop'}],  # Missing 'content'
@@ -563,7 +676,9 @@ class TestLLMEngine:
     # Performance and Concurrency Tests
     @pytest.mark.asyncio
     async def test_concurrent_generate_requests(self, initialized_engine):
-        """Test handling multiple concurrent generation requests."""
+        """
+        Test that the engine can handle multiple concurrent text generation requests and returns correct responses for each prompt.
+        """
         prompts = [f"Prompt {i}" for i in range(5)]
         
         with patch.object(initialized_engine, '_make_api_call', new_callable=AsyncMock) as mock_call:
@@ -588,7 +703,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_concurrent_chat_requests(self, initialized_engine):
-        """Test handling multiple concurrent chat requests."""
+        """
+        Test that the engine can handle multiple concurrent chat requests and returns correct responses for each.
+        
+        This test simulates three simultaneous chat calls with different user messages and verifies that each receives the expected answer.
+        """
         message_sets = [
             [{"role": "user", "content": f"Question {i}"}]
             for i in range(3)
@@ -612,7 +731,9 @@ class TestLLMEngine:
     
     # Resource Management and Cleanup Tests  
     def test_engine_shutdown(self, llm_engine):
-        """Test proper engine shutdown."""
+        """
+        Test that the engine's shutdown method resets initialization state and schedules session closure asynchronously.
+        """
         # Mock a session
         mock_session = AsyncMock()
         llm_engine.session = mock_session
@@ -625,7 +746,9 @@ class TestLLMEngine:
             mock_create_task.assert_called_once()
     
     def test_engine_shutdown_when_not_initialized(self, llm_engine):
-        """Test shutdown when engine was never initialized."""
+        """
+        Test that shutting down the engine when it was never initialized does not raise an error and leaves the engine uninitialized.
+        """
         assert not llm_engine.is_initialized
         assert llm_engine.session is None
         
@@ -635,7 +758,11 @@ class TestLLMEngine:
     
     @pytest.mark.asyncio
     async def test_full_conversation_flow(self, initialized_engine):
-        """Test a complete conversation flow."""
+        """
+        Simulates a multi-turn chat conversation using the engine and verifies correct responses and API call sequencing.
+        
+        This test mocks API responses to emulate a user-assistant conversation, updating the message history at each turn and asserting that the returned responses and call counts match expectations.
+        """
         with patch.object(initialized_engine, '_make_api_call', new_callable=AsyncMock) as mock_call:
             # Setup responses for a conversation
             mock_call.side_effect = [
@@ -683,7 +810,12 @@ class TestLLMEngineParametrized:
     
     @pytest.mark.parametrize("temperature", [0.0, 0.5, 1.0, 1.5, 2.0])
     def test_config_temperature_boundary_values(self, temperature):
-        """Test configuration with different valid temperature values."""
+        """
+        Test that LLMConfig correctly accepts and stores valid boundary values for the temperature parameter.
+        
+        Parameters:
+            temperature (float): A valid temperature value to test.
+        """
         config = LLMConfig(
             model_name="test-model",
             api_key="test-key",
@@ -693,7 +825,12 @@ class TestLLMEngineParametrized:
     
     @pytest.mark.parametrize("max_tokens", [1, 10, 100, 1000, 4000])
     def test_config_max_tokens_values(self, max_tokens):
-        """Test configuration with different max_tokens values."""
+        """
+        Test that LLMConfig correctly sets the max_tokens parameter for various values.
+        
+        Parameters:
+            max_tokens (int): The maximum number of tokens to set in the configuration.
+        """
         config = LLMConfig(
             model_name="test-model",
             api_key="test-key",
@@ -703,7 +840,9 @@ class TestLLMEngineParametrized:
     
     @pytest.mark.parametrize("retries", [0, 1, 3, 5, 10])
     def test_config_retry_values(self, retries):
-        """Test configuration with different retry values."""
+        """
+        Test that `LLMConfig` correctly sets the `retries` parameter for various input values.
+        """
         config = LLMConfig(
             model_name="test-model",
             api_key="test-key",
@@ -714,7 +853,12 @@ class TestLLMEngineParametrized:
     @pytest.mark.parametrize("role", ["user", "assistant", "system"])
     @pytest.mark.asyncio
     async def test_chat_valid_roles(self, role):
-        """Test chat with different valid roles."""
+        """
+        Asynchronously tests the chat method of LLMEngine with a single message using a valid role.
+        
+        Parameters:
+            role (str): The role to use in the chat message (e.g., 'user', 'assistant', 'system').
+        """
         config = LLMConfig(model_name="test", api_key="key")
         engine = LLMEngine(config)
         
@@ -738,7 +882,12 @@ class TestLLMEngineParametrized:
     @pytest.mark.parametrize("invalid_role", ["moderator", "admin", "bot", ""])
     @pytest.mark.asyncio
     async def test_chat_invalid_roles(self, invalid_role):
-        """Test chat with invalid roles should raise errors."""
+        """
+        Test that providing an invalid role in chat messages raises a ValueError.
+        
+        Parameters:
+        	invalid_role (str): The role value to test, expected to be invalid.
+        """
         config = LLMConfig(model_name="test", api_key="key")
         engine = LLMEngine(config)
         
@@ -759,7 +908,11 @@ class TestLLMEngineEdgeCases:
     
     @pytest.fixture
     async def engine(self):
-        """Create initialized engine for edge case testing."""
+        """
+        Asynchronous fixture that yields an initialized LLMEngine instance for edge case testing.
+        
+        The engine is created with a test configuration and initialized with a mocked aiohttp.ClientSession. After yielding, the engine is shut down.
+        """
         config = LLMConfig(model_name="test", api_key="key")
         engine = LLMEngine(config)
         
@@ -770,7 +923,9 @@ class TestLLMEngineEdgeCases:
     
     @pytest.mark.asyncio
     async def test_generate_with_newlines_and_tabs(self, engine):
-        """Test generation with newlines and tab characters."""
+        """
+        Tests that the engine can generate responses when the prompt contains newlines and tab characters, and that the response preserves newlines in the output.
+        """
         prompt = "Line 1\nLine 2\tTabbed content\n\nEmpty line above"
         mock_response = {
             'choices': [{'text': 'Response\nwith\nnewlines', 'finish_reason': 'stop'}],
@@ -785,7 +940,11 @@ class TestLLMEngineEdgeCases:
     
     @pytest.mark.asyncio
     async def test_chat_with_very_long_conversation(self, engine):
-        """Test chat with very long conversation history."""
+        """
+        Tests the chat functionality with a conversation history of 50 alternating user and assistant messages.
+        
+        Verifies that the engine correctly handles long message histories, passes all messages to the API call, and returns the expected response.
+        """
         # Create a conversation with many messages
         messages = []
         for i in range(50):  # Long conversation
@@ -809,7 +968,11 @@ class TestLLMEngineEdgeCases:
     
     @pytest.mark.asyncio
     async def test_metadata_with_missing_usage_info(self, engine):
-        """Test response metadata when usage info is missing."""
+        """
+        Test that response metadata defaults token count to 0 when the API response lacks usage information.
+        
+        Verifies that the 'tokens' field in the response metadata is set to 0 and 'finish_reason' is correctly populated when the 'usage' field is missing from the API response.
+        """
         mock_response = {
             'choices': [{'text': 'Response without usage', 'finish_reason': 'stop'}]
             # Missing 'usage' field
@@ -824,7 +987,9 @@ class TestLLMEngineEdgeCases:
     
     @pytest.mark.asyncio
     async def test_metadata_with_partial_usage_info(self, engine):
-        """Test response metadata with partial usage information."""
+        """
+        Test that the engine defaults token count to 0 in response metadata when 'total_tokens' is missing from usage information.
+        """
         mock_response = {
             'choices': [{'text': 'Response', 'finish_reason': 'length'}],
             'usage': {'prompt_tokens': 10}  # Missing 'total_tokens'

@@ -23,17 +23,46 @@ except ImportError:
             # Create a mock CheckpointManager for testing structure
             class CheckpointManager:
                 def __init__(self, checkpoint_dir=None, max_checkpoints=10):
+                    """
+                    Initialize a CheckpointManager with a specified directory and maximum number of checkpoints.
+                    
+                    Parameters:
+                    	checkpoint_dir (str, optional): Path to the directory where checkpoints will be stored. Defaults to "./checkpoints" if not provided.
+                    	max_checkpoints (int, optional): Maximum number of checkpoints to retain. Defaults to 10.
+                    """
                     self.checkpoint_dir = checkpoint_dir or "./checkpoints"
                     self.max_checkpoints = max_checkpoints
                     os.makedirs(self.checkpoint_dir, exist_ok=True)
                 
                 def save_checkpoint(self, state, name):
+                    """
+                    Serialize and save the given state to a checkpoint file with the specified name.
+                    
+                    Parameters:
+                        state: The object to be serialized and saved as a checkpoint.
+                        name (str): The name to assign to the checkpoint file (without extension).
+                    
+                    Returns:
+                        bool: True if the checkpoint was saved successfully.
+                    """
                     filepath = os.path.join(self.checkpoint_dir, f"{name}.pkl")
                     with open(filepath, 'wb') as f:
                         pickle.dump(state, f)
                     return True
                 
                 def load_checkpoint(self, name):
+                    """
+                    Load and return the state dictionary from a checkpoint file with the given name.
+                    
+                    Parameters:
+                        name (str): The name of the checkpoint to load (without file extension).
+                    
+                    Returns:
+                        dict: The state data loaded from the checkpoint file.
+                    
+                    Raises:
+                        FileNotFoundError: If the specified checkpoint file does not exist.
+                    """
                     filepath = os.path.join(self.checkpoint_dir, f"{name}.pkl")
                     if not os.path.exists(filepath):
                         raise FileNotFoundError(f"Checkpoint {name} not found")
@@ -41,12 +70,30 @@ except ImportError:
                         return pickle.load(f)
                 
                 def list_checkpoints(self):
+                    """
+                    Return a sorted list of checkpoint filenames in the checkpoint directory.
+                    
+                    Returns:
+                        list: Sorted list of checkpoint filenames ending with '.pkl'. Returns an empty list if the directory does not exist.
+                    """
                     if not os.path.exists(self.checkpoint_dir):
                         return []
                     files = os.listdir(self.checkpoint_dir)
                     return sorted([f for f in files if f.endswith('.pkl')])
                 
                 def delete_checkpoint(self, name):
+                    """
+                    Deletes the checkpoint file with the specified name from the checkpoint directory.
+                    
+                    Parameters:
+                        name (str): The name of the checkpoint to delete (without file extension).
+                    
+                    Returns:
+                        bool: True if the checkpoint file was successfully deleted.
+                    
+                    Raises:
+                        FileNotFoundError: If the specified checkpoint file does not exist.
+                    """
                     filepath = os.path.join(self.checkpoint_dir, f"{name}.pkl")
                     if os.path.exists(filepath):
                         os.remove(filepath)
@@ -64,25 +111,45 @@ class TestCheckpointManager:
     
     @pytest.fixture
     def temp_dir(self):
-        """Create temporary directory for testing."""
+        """
+        Creates a temporary directory for use during a test and ensures its cleanup after the test completes.
+        
+        Yields:
+            str: The path to the temporary directory.
+        """
         temp_dir = tempfile.mkdtemp()
         yield temp_dir
         shutil.rmtree(temp_dir, ignore_errors=True)
     
     @pytest.fixture
     def checkpoint_dir(self, temp_dir):
-        """Create checkpoint directory."""
+        """
+        Return the path to a 'checkpoints' subdirectory within the given temporary directory.
+        
+        Parameters:
+            temp_dir (str): The base temporary directory path.
+        
+        Returns:
+            str: The full path to the 'checkpoints' subdirectory.
+        """
         checkpoint_dir = os.path.join(temp_dir, 'checkpoints')
         return checkpoint_dir
     
     @pytest.fixture
     def manager(self, checkpoint_dir):
-        """Create CheckpointManager instance."""
+        """
+        Fixture that provides a CheckpointManager instance using the specified checkpoint directory.
+        """
         return CheckpointManager(checkpoint_dir=checkpoint_dir)
     
     @pytest.fixture
     def sample_state(self):
-        """Sample checkpoint state for testing."""
+        """
+        Provides a sample checkpoint state dictionary for use in tests.
+        
+        Returns:
+            dict: A dictionary representing a typical checkpoint state, including epoch, model and optimizer states, loss, accuracy, and timestamp.
+        """
         return {
             'epoch': 10,
             'model_state': {'weights': [1.0, 2.0, 3.0], 'bias': [0.1, 0.2]},
@@ -94,20 +161,30 @@ class TestCheckpointManager:
     
     # INITIALIZATION TESTS
     def test_init_default_parameters(self):
-        """Test CheckpointManager initialization with default parameters."""
+        """
+        Test that CheckpointManager initializes correctly with default parameters.
+        
+        Verifies that the manager instance is created and has a valid checkpoint directory attribute.
+        """
         manager = CheckpointManager()
         assert manager is not None
         assert hasattr(manager, 'checkpoint_dir')
         assert manager.checkpoint_dir is not None
     
     def test_init_custom_checkpoint_dir(self, temp_dir):
-        """Test initialization with custom checkpoint directory."""
+        """
+        Test that initializing CheckpointManager with a custom checkpoint directory sets the directory correctly.
+        """
         custom_dir = os.path.join(temp_dir, 'custom_checkpoints')
         manager = CheckpointManager(checkpoint_dir=custom_dir)
         assert manager.checkpoint_dir == custom_dir
     
     def test_init_creates_directory(self, temp_dir):
-        """Test that initialization creates checkpoint directory."""
+        """
+        Test that initializing CheckpointManager with a non-existent directory creates the directory.
+        
+        Verifies that the specified checkpoint directory is created upon initialization if it does not already exist.
+        """
         non_existent_dir = os.path.join(temp_dir, 'new_checkpoints')
         assert not os.path.exists(non_existent_dir)
         manager = CheckpointManager(checkpoint_dir=non_existent_dir)
@@ -115,7 +192,9 @@ class TestCheckpointManager:
         assert os.path.exists(non_existent_dir) or hasattr(manager, 'checkpoint_dir')
     
     def test_init_with_max_checkpoints(self, checkpoint_dir):
-        """Test initialization with max_checkpoints parameter."""
+        """
+        Test that initializing CheckpointManager with a max_checkpoints parameter correctly sets the attribute if supported.
+        """
         max_checkpoints = 5
         manager = CheckpointManager(checkpoint_dir=checkpoint_dir, max_checkpoints=max_checkpoints)
         if hasattr(manager, 'max_checkpoints'):
@@ -123,7 +202,9 @@ class TestCheckpointManager:
     
     # SAVE CHECKPOINT TESTS
     def test_save_checkpoint_basic(self, manager, sample_state):
-        """Test basic checkpoint saving functionality."""
+        """
+        Test that saving a checkpoint with valid state and name succeeds and creates the corresponding checkpoint file.
+        """
         checkpoint_name = 'test_checkpoint'
         result = manager.save_checkpoint(sample_state, checkpoint_name)
         
@@ -133,7 +214,9 @@ class TestCheckpointManager:
         assert any(checkpoint_name in f for f in checkpoint_files)
     
     def test_save_checkpoint_multiple(self, manager, sample_state):
-        """Test saving multiple checkpoints."""
+        """
+        Test that multiple checkpoints can be saved and are present in the checkpoint directory.
+        """
         checkpoint_names = ['checkpoint_1', 'checkpoint_2', 'checkpoint_3']
         
         for name in checkpoint_names:
@@ -145,7 +228,9 @@ class TestCheckpointManager:
             assert any(name in f for f in checkpoint_files)
     
     def test_save_checkpoint_overwrite(self, manager, sample_state):
-        """Test overwriting existing checkpoint."""
+        """
+        Verify that saving a checkpoint with an existing name overwrites the previous checkpoint file with the new state.
+        """
         checkpoint_name = 'overwrite_test'
         
         # Save initial checkpoint
@@ -165,7 +250,9 @@ class TestCheckpointManager:
         assert loaded_state['loss'] == 0.15
     
     def test_save_checkpoint_empty_state(self, manager):
-        """Test saving checkpoint with empty state."""
+        """
+        Test that saving a checkpoint with an empty state succeeds and can be loaded correctly.
+        """
         empty_state = {}
         result = manager.save_checkpoint(empty_state, 'empty_checkpoint')
         assert result is True
@@ -174,12 +261,16 @@ class TestCheckpointManager:
         assert loaded_state == empty_state
     
     def test_save_checkpoint_none_state(self, manager):
-        """Test saving checkpoint with None state raises appropriate error."""
+        """
+        Test that attempting to save a checkpoint with a None state raises a ValueError, TypeError, or AttributeError.
+        """
         with pytest.raises((ValueError, TypeError, AttributeError)):
             manager.save_checkpoint(None, 'none_checkpoint')
     
     def test_save_checkpoint_complex_state(self, manager):
-        """Test saving checkpoint with complex nested state."""
+        """
+        Test that saving and loading a checkpoint with a complex, nested state structure preserves all nested data correctly.
+        """
         complex_state = {
             'model_layers': [
                 {'type': 'conv', 'params': {'filters': 64, 'kernel_size': 3}},
@@ -214,7 +305,11 @@ class TestCheckpointManager:
         'checkpoint|with|pipe'
     ])
     def test_save_checkpoint_invalid_names(self, manager, sample_state, invalid_name):
-        """Test saving checkpoints with invalid filename characters."""
+        """
+        Test saving a checkpoint with an invalid filename, verifying that the operation either sanitizes the name and succeeds or raises an appropriate exception.
+        
+        If saving succeeds, ensures the checkpoint can be loaded; if not, expects a ValueError or OSError to be raised.
+        """
         # Should either sanitize the name or raise an exception
         try:
             result = manager.save_checkpoint(sample_state, invalid_name)
@@ -227,14 +322,20 @@ class TestCheckpointManager:
             pass
     
     def test_save_checkpoint_very_long_name(self, manager, sample_state):
-        """Test saving checkpoint with very long filename."""
+        """
+        Test that saving a checkpoint with an excessively long filename raises an OSError or ValueError.
+        """
         long_name = 'x' * 300  # Exceed typical filesystem limits
         with pytest.raises((OSError, ValueError)):
             manager.save_checkpoint(sample_state, long_name)
     
     # LOAD CHECKPOINT TESTS
     def test_load_checkpoint_existing(self, manager, sample_state):
-        """Test loading existing checkpoint."""
+        """
+        Test that loading an existing checkpoint returns the correct saved state.
+        
+        Verifies that a checkpoint saved with a given name can be loaded successfully and that the loaded state matches the original sample state.
+        """
         checkpoint_name = 'load_test'
         
         # Save checkpoint first
@@ -248,12 +349,18 @@ class TestCheckpointManager:
         assert loaded_state['model_state'] == sample_state['model_state']
     
     def test_load_checkpoint_nonexistent(self, manager):
-        """Test loading non-existent checkpoint raises appropriate error."""
+        """
+        Test that attempting to load a non-existent checkpoint raises a FileNotFoundError, ValueError, or KeyError.
+        """
         with pytest.raises((FileNotFoundError, ValueError, KeyError)):
             manager.load_checkpoint('nonexistent_checkpoint')
     
     def test_load_checkpoint_corrupted_file(self, manager, checkpoint_dir):
-        """Test loading corrupted checkpoint file."""
+        """
+        Test that loading a corrupted checkpoint file raises an appropriate exception.
+        
+        Creates a checkpoint file with invalid (non-pickle) content and verifies that attempting to load it raises a ValueError, pickle.UnpicklingError, or EOFError.
+        """
         checkpoint_name = 'corrupted_test'
         
         # Create corrupted file
@@ -266,7 +373,11 @@ class TestCheckpointManager:
             manager.load_checkpoint(checkpoint_name)
     
     def test_load_checkpoint_empty_file(self, manager, checkpoint_dir):
-        """Test loading empty checkpoint file."""
+        """
+        Test that loading an empty checkpoint file raises a deserialization-related exception.
+        
+        Verifies that attempting to load a checkpoint from an empty file triggers a ValueError, pickle.UnpicklingError, or EOFError, ensuring robust error handling for corrupted or incomplete checkpoint files.
+        """
         checkpoint_name = 'empty_file_test'
         
         # Create empty file
@@ -279,13 +390,19 @@ class TestCheckpointManager:
     
     # LIST CHECKPOINTS TESTS
     def test_list_checkpoints_empty_directory(self, manager):
-        """Test listing checkpoints in empty directory."""
+        """
+        Test that listing checkpoints in an empty directory returns an empty list.
+        """
         checkpoints = manager.list_checkpoints()
         assert isinstance(checkpoints, list)
         assert len(checkpoints) == 0
     
     def test_list_checkpoints_with_files(self, manager, sample_state):
-        """Test listing checkpoints when files exist."""
+        """
+        Verify that listing checkpoints returns all saved checkpoint files when multiple exist.
+        
+        Saves several checkpoints and asserts that all are present in the list returned by the manager.
+        """
         checkpoint_names = ['checkpoint_1', 'checkpoint_2', 'checkpoint_3']
         
         # Save multiple checkpoints
@@ -302,7 +419,9 @@ class TestCheckpointManager:
             assert name in checkpoint_basenames
     
     def test_list_checkpoints_sorted(self, manager, sample_state):
-        """Test that checkpoints are returned in sorted order."""
+        """
+        Verify that the list_checkpoints method returns checkpoint filenames in a consistent sorted order after multiple checkpoints are saved.
+        """
         names = ['z_last', 'a_first', 'm_middle']
         
         for name in names:
@@ -319,7 +438,11 @@ class TestCheckpointManager:
     
     # DELETE CHECKPOINT TESTS
     def test_delete_checkpoint_existing(self, manager, sample_state):
-        """Test deleting existing checkpoint."""
+        """
+        Test that deleting an existing checkpoint removes the file and returns True.
+        
+        Verifies that the checkpoint is present before deletion and absent after deletion.
+        """
         checkpoint_name = 'delete_test'
         
         # Save checkpoint
@@ -338,12 +461,16 @@ class TestCheckpointManager:
         assert not any(checkpoint_name in cp for cp in checkpoints_after)
     
     def test_delete_checkpoint_nonexistent(self, manager):
-        """Test deleting non-existent checkpoint raises appropriate error."""
+        """
+        Test that attempting to delete a non-existent checkpoint raises a FileNotFoundError or ValueError.
+        """
         with pytest.raises((FileNotFoundError, ValueError)):
             manager.delete_checkpoint('nonexistent_checkpoint')
     
     def test_delete_all_checkpoints(self, manager, sample_state):
-        """Test deleting all checkpoints."""
+        """
+        Test that all saved checkpoints can be deleted and are no longer present in the checkpoint directory.
+        """
         checkpoint_names = ['delete_1', 'delete_2', 'delete_3']
         
         # Save multiple checkpoints
@@ -362,7 +489,11 @@ class TestCheckpointManager:
     
     # PERFORMANCE TESTS
     def test_large_checkpoint_save_load(self, manager):
-        """Test handling of large checkpoint data."""
+        """
+        Tests saving and loading of a large checkpoint to ensure correct handling and acceptable performance.
+        
+        Verifies that saving and loading a checkpoint with substantial data volume completes within 60 seconds and that the loaded data matches the original state.
+        """
         # Create large state (approximately 10MB)
         large_state = {
             'large_weights': [list(range(1000)) for _ in range(1000)],
@@ -391,7 +522,9 @@ class TestCheckpointManager:
         assert loaded_state['metadata']['elements'] == 1000000
     
     def test_many_small_checkpoints(self, manager, sample_state):
-        """Test performance with many small checkpoints."""
+        """
+        Test that saving and loading a large number of small checkpoints completes within specified time limits and that all checkpoints are correctly saved and retrievable.
+        """
         num_checkpoints = 100
         
         start_time = time.time()
@@ -418,11 +551,22 @@ class TestCheckpointManager:
     
     # CONCURRENCY TESTS
     def test_concurrent_save_operations(self, manager, sample_state):
-        """Test concurrent checkpoint save operations."""
+        """
+        Verify that multiple threads can concurrently save checkpoints without errors and that all checkpoints are successfully created and listed.
+        """
         num_threads = 5
         checkpoints_per_thread = 10
         
         def save_checkpoints(thread_id):
+            """
+            Save multiple checkpoints concurrently for a given thread, each with a unique name and state.
+            
+            Parameters:
+                thread_id (int): Identifier for the thread saving checkpoints.
+            
+            Returns:
+                list: A list of tuples containing checkpoint names and the result of each save operation.
+            """
             results = []
             for i in range(checkpoints_per_thread):
                 state = sample_state.copy()
@@ -449,7 +593,11 @@ class TestCheckpointManager:
         assert len(final_checkpoints) >= num_threads * checkpoints_per_thread
     
     def test_concurrent_load_operations(self, manager, sample_state):
-        """Test concurrent checkpoint load operations."""
+        """
+        Verify that multiple checkpoints can be loaded concurrently without errors.
+        
+        This test saves several checkpoints and then loads them in parallel using multiple threads, ensuring all loads succeed and return the correct state.
+        """
         # First, save some checkpoints
         checkpoint_names = [f'concurrent_load_{i}' for i in range(10)]
         for name in checkpoint_names:
@@ -458,6 +606,12 @@ class TestCheckpointManager:
             manager.save_checkpoint(state, name)
         
         def load_checkpoint(name):
+            """
+            Attempts to load a checkpoint by name using the manager.
+            
+            Returns:
+                The loaded checkpoint state if successful, or an error message string if loading fails.
+            """
             try:
                 return manager.load_checkpoint(name)
             except Exception as e:
@@ -475,18 +629,24 @@ class TestCheckpointManager:
     # ERROR HANDLING TESTS
     @patch('builtins.open', side_effect=PermissionError("Permission denied"))
     def test_permission_error_handling(self, mock_open, manager, sample_state):
-        """Test handling of permission errors."""
+        """
+        Test that saving a checkpoint raises a PermissionError when file permissions prevent writing.
+        """
         with pytest.raises(PermissionError):
             manager.save_checkpoint(sample_state, 'permission_test')
     
     @patch('builtins.open', side_effect=OSError("No space left on device"))
     def test_disk_space_error_handling(self, mock_open, manager, sample_state):
-        """Test handling of disk space errors."""
+        """
+        Test that saving a checkpoint raises an OSError when a disk space error is simulated.
+        """
         with pytest.raises(OSError):
             manager.save_checkpoint(sample_state, 'disk_space_test')
     
     def test_invalid_checkpoint_directory(self, temp_dir):
-        """Test behavior with invalid checkpoint directory."""
+        """
+        Test that initializing CheckpointManager with a file path as the checkpoint directory raises an OSError or NotADirectoryError.
+        """
         # Try to use a file as directory
         file_path = os.path.join(temp_dir, 'not_a_directory.txt')
         with open(file_path, 'w') as f:
@@ -510,7 +670,11 @@ class TestCheckpointManager:
         'mixedCase_Checkpoint',
     ])
     def test_checkpoint_name_edge_cases(self, manager, sample_state, edge_case_name):
-        """Test edge cases for checkpoint names."""
+        """
+        Test saving and loading checkpoints with edge case names.
+        
+        Attempts to save a checkpoint using an edge case name and verifies successful save and load if supported. Expects a ValueError or OSError for invalid names.
+        """
         try:
             result = manager.save_checkpoint(sample_state, edge_case_name)
             if result:
@@ -523,7 +687,11 @@ class TestCheckpointManager:
             pass
     
     def test_state_with_special_data_types(self, manager):
-        """Test checkpoint state with various Python data types."""
+        """
+        Test saving and loading a checkpoint state containing various Python data types.
+        
+        Attempts to save and reload a checkpoint with fields including strings, numbers, booleans, None, lists, tuples, nested dictionaries, datetime, Decimal, and bytes. Skips the test if serialization of any type is not supported by the current checkpoint format.
+        """
         import datetime
         from decimal import Decimal
         
@@ -560,7 +728,11 @@ class TestCheckpointManager:
             pytest.skip("Some data types not serializable with current format")
     
     def test_unicode_checkpoint_names(self, manager, sample_state):
-        """Test checkpoint names with unicode characters."""
+        """
+        Test saving and loading checkpoints with Unicode characters in their names.
+        
+        Attempts to save and load checkpoints using a variety of Unicode names. If the filesystem does not support Unicode filenames, the test is skipped.
+        """
         unicode_names = [
             'checkpoint_测试',
             'точка_сохранения',
@@ -581,7 +753,11 @@ class TestCheckpointManager:
     
     # INTEGRATION TESTS
     def test_complete_checkpoint_lifecycle(self, manager, sample_state):
-        """Test complete checkpoint lifecycle: save, list, load, delete."""
+        """
+        Test the full lifecycle of a checkpoint: saving, listing, loading, deleting, and verifying absence after deletion.
+        
+        This test ensures that a checkpoint can be saved, appears in the listing, loads with correct data, is deleted successfully, and cannot be loaded after deletion.
+        """
         checkpoint_name = 'lifecycle_test'
         
         # 1. Initial state - no checkpoints
@@ -615,7 +791,9 @@ class TestCheckpointManager:
             manager.load_checkpoint(checkpoint_name)
     
     def test_multiple_managers_same_directory(self, checkpoint_dir, sample_state):
-        """Test multiple CheckpointManager instances using same directory."""
+        """
+        Verify that multiple CheckpointManager instances sharing the same directory can save, list, load, and delete checkpoints with consistent state visibility across instances.
+        """
         manager1 = CheckpointManager(checkpoint_dir=checkpoint_dir)
         manager2 = CheckpointManager(checkpoint_dir=checkpoint_dir)
         
@@ -642,7 +820,11 @@ class TestCheckpointManager:
         assert not any(checkpoint_name in cp for cp in final_checkpoints)
     
     def test_checkpoint_data_integrity(self, manager):
-        """Test data integrity across save/load cycles."""
+        """
+        Verify that checkpoint data remains unchanged after multiple save and load cycles.
+        
+        This test saves a complex state dictionary as a checkpoint and loads it multiple times, asserting that all data types and nested structures are preserved exactly across each cycle.
+        """
         original_state = {
             'precision_float': 3.141592653589793,
             'large_integer': 2**63 - 1,

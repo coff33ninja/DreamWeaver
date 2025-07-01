@@ -9,7 +9,12 @@ import subprocess
 import os
 
 def run_tests():
-    """Run the test suite with pytest."""
+    """
+    Executes the LLM Engine test suite using pytest with coverage and reporting options.
+    
+    Returns:
+        int: The exit code from the pytest process, or 1 if an error occurs during execution.
+    """
     test_dir = os.path.dirname(os.path.abspath(__file__))
     
     try:

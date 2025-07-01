@@ -16,6 +16,11 @@ except ImportError:
     # Mock CSM for testing purposes if not available
     class MockCSM:
         def __init__(self):
+            """
+            Initialize the mock CSM instance with mocked dependencies for testing purposes.
+            
+            All major components (`narrator`, `character_server`, `client_manager`, `db`, `hardware`, `chaos_engine`) are set as `MagicMock` objects to allow isolated unit testing without real implementations.
+            """
             self.narrator = MagicMock()
             self.character_server = MagicMock()
             self.client_manager = MagicMock() 
@@ -24,12 +29,34 @@ except ImportError:
             self.chaos_engine = MagicMock()
             
         async def process_story(self, audio_file, chaos_level=0.0):
+            """
+            Processes a story audio file and returns a narration along with character responses.
+            
+            Parameters:
+                audio_file: The path to the audio file to be processed.
+                chaos_level (float, optional): The level of randomness or chaos to apply during processing. Defaults to 0.0.
+            
+            Returns:
+                tuple: A tuple containing the narration text (str) and a dictionary mapping actor names to their responses (dict).
+            """
             return "Mock narration", {"Actor1": "Mock response"}
             
         def update_last_narration_text(self, new_text):
+            """
+            Stub method for updating the last narration text.
+            
+            Parameters:
+                new_text (str): The new narration text to update.
+            
+            Returns:
+                bool: Always returns True as a placeholder.
+            """
             return True
             
         async def shutdown_async(self):
+            """
+            Asynchronously shuts down the CSM instance, releasing any allocated resources.
+            """
             pass
     
     CSM = MockCSM
@@ -40,7 +67,9 @@ class TestCSM:
     
     @pytest.fixture
     def csm_instance(self):
-        """Create a fresh CSM instance for each test."""
+        """
+        Provides a pytest fixture that returns a new `CSM` instance with all dependencies mocked for isolated testing.
+        """
         with patch.multiple(
             'csm',
             Database=MagicMock,
@@ -62,7 +91,11 @@ class TestCSM:
     
     @pytest.fixture
     def dummy_audio_file(self):
-        """Create a temporary dummy audio file for testing."""
+        """
+        Yields the path to a temporary WAV audio file with a minimal valid header for use in tests.
+        
+        The file is automatically deleted after use.
+        """
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             # Write minimal WAV header
             f.write(b'RIFF\x24\x00\x00\x00WAVE')
@@ -77,7 +110,9 @@ class TestCSM:
             os.unlink(temp_file)
     
     def test_csm_initialization(self):
-        """Test CSM initializes correctly with all dependencies."""
+        """
+        Verify that the CSM instance initializes with all required dependencies as attributes.
+        """
         with patch.multiple(
             'csm',
             Database=MagicMock,
@@ -99,7 +134,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_process_story_happy_path(self, csm_instance, dummy_audio_file):
-        """Test successful story processing with all components working."""
+        """
+        Asynchronously tests the successful processing of a story by the CSM instance, ensuring all components interact correctly with mocked dependencies.
+        
+        This test simulates narration processing, character response generation, client communication, chaos application, hardware updates, and database saving. It verifies that the `process_story` method returns valid narration and character responses when all components function as expected.
+        """
         # Setup mocks for async operations
         csm_instance.narrator.process_narration = AsyncMock(
             return_value={
@@ -144,6 +183,16 @@ class TestCSM:
         with patch('asyncio.to_thread') as mock_to_thread:
             # Mock asyncio.to_thread calls
             async def side_effect(func, *args):
+                """
+                Runs a synchronous function with the provided arguments in an asynchronous context.
+                
+                Parameters:
+                	func (Callable): The function to execute.
+                	*args: Arguments to pass to the function.
+                
+                Returns:
+                	Result of the function call.
+                """
                 return func(*args)
             mock_to_thread.side_effect = side_effect
             
@@ -163,30 +212,74 @@ class TestCSM:
         # For example, mock narrator.process_narration to return fixed text
         original_narrator_process = csm.narrator.process_narration
         async def mock_narrator_process(audio_filepath):
+            """
+            Simulates narration processing by returning a mock narration result for the given audio file path.
+            
+            Parameters:
+                audio_filepath (str): Path to the input audio file.
+            
+            Returns:
+                dict: A dictionary containing mock narration text, the original audio file path, and the speaker name.
+            """
             return {"text": "This is a test narration from mock.", "audio_path": audio_filepath, "speaker": "Narrator"}
         csm.narrator.process_narration = mock_narrator_process
 
         # Mock CharacterServer response
         original_cs_gen_response = csm.character_server.generate_response
         async def mock_cs_gen_response(narration, other_texts):
+            """
+            Asynchronously returns a mock character response for testing purposes.
+            
+            Parameters:
+                narration (str): The narration text input.
+                other_texts (Any): Additional context or texts for the response.
+            
+            Returns:
+                str: A fixed mock response string.
+            """
             return "Actor1 says hello asynchronously!"
         csm.character_server.generate_response = mock_cs_gen_response
 
         # Mock ClientManager response
         original_cm_send_to_client = csm.client_manager.send_to_client
         async def mock_cm_send_to_client(client_actor_id, client_ip, client_port, narration, character_texts):
+            """
+            Asynchronously simulates sending narration and character texts to a client, returning a mock response message.
+            
+            Parameters:
+                client_actor_id: The identifier of the client actor.
+                client_ip: The IP address of the client.
+                client_port: The port number of the client.
+                narration: The narration text to send.
+                character_texts: The character responses to send.
+            
+            Returns:
+                str: A mock response message indicating the client actor has received the message.
+            """
             return f"{client_actor_id} says hi via async mock!"
         csm.client_manager.send_to_client = mock_cm_send_to_client
 
         # Mock get_clients_for_story_progression
         original_cm_get_clients = csm.client_manager.get_clients_for_story_progression
         def mock_cm_get_clients(): # This is called via to_thread, so sync mock is fine
+            """
+            Return a list containing a single mock client dictionary for testing purposes.
+            """
             return [{"Actor_id": "Actor_TestClient", "ip_address": "127.0.0.1", "client_port": 8001}]
         csm.client_manager.get_clients_for_story_progression = mock_cm_get_clients
 
         # Mock DB get_character for the test client
         original_db_get_char = csm.db.get_character
         def mock_db_get_char(Actor_id):
+            """
+            Return mock character information for a given actor ID.
+            
+            Parameters:
+            	Actor_id (str): The identifier of the actor to look up.
+            
+            Returns:
+            	dict or None: A dictionary with character information if the actor ID matches a known test value, otherwise None.
+            """
             if Actor_id == "Actor1":
                 return {"name": "ServerTestChar", "Actor_id": "Actor1"}
             if Actor_id == "Actor_TestClient":

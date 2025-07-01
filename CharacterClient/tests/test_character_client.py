@@ -19,7 +19,12 @@ class TestCharacterClient:
     
     @pytest.fixture
     def mock_config(self):
-        """Mock configuration for testing."""
+        """
+        Provides a mocked configuration object with preset API URL, API key, and timeout values for testing purposes.
+        
+        Returns:
+            Mock: A mock Config object with predefined settings for API URL, API key, and timeout.
+        """
         config = Mock(spec=Config)
         config.get.side_effect = lambda key, default=None: {
             'CHARACTER_API_URL': 'https://test-api.character.com/v1',
@@ -30,13 +35,26 @@ class TestCharacterClient:
     
     @pytest.fixture
     def character_client(self, mock_config):
-        """Create CharacterClient instance for testing."""
+        """
+        Creates a CharacterClient instance using a mocked configuration for testing purposes.
+        
+        Parameters:
+            mock_config: The mocked configuration object to be used when instantiating CharacterClient.
+        
+        Returns:
+            CharacterClient: An instance of CharacterClient initialized with the mocked configuration.
+        """
         with patch('character_client.Config', return_value=mock_config):
             return CharacterClient()
     
     @pytest.fixture
     def sample_character(self):
-        """Sample character data for testing."""
+        """
+        Return a dictionary representing a sample character for use in tests.
+        
+        Returns:
+            dict: Sample character data including id, name, class, level, health, mana, and stats.
+        """
         return {
             "id": 1,
             "name": "Test Warrior",
@@ -53,7 +71,15 @@ class TestCharacterClient:
     
     @pytest.fixture
     def sample_character_list(self, sample_character):
-        """Sample character list for testing."""
+        """
+        Provides a sample list of character dictionaries for use in tests.
+        
+        Parameters:
+        	sample_character (dict): A sample character dictionary to include in the list.
+        
+        Returns:
+        	list: A list containing the provided sample character and an additional predefined character.
+        """
         return [
             sample_character,
             {
@@ -85,7 +111,9 @@ class TestCharacterClient:
             assert isinstance(client.session, requests.Session)
     
     def test_initialization_custom_params(self):
-        """Test CharacterClient initialization with custom parameters."""
+        """
+        Verify that CharacterClient initializes correctly with custom base URL, API key, and timeout values.
+        """
         custom_url = "https://custom-api.example.com/v1"
         custom_key = "custom-api-key"
         custom_timeout = 60
@@ -105,7 +133,9 @@ class TestCharacterClient:
             assert client.timeout == custom_timeout
     
     def test_session_headers_with_api_key(self, mock_config):
-        """Test that session headers are properly set when API key is provided."""
+        """
+        Verify that the CharacterClient session includes the correct headers when an API key is provided.
+        """
         with patch('character_client.Config', return_value=mock_config):
             client = CharacterClient(api_key="test-key")
             
@@ -119,7 +149,9 @@ class TestCharacterClient:
                 assert client.session.headers[key] == value
     
     def test_session_headers_without_api_key(self):
-        """Test that session headers are properly set when no API key is provided."""
+        """
+        Verify that the session headers exclude Authorization and include Content-Type and User-Agent when no API key is provided.
+        """
         with patch('character_client.Config') as mock_config_class:
             mock_config_instance = Mock()
             mock_config_instance.get.return_value = None
@@ -134,7 +166,9 @@ class TestCharacterClient:
     # Get Character Tests
     @patch('requests.Session.get')
     def test_get_character_success(self, mock_get, character_client, sample_character):
-        """Test successful character retrieval."""
+        """
+        Tests that get_character successfully retrieves and returns character data for a valid character ID.
+        """
         mock_response = Mock()
         mock_response.json.return_value = sample_character
         mock_response.raise_for_status.return_value = None
@@ -149,28 +183,38 @@ class TestCharacterClient:
         )
     
     def test_get_character_invalid_id_zero(self, character_client):
-        """Test get_character with zero ID."""
+        """
+        Test that get_character raises ValueError when called with a character ID of zero.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.get_character(0)
     
     def test_get_character_invalid_id_negative(self, character_client):
-        """Test get_character with negative ID."""
+        """
+        Test that get_character raises ValueError when called with a negative character ID.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.get_character(-1)
     
     def test_get_character_invalid_id_string(self, character_client):
-        """Test get_character with string ID."""
+        """
+        Test that get_character raises ValueError when called with a string character ID.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.get_character("invalid")
     
     def test_get_character_invalid_id_none(self, character_client):
-        """Test get_character with None ID."""
+        """
+        Test that get_character raises ValueError when called with None as the character ID.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.get_character(None)
     
     @patch('requests.Session.get')
     def test_get_character_http_error(self, mock_get, character_client):
-        """Test get_character with HTTP error."""
+        """
+        Test that get_character raises an HTTPError when the API responds with an HTTP error status.
+        """
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
         mock_get.return_value = mock_response
@@ -180,7 +224,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_get_character_connection_error(self, mock_get, character_client):
-        """Test get_character with connection error."""
+        """
+        Test that get_character raises a ConnectionError when a connection failure occurs.
+        """
         mock_get.side_effect = ConnectionError("Connection failed")
         
         with pytest.raises(ConnectionError):
@@ -188,7 +234,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_get_character_timeout(self, mock_get, character_client):
-        """Test get_character with timeout."""
+        """
+        Test that get_character raises a Timeout exception when the request times out.
+        """
         mock_get.side_effect = Timeout("Request timed out")
         
         with pytest.raises(Timeout):
@@ -197,7 +245,9 @@ class TestCharacterClient:
     # Create Character Tests
     @patch('requests.Session.post')
     def test_create_character_success(self, mock_post, character_client):
-        """Test successful character creation."""
+        """
+        Verifies that creating a character with valid data returns the expected character object and sends the correct POST request.
+        """
         character_data = {"name": "New Warrior", "class": "Warrior", "level": 1}
         created_character = {**character_data, "id": 3}
         
@@ -216,43 +266,57 @@ class TestCharacterClient:
         )
     
     def test_create_character_empty_data(self, character_client):
-        """Test create_character with empty data."""
+        """
+        Test that creating a character with empty data raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Character data must be a non-empty dictionary"):
             character_client.create_character({})
     
     def test_create_character_none_data(self, character_client):
-        """Test create_character with None data."""
+        """
+        Test that create_character raises ValueError when provided with None as character data.
+        """
         with pytest.raises(ValueError, match="Character data must be a non-empty dictionary"):
             character_client.create_character(None)
     
     def test_create_character_non_dict_data(self, character_client):
-        """Test create_character with non-dictionary data."""
+        """
+        Test that create_character raises ValueError when provided non-dictionary data.
+        """
         with pytest.raises(ValueError, match="Character data must be a non-empty dictionary"):
             character_client.create_character("invalid")
     
     def test_create_character_missing_name(self, character_client):
-        """Test create_character with missing name field."""
+        """
+        Test that create_character raises ValueError when the 'name' field is missing from the character data.
+        """
         character_data = {"class": "Warrior", "level": 1}
         
         with pytest.raises(ValueError, match="Required field 'name' is missing or empty"):
             character_client.create_character(character_data)
     
     def test_create_character_missing_class(self, character_client):
-        """Test create_character with missing class field."""
+        """
+        Test that create_character raises ValueError when the 'class' field is missing from the character data.
+        """
         character_data = {"name": "Test Character", "level": 1}
         
         with pytest.raises(ValueError, match="Required field 'class' is missing or empty"):
             character_client.create_character(character_data)
     
     def test_create_character_empty_name(self, character_client):
-        """Test create_character with empty name field."""
+        """
+        Test that creating a character with an empty 'name' field raises a ValueError.
+        """
         character_data = {"name": "", "class": "Warrior", "level": 1}
         
         with pytest.raises(ValueError, match="Required field 'name' is missing or empty"):
             character_client.create_character(character_data)
     
     def test_create_character_empty_class(self, character_client):
-        """Test create_character with empty class field."""
+        """
+        Test that creating a character with an empty 'class' field raises a ValueError.
+        """
         character_data = {"name": "Test Character", "class": "", "level": 1}
         
         with pytest.raises(ValueError, match="Required field 'class' is missing or empty"):
@@ -260,7 +324,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.post')
     def test_create_character_http_error(self, mock_post, character_client):
-        """Test create_character with HTTP error."""
+        """
+        Test that create_character raises an HTTPError when the API responds with an HTTP error during character creation.
+        """
         character_data = {"name": "Test Character", "class": "Warrior"}
         
         mock_response = Mock()
@@ -273,7 +339,9 @@ class TestCharacterClient:
     # Update Character Tests
     @patch('requests.Session.put')
     def test_update_character_success(self, mock_put, character_client, sample_character):
-        """Test successful character update."""
+        """
+        Test that updating a character with valid data returns the updated character and sends the correct PUT request.
+        """
         update_data = {"level": 15, "health": 120}
         updated_character = {**sample_character, **update_data}
         
@@ -292,23 +360,33 @@ class TestCharacterClient:
         )
     
     def test_update_character_invalid_id(self, character_client):
-        """Test update_character with invalid ID."""
+        """
+        Test that update_character raises ValueError when given an invalid character ID.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.update_character(0, {"level": 20})
     
     def test_update_character_empty_data(self, character_client):
-        """Test update_character with empty data."""
+        """
+        Test that updating a character with empty data raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Character data must be a non-empty dictionary"):
             character_client.update_character(1, {})
     
     def test_update_character_none_data(self, character_client):
-        """Test update_character with None data."""
+        """
+        Test that update_character raises ValueError when provided with None as character data.
+        """
         with pytest.raises(ValueError, match="Character data must be a non-empty dictionary"):
             character_client.update_character(1, None)
     
     @patch('requests.Session.put')
     def test_update_character_not_found(self, mock_put, character_client):
-        """Test updating non-existent character."""
+        """
+        Test that updating a non-existent character raises an HTTPError.
+        
+        Simulates a 404 Not Found response when attempting to update a character, and verifies that the client raises an HTTPError.
+        """
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
         mock_put.return_value = mock_response
@@ -319,7 +397,9 @@ class TestCharacterClient:
     # Delete Character Tests
     @patch('requests.Session.delete')
     def test_delete_character_success(self, mock_delete, character_client):
-        """Test successful character deletion."""
+        """
+        Test that deleting a character with a valid ID returns True and sends the correct DELETE request.
+        """
         mock_response = Mock()
         mock_response.raise_for_status.return_value = None
         mock_delete.return_value = mock_response
@@ -333,13 +413,17 @@ class TestCharacterClient:
         )
     
     def test_delete_character_invalid_id(self, character_client):
-        """Test delete_character with invalid ID."""
+        """
+        Test that delete_character raises ValueError when given an invalid character ID.
+        """
         with pytest.raises(ValueError, match="Character ID must be a positive integer"):
             character_client.delete_character(-1)
     
     @patch('requests.Session.delete')
     def test_delete_character_not_found(self, mock_delete, character_client):
-        """Test deleting non-existent character."""
+        """
+        Test that attempting to delete a non-existent character raises an HTTPError.
+        """
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
         mock_delete.return_value = mock_response
@@ -350,7 +434,11 @@ class TestCharacterClient:
     # List Characters Tests
     @patch('requests.Session.get')
     def test_list_characters_success(self, mock_get, character_client, sample_character_list):
-        """Test successful character listing."""
+        """
+        Test that listing characters returns the expected response data when the API call is successful.
+        
+        Verifies that the `list_characters` method of `CharacterClient` correctly retrieves and returns a list of characters, and that the request is made with the appropriate URL, query parameters, and timeout.
+        """
         response_data = {
             "characters": sample_character_list,
             "total": 2,
@@ -374,7 +462,11 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_list_characters_with_pagination(self, mock_get, character_client):
-        """Test character listing with custom pagination."""
+        """
+        Test that listing characters with custom limit and offset parameters returns the expected paginated response.
+        
+        Verifies that the client sends the correct query parameters for pagination and processes the API response as expected.
+        """
         response_data = {"characters": [], "total": 0, "limit": 5, "offset": 10}
         
         mock_response = Mock()
@@ -393,7 +485,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_list_characters_with_filters(self, mock_get, character_client):
-        """Test character listing with filters."""
+        """
+        Verify that listing characters with filter parameters correctly merges filters into the request and calls the API with the expected query parameters.
+        """
         filters = {"class": "Warrior", "level_min": 5}
         expected_params = {'limit': 10, 'offset': 0, 'class': 'Warrior', 'level_min': 5}
         
@@ -411,34 +505,46 @@ class TestCharacterClient:
         )
     
     def test_list_characters_invalid_limit_zero(self, character_client):
-        """Test list_characters with zero limit."""
+        """
+        Test that calling list_characters with a limit of zero raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Limit must be a positive integer"):
             character_client.list_characters(limit=0)
     
     def test_list_characters_invalid_limit_negative(self, character_client):
-        """Test list_characters with negative limit."""
+        """
+        Test that calling list_characters with a negative limit raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Limit must be a positive integer"):
             character_client.list_characters(limit=-1)
     
     def test_list_characters_invalid_limit_string(self, character_client):
-        """Test list_characters with string limit."""
+        """
+        Test that providing a non-integer string as the limit to list_characters raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Limit must be a positive integer"):
             character_client.list_characters(limit="invalid")
     
     def test_list_characters_invalid_offset_negative(self, character_client):
-        """Test list_characters with negative offset."""
+        """
+        Test that list_characters raises a ValueError when called with a negative offset.
+        """
         with pytest.raises(ValueError, match="Offset must be a non-negative integer"):
             character_client.list_characters(offset=-1)
     
     def test_list_characters_invalid_offset_string(self, character_client):
-        """Test list_characters with string offset."""
+        """
+        Test that providing a non-integer string as the offset to list_characters raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Offset must be a non-negative integer"):
             character_client.list_characters(offset="invalid")
 
     # Search Characters Tests
     @patch('requests.Session.get')
     def test_search_characters_success(self, mock_get, character_client, sample_character_list):
-        """Test successful character search."""
+        """
+        Verify that searching for characters with a valid query returns the expected list of characters and constructs the correct API request.
+        """
         search_response = {"characters": sample_character_list}
         
         mock_response = Mock()
@@ -457,7 +563,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_search_characters_with_limit(self, mock_get, character_client):
-        """Test character search with custom limit."""
+        """
+        Test that searching for characters with a custom limit parameter sends the correct request and parameters.
+        """
         mock_response = Mock()
         mock_response.json.return_value = {"characters": []}
         mock_response.raise_for_status.return_value = None
@@ -472,29 +580,39 @@ class TestCharacterClient:
         )
     
     def test_search_characters_empty_query(self, character_client):
-        """Test search_characters with empty query."""
+        """
+        Verify that searching for characters with an empty query string raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Query must be a non-empty string"):
             character_client.search_characters("")
     
     def test_search_characters_none_query(self, character_client):
-        """Test search_characters with None query."""
+        """
+        Verify that passing None as the query to search_characters raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Query must be a non-empty string"):
             character_client.search_characters(None)
     
     def test_search_characters_non_string_query(self, character_client):
-        """Test search_characters with non-string query."""
+        """
+        Test that search_characters raises ValueError when the query is not a string.
+        """
         with pytest.raises(ValueError, match="Query must be a non-empty string"):
             character_client.search_characters(123)
     
     def test_search_characters_invalid_limit(self, character_client):
-        """Test search_characters with invalid limit."""
+        """
+        Test that `search_characters` raises a ValueError when called with a non-positive limit.
+        """
         with pytest.raises(ValueError, match="Limit must be a positive integer"):
             character_client.search_characters("test", limit=0)
 
     # Get Character Stats Tests
     @patch('requests.Session.get')
     def test_get_character_stats_success(self, mock_get, character_client):
-        """Test successful character stats retrieval."""
+        """
+        Verifies that character stats are successfully retrieved and returned when the API responds with valid data.
+        """
         stats_data = {
             "character_id": 1,
             "stats": {
@@ -530,7 +648,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_get_character_stats_not_found(self, mock_get, character_client):
-        """Test get_character_stats with non-existent character."""
+        """
+        Test that get_character_stats raises HTTPError when the character does not exist.
+        """
         mock_response = Mock()
         mock_response.raise_for_status.side_effect = HTTPError("404 Not Found")
         mock_get.return_value = mock_response
@@ -541,7 +661,9 @@ class TestCharacterClient:
     # Edge Cases and Error Handling Tests
     @patch('requests.Session.get')
     def test_malformed_json_response(self, mock_get, character_client):
-        """Test handling of malformed JSON responses."""
+        """
+        Test that the client raises a JSONDecodeError when the API returns malformed JSON in the response.
+        """
         mock_response = Mock()
         mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
         mock_response.raise_for_status.return_value = None
@@ -552,14 +674,18 @@ class TestCharacterClient:
     
     @patch('requests.Session.get')
     def test_request_exception_handling(self, mock_get, character_client):
-        """Test handling of general request exceptions."""
+        """
+        Test that a general RequestException raised during a character retrieval is properly propagated.
+        """
         mock_get.side_effect = RequestException("General request error")
         
         with pytest.raises(RequestException):
             character_client.get_character(1)
     
     def test_logging_on_error(self, character_client, caplog):
-        """Test that errors are properly logged."""
+        """
+        Verify that connection errors during character retrieval are logged at the error level.
+        """
         with patch('requests.Session.get') as mock_get:
             mock_get.side_effect = ConnectionError("Connection failed")
             
@@ -571,7 +697,9 @@ class TestCharacterClient:
             assert "Connection failed" in caplog.text
     
     def test_large_character_id(self, character_client):
-        """Test handling of very large character IDs."""
+        """
+        Verify that the client correctly retrieves a character when provided with a very large character ID.
+        """
         large_id = 999999999999999999
         
         with patch('requests.Session.get') as mock_get:
@@ -590,7 +718,9 @@ class TestCharacterClient:
     
     @patch('requests.Session.post')
     def test_unicode_character_data(self, mock_post, character_client):
-        """Test handling of Unicode characters in character data."""
+        """
+        Verify that the client correctly handles creation of character data containing Unicode characters, including emojis and accented letters.
+        """
         unicode_data = {
             "name": "Tëst Châractér 🎮",
             "class": "Wârrior",
