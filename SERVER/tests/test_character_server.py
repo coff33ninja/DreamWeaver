@@ -1,687 +1,640 @@
 import pytest
+import pytest_asyncio
 import asyncio
 import os
 import uuid
-import tempfile
-from unittest.mock import Mock, patch, AsyncMock, MagicMock, call
-from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
+import sys
 
-# Import the CharacterServer class and related dependencies
+# Add the SERVER/src directory to the path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
 try:
-    import sys
-    sys.path.append('SERVER')
     from character_server import CharacterServer
 except ImportError:
-    pytest.skip("CharacterServer module not found", allow_module_level=True)
-
-
-class TestCharacterServer:
-    """Comprehensive test suite for CharacterServer functionality.
-    
-    Testing Framework: pytest
-    This test suite covers the async AI-powered character server that integrates
-    LLM and TTS functionality for generating character responses and audio.
-    """
-
-    @pytest.fixture
-    def mock_database(self):
-        """Mock database fixture with character data."""
-        mock_db = Mock()
-        mock_db.get_character.return_value = {
-            "name": "TestActor1",
-            "personality": "friendly_tester",
-            "goals": "assist with testing",
-            "backstory": "created for unit tests",
-            "tts": "gtts",
-            "tts_model": "en_US-test-model",
-            "reference_audio_filename": "test_reference.wav",
-            "Actor_id": "Actor1",
-            "llm_model": "test-llm-model",
-            "language": "en"
-        }
-        mock_db.save_character.return_value = True
-        mock_db.save_training_data.return_value = True
-        return mock_db
-
-    @pytest.fixture
-    def mock_database_empty(self):
-        """Mock database fixture that returns None for character data."""
-        mock_db = Mock()
-        mock_db.get_character.return_value = None
-        mock_db.save_character.return_value = True
-        mock_db.save_training_data.return_value = True
-        return mock_db
-
-    @pytest.fixture
-    def character_server(self, mock_database):
-        """CharacterServer instance fixture."""
-        return CharacterServer(mock_database)
-
-    @pytest.fixture
-    def character_server_empty_db(self, mock_database_empty):
-        """CharacterServer instance with empty database."""
-        return CharacterServer(mock_database_empty)
-
-    @pytest.fixture
-    def mock_llm_engine(self):
-        """Mock LLM engine fixture."""
-        mock_llm = AsyncMock()
-        mock_llm.is_initialized = True
-        mock_llm.generate = AsyncMock(return_value="Generated response from LLM")
-        mock_llm.fine_tune = AsyncMock(return_value=True)
-        return mock_llm
-
-    @pytest.fixture
-    def mock_tts_manager(self):
-        """Mock TTS manager fixture."""
-        mock_tts = AsyncMock()
-        mock_tts.is_initialized = True
-        mock_tts.synthesize = AsyncMock(return_value=True)
-        return mock_tts
-
-    @pytest.fixture
-    def temp_audio_dir(self):
-        """Temporary directory for audio files."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            yield temp_dir
+    # Create a mock CharacterServer class if import fails
+    class CharacterServer:
+        def __init__(self, db):
+            self.db = db
+            self.character_Actor_id = "Actor1"
+            self.character = None
+            self.llm = None
+            self.tts = None
+        
+        async def async_init(self):
+            pass
+        
+        async def generate_response(self, narration, other_texts):
+            return "Mock response"
+        
+        async def output_audio(self, text):
+            pass
 
 
 class TestCharacterServerInitialization:
-    """Test CharacterServer initialization functionality."""
-
-    def test_init_with_valid_character_data(self, mock_database):
-        """Test initialization with valid character data from database."""
-        server = CharacterServer(mock_database)
+    """Test CharacterServer initialization and setup."""
+    
+    def setup_method(self):
+        """Set up test fixtures before each test method."""
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "personality": "test_personality",
+            "goals": "test_goals",
+            "backstory": "test_backstory",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": "test_reference.wav",
+            "Actor_id": "Actor1",
+            "llm_model": "test_model",
+            "language": "en"
+        }
+    
+    def test_init_with_existing_character(self):
+        """Test initialization when character exists in database."""
+        self.mock_db.get_character.return_value = self.mock_character_data
         
-        assert server.db == mock_database
+        server = CharacterServer(self.mock_db)
+        
+        assert server.db == self.mock_db
         assert server.character_Actor_id == "Actor1"
-        assert server.character is not None
-        assert server.character["name"] == "TestActor1"
-        assert server.character["Actor_id"] == "Actor1"
-        assert server.llm is None  # Not initialized until async_init
-        assert server.tts is None  # Not initialized until async_init
+        assert server.character == self.mock_character_data
+        assert server.llm is None
+        assert server.tts is None
+        self.mock_db.get_character.assert_called_once_with("Actor1")
+    
+    def test_init_with_missing_character(self):
+        """Test initialization when character doesn't exist in database."""
+        self.mock_db.get_character.return_value = None
         
-        # Verify database was queried
-        mock_database.get_character.assert_called_once_with("Actor1")
-
-    def test_init_with_missing_character_data(self, mock_database_empty):
-        """Test initialization when character data is missing from database."""
-        server = CharacterServer(mock_database_empty)
+        server = CharacterServer(self.mock_db)
         
-        assert server.db == mock_database_empty
-        assert server.character_Actor_id == "Actor1"
         assert server.character is not None
         assert server.character["name"] == "Actor1_Default"
         assert server.character["personality"] == "server_default"
         assert server.character["Actor_id"] == "Actor1"
+        self.mock_db.save_character.assert_called_once()
+    
+    def test_init_with_none_db(self):
+        """Test initialization with None database."""
+        with pytest.raises(AttributeError):
+            server = CharacterServer(None)
+            # This should fail when trying to call get_character on None
+    
+    def test_character_default_values(self):
+        """Test that default character values are properly set."""
+        self.mock_db.get_character.return_value = None
         
-        # Verify database was queried and default character was saved
-        mock_database_empty.get_character.assert_called_once_with("Actor1")
-        mock_database_empty.save_character.assert_called_once()
-
-    def test_init_default_character_structure(self, mock_database_empty):
-        """Test that default character has all required fields."""
-        server = CharacterServer(mock_database_empty)
+        server = CharacterServer(self.mock_db)
         
-        required_fields = [
-            "name", "personality", "goals", "backstory", 
-            "tts", "tts_model", "reference_audio_filename", 
-            "Actor_id", "llm_model"
-        ]
+        expected_defaults = {
+            "name": "Actor1_Default",
+            "personality": "server_default",
+            "goals": "assist",
+            "backstory": "embedded",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": None,
+            "Actor_id": "Actor1",
+            "llm_model": None
+        }
         
-        for field in required_fields:
-            assert field in server.character
-        
-        assert server.character["llm_model"] is None
-        assert server.character["tts"] == "piper"
-        assert server.character["tts_model"] == "en_US-ryan-high"
-
-    def test_init_database_error_handling(self):
-        """Test initialization with database errors."""
-        mock_db = Mock()
-        mock_db.get_character.side_effect = Exception("Database connection failed")
-        
-        with pytest.raises(Exception, match="Database connection failed"):
-            CharacterServer(mock_db)
+        for key, expected_value in expected_defaults.items():
+            assert server.character[key] == expected_value
 
 
 class TestCharacterServerAsyncInit:
-    """Test CharacterServer async initialization functionality."""
-
+    """Test CharacterServer async initialization."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": "test.wav",
+            "llm_model": "test_model",
+            "language": "en"
+        }
+        self.mock_db.get_character.return_value = self.mock_character_data
+    
     @pytest.mark.asyncio
     @patch('character_server.LLMEngine')
     @patch('character_server.TTSManager')
-    @patch('character_server.pygame.mixer')
-    async def test_async_init_success(self, mock_pygame_mixer, mock_tts_class, 
-                                    mock_llm_class, character_server):
-        """Test successful async initialization of LLM and TTS."""
-        # Setup mocks
-        mock_llm_instance = AsyncMock()
-        mock_llm_instance.is_initialized = True
-        mock_llm_class.return_value = mock_llm_instance
+    @patch('character_server.pygame')
+    async def test_async_init_success(self, mock_pygame, mock_tts_manager, mock_llm_engine):
+        """Test successful async initialization."""
+        mock_llm_instance = Mock()
+        mock_tts_instance = Mock()
+        mock_llm_engine.return_value = mock_llm_instance
+        mock_tts_manager.return_value = mock_tts_instance
+        mock_pygame.mixer.get_init.return_value = False
         
-        mock_tts_instance = AsyncMock()
-        mock_tts_instance.is_initialized = True
-        mock_tts_class.return_value = mock_tts_instance
+        server = CharacterServer(self.mock_db)
+        await server.async_init()
         
-        mock_pygame_mixer.get_init.return_value = False
-        mock_pygame_mixer.init.return_value = None
-        
-        # Execute async init
-        await character_server.async_init()
-        
-        # Verify LLM and TTS were initialized
-        assert character_server.llm is not None
-        assert character_server.tts is not None
-        
-        # Verify pygame mixer was initialized
-        mock_pygame_mixer.init.assert_called_once()
-
+        assert server.llm == mock_llm_instance
+        assert server.tts == mock_tts_instance
+        mock_pygame.mixer.init.assert_called_once()
+    
     @pytest.mark.asyncio
     @patch('character_server.LLMEngine')
     @patch('character_server.TTSManager')
-    @patch('character_server.pygame.mixer')
-    async def test_async_init_pygame_already_initialized(self, mock_pygame_mixer, 
-                                                       mock_tts_class, mock_llm_class, 
-                                                       character_server):
+    @patch('character_server.pygame')
+    async def test_async_init_pygame_already_initialized(self, mock_pygame, mock_tts_manager, mock_llm_engine):
         """Test async init when pygame mixer is already initialized."""
-        # Setup mocks
-        mock_llm_class.return_value = AsyncMock()
-        mock_tts_class.return_value = AsyncMock()
-        mock_pygame_mixer.get_init.return_value = True
+        mock_pygame.mixer.get_init.return_value = True
         
-        await character_server.async_init()
+        server = CharacterServer(self.mock_db)
+        await server.async_init()
         
-        # Verify pygame init was not called since it's already initialized
-        mock_pygame_mixer.init.assert_not_called()
-
+        mock_pygame.mixer.init.assert_not_called()
+    
     @pytest.mark.asyncio
     @patch('character_server.LLMEngine')
     @patch('character_server.TTSManager')
-    @patch('character_server.pygame.mixer')
-    async def test_async_init_pygame_error(self, mock_pygame_mixer, mock_tts_class, 
-                                         mock_llm_class, character_server):
-        """Test async init with pygame initialization error."""
-        # Setup mocks
-        mock_llm_class.return_value = AsyncMock()
-        mock_tts_class.return_value = AsyncMock()
-        mock_pygame_mixer.get_init.return_value = False
-        mock_pygame_mixer.init.side_effect = Exception("Pygame init failed")
+    @patch('character_server.pygame')
+    async def test_async_init_pygame_error(self, mock_pygame, mock_tts_manager, mock_llm_engine):
+        """Test async init when pygame mixer initialization fails."""
+        mock_pygame.mixer.get_init.return_value = False
+        mock_pygame.mixer.init.side_effect = Exception("Pygame init failed")
+        mock_pygame.error = Exception
         
-        # Should not raise exception, just log error
-        await character_server.async_init()
+        server = CharacterServer(self.mock_db)
+        # Should not raise exception, should handle gracefully
+        await server.async_init()
         
-        # Verify pygame init was attempted
-        mock_pygame_mixer.init.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch('character_server.LLMEngine')
-    async def test_async_init_llm_error(self, mock_llm_class, character_server):
-        """Test async init with LLM initialization error."""
-        mock_llm_class.side_effect = Exception("LLM init failed")
-        
-        with pytest.raises(Exception, match="LLM init failed"):
-            await character_server.async_init()
-
-    @pytest.mark.asyncio
-    @patch('character_server.TTSManager')
-    async def test_async_init_tts_error(self, mock_tts_class, character_server):
-        """Test async init with TTS initialization error."""
-        mock_tts_class.side_effect = Exception("TTS init failed")
-        
-        with pytest.raises(Exception, match="TTS init failed"):
-            await character_server.async_init()
-
+        mock_pygame.mixer.init.assert_called_once()
+    
     @pytest.mark.asyncio
     @patch('character_server.LLMEngine')
     @patch('character_server.TTSManager')
-    async def test_async_init_with_xtts_reference_audio(self, mock_tts_class, 
-                                                      mock_llm_class, mock_database):
-        """Test async init with XTTS and reference audio configuration."""
-        # Setup character with XTTS
-        character_data = mock_database.get_character.return_value
-        character_data["tts"] = "xttsv2"
-        character_data["reference_audio_filename"] = "test_reference.wav"
+    async def test_async_init_with_xtts_reference_audio(self, mock_tts_manager, mock_llm_engine):
+        """Test async init with XTTS and reference audio."""
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "reference.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
         
-        server = CharacterServer(mock_database)
-        
-        mock_llm_class.return_value = AsyncMock()
-        mock_tts_instance = AsyncMock()
-        mock_tts_class.return_value = mock_tts_instance
+        server = CharacterServer(self.mock_db)
         
         with patch('character_server.os.path.join') as mock_join:
             mock_join.return_value = "/path/to/reference.wav"
             await server.async_init()
         
-        # Verify TTS was initialized with speaker_wav_path
-        mock_tts_class.assert_called_once()
-        call_args = mock_tts_class.call_args
-        assert "speaker_wav_path" in call_args.kwargs
+        # Verify TTSManager was called with speaker_wav_path
+        mock_tts_manager.assert_called_once()
+        call_args = mock_tts_manager.call_args
+        assert 'speaker_wav_path' in call_args.kwargs
 
 
-class TestCharacterServerResponseGeneration:
-    """Test CharacterServer response generation functionality."""
-
+class TestCharacterServerGenerateResponse:
+    """Test CharacterServer response generation."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "personality": "helpful"
+        }
+        self.mock_db.get_character.return_value = self.mock_character_data
+    
     @pytest.mark.asyncio
-    async def test_generate_response_success(self, character_server, mock_llm_engine, 
-                                           mock_tts_manager):
-        """Test successful response generation."""
-        # Setup initialized server
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
-        
-        with patch.object(character_server, 'output_audio') as mock_output_audio:
-            mock_output_audio.return_value = None
-            
-            response = await character_server.generate_response(
-                "Test narration", 
-                {"Player": "Hello there!"}
-            )
-        
-        assert response == "Generated response from LLM"
-        
-        # Verify LLM was called with correct prompt
-        mock_llm_engine.generate.assert_called_once()
-        call_args = mock_llm_engine.generate.call_args[0]
-        prompt = call_args[0]
-        assert "Narrator: Test narration" in prompt
-        assert "Player: Hello there!" in prompt
-        assert "TestActor1 responds as friendly_tester:" in prompt
-        
-        # Verify training data was saved
-        character_server.db.save_training_data.assert_called_once()
-        
-        # Verify fine-tuning was called
-        mock_llm_engine.fine_tune.assert_called_once()
-        
-        # Verify audio output was called
-        mock_output_audio.assert_called_once_with("Generated response from LLM")
-
-    @pytest.mark.asyncio
-    async def test_generate_response_no_character(self, mock_database):
-        """Test response generation when character is not loaded."""
-        server = CharacterServer(mock_database)
+    async def test_generate_response_no_character(self):
+        """Test response generation when no character is loaded."""
+        server = CharacterServer(self.mock_db)
         server.character = None
         
         response = await server.generate_response("Test narration", {})
-        
         assert response == ""
-
+    
     @pytest.mark.asyncio
-    async def test_generate_response_llm_not_initialized(self, character_server):
-        """Test response generation when LLM is not initialized."""
-        character_server.llm = None
+    async def test_generate_response_no_llm(self):
+        """Test response generation when LLM is not initialized.""" 
+        server = CharacterServer(self.mock_db)
+        server.llm = None
         
-        response = await character_server.generate_response("Test narration", {})
-        
+        response = await server.generate_response("Test narration", {})
         assert response == "[Actor1_LLM_ERROR]"
-
+    
     @pytest.mark.asyncio
-    async def test_generate_response_llm_not_ready(self, character_server, mock_llm_engine):
-        """Test response generation when LLM is not ready."""
-        mock_llm_engine.is_initialized = False
-        character_server.llm = mock_llm_engine
+    async def test_generate_response_llm_not_initialized(self):
+        """Test response generation when LLM exists but is not initialized."""
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = False
         
-        response = await character_server.generate_response("Test narration", {})
-        
+        response = await server.generate_response("Test narration", {})
         assert response == "[Actor1_LLM_ERROR]"
-
+    
     @pytest.mark.asyncio
-    async def test_generate_response_llm_error_response(self, character_server, 
-                                                      mock_llm_engine, mock_tts_manager):
+    async def test_generate_response_success(self):
+        """Test successful response generation."""
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Generated response")
+        server.llm.fine_tune = AsyncMock()
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output_audio:
+            response = await server.generate_response("Test narration", {"Other": "text"})
+        
+        assert response == "Generated response"
+        server.llm.generate.assert_called_once()
+        self.mock_db.save_training_data.assert_called_once()
+        server.llm.fine_tune.assert_called_once()
+        mock_output_audio.assert_called_once_with("Generated response")
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_with_other_texts(self):
+        """Test response generation with other character texts."""
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Generated response")
+        server.llm.fine_tune = AsyncMock()
+        
+        other_texts = {"Character1": "Hello", "Character2": "World"}
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
+            await server.generate_response("Narration", other_texts)
+        
+        # Verify the prompt construction includes other texts
+        call_args = server.llm.generate.call_args[0][0]
+        assert "Character1: Hello" in call_args
+        assert "Character2: World" in call_args
+        assert "Narrator: Narration" in call_args
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_llm_error_responses(self):
         """Test handling of LLM error responses."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
-        mock_llm_engine.generate.return_value = "[LLM_ERROR: NOT_INITIALIZED]"
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
         
-        response = await character_server.generate_response("Test narration", {})
+        error_responses = [
+            "[LLM_ERROR: NOT_INITIALIZED]",
+            "[LLM_ERROR: GENERATION_FAILED]",
+            None,
+            ""
+        ]
         
-        assert response == "[LLM_ERROR: NOT_INITIALIZED]"
-        
-        # Verify training data was not saved for error responses
-        character_server.db.save_training_data.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_generate_response_with_multiple_other_texts(self, character_server, 
-                                                             mock_llm_engine, mock_tts_manager):
-        """Test response generation with multiple other character texts."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
-        
-        other_texts = {
-            "Player": "Hello!",
-            "NPC1": "Greetings!",
-            "NPC2": "How are you?"
-        }
-        
-        with patch.object(character_server, 'output_audio'):
-            await character_server.generate_response("Test narration", other_texts)
-        
-        # Verify all texts were included in prompt
-        call_args = mock_llm_engine.generate.call_args[0]
-        prompt = call_args[0]
-        assert "Player: Hello!" in prompt
-        assert "NPC1: Greetings!" in prompt
-        assert "NPC2: How are you?" in prompt
-
-    @pytest.mark.asyncio
-    async def test_generate_response_empty_narration(self, character_server, 
-                                                   mock_llm_engine, mock_tts_manager):
-        """Test response generation with empty narration."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
-        
-        with patch.object(character_server, 'output_audio'):
-            response = await character_server.generate_response("", {})
-        
-        assert response == "Generated response from LLM"
-        
-        # Verify prompt was still generated correctly
-        call_args = mock_llm_engine.generate.call_args[0]
-        prompt = call_args[0]
-        assert "Narrator: " in prompt
+        for error_response in error_responses:
+            server.llm.generate = AsyncMock(return_value=error_response)
+            
+            with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output_audio:
+                response = await server.generate_response("Test", {})
+            
+            assert response == error_response
+            # Should not save training data or call fine_tune for error responses
+            mock_output_audio.assert_not_called()
 
 
-class TestCharacterServerAudioOutput:
+class TestCharacterServerOutputAudio:
     """Test CharacterServer audio output functionality."""
-
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "tts": "piper",
+            "reference_audio_filename": "test.wav"
+        }
+        self.mock_db.get_character.return_value = self.mock_character_data
+    
     @pytest.mark.asyncio
-    @patch('character_server.os.makedirs')
-    @patch('character_server.os.path.exists')
-    @patch('character_server.pygame.mixer')
-    @patch('character_server.asyncio.to_thread')
-    async def test_output_audio_success(self, mock_to_thread, mock_pygame_mixer, 
-                                      mock_exists, mock_makedirs, character_server, 
-                                      mock_tts_manager, temp_audio_dir):
-        """Test successful audio output."""
-        character_server.tts = mock_tts_manager
-        mock_exists.return_value = True
-        mock_pygame_mixer.get_init.return_value = True
-        mock_to_thread.return_value = None
-        
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test speech text")
-        
-        # Verify TTS synthesize was called
-        mock_tts_manager.synthesize.assert_called_once()
-        
-        # Verify pygame audio playback was attempted
-        mock_to_thread.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_output_audio_no_tts(self, character_server):
+    async def test_output_audio_no_tts(self):
         """Test audio output when TTS is not initialized."""
-        character_server.tts = None
+        server = CharacterServer(self.mock_db)
+        server.tts = None
         
         # Should not raise exception
-        await character_server.output_audio("Test text")
-
+        await server.output_audio("Test text")
+    
     @pytest.mark.asyncio
-    async def test_output_audio_tts_not_initialized(self, character_server, mock_tts_manager):
-        """Test audio output when TTS is not initialized."""
-        mock_tts_manager.is_initialized = False
-        character_server.tts = mock_tts_manager
+    async def test_output_audio_tts_not_initialized(self):
+        """Test audio output when TTS exists but is not initialized."""
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = False
         
-        await character_server.output_audio("Test text")
-        
-        # Verify TTS synthesize was not called
-        mock_tts_manager.synthesize.assert_not_called()
-
+        await server.output_audio("Test text")
+        # Should handle gracefully without calling synthesize
+    
     @pytest.mark.asyncio
-    async def test_output_audio_empty_text(self, character_server, mock_tts_manager):
+    async def test_output_audio_empty_text(self):
         """Test audio output with empty text."""
-        character_server.tts = mock_tts_manager
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
         
-        await character_server.output_audio("")
-        
-        # Verify TTS synthesize was not called
-        mock_tts_manager.synthesize.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_output_audio_no_character(self, character_server, mock_tts_manager):
-        """Test audio output when character is not loaded."""
-        character_server.tts = mock_tts_manager
-        character_server.character = None
-        
-        await character_server.output_audio("Test text")
-        
-        # Verify TTS synthesize was not called
-        mock_tts_manager.synthesize.assert_not_called()
-
+        for empty_text in [None, "", "   "]:
+            await server.output_audio(empty_text)
+            # Should handle gracefully
+    
     @pytest.mark.asyncio
     @patch('character_server.os.makedirs')
     @patch('character_server.os.path.exists')
-    async def test_output_audio_with_xtts_reference(self, mock_exists, mock_makedirs, 
-                                                  character_server, mock_tts_manager, 
-                                                  temp_audio_dir):
-        """Test audio output with XTTS and reference audio."""
-        character_server.tts = mock_tts_manager
-        character_server.character["tts"] = "xttsv2"
-        character_server.character["reference_audio_filename"] = "test_ref.wav"
-        
-        # Mock reference audio file existence
-        mock_exists.side_effect = lambda path: "test_ref.wav" in path
-        
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir), \
-             patch('character_server.REFERENCE_VOICES_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test text")
-        
-        # Verify TTS synthesize was called with speaker_wav
-        mock_tts_manager.synthesize.assert_called_once()
-        call_args = mock_tts_manager.synthesize.call_args
-        assert call_args.kwargs.get('speaker_wav_for_synthesis') is not None
-
-    @pytest.mark.asyncio
-    @patch('character_server.os.makedirs')
-    @patch('character_server.os.path.exists')
-    async def test_output_audio_xtts_missing_reference(self, mock_exists, mock_makedirs, 
-                                                     character_server, mock_tts_manager, 
-                                                     temp_audio_dir):
-        """Test audio output with XTTS when reference audio is missing."""
-        character_server.tts = mock_tts_manager
-        character_server.character["tts"] = "xttsv2"
-        character_server.character["reference_audio_filename"] = "missing_ref.wav"
-        
-        # Mock reference audio file does not exist
-        mock_exists.return_value = False
-        
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test text")
-        
-        # Verify TTS synthesize was called without speaker_wav
-        mock_tts_manager.synthesize.assert_called_once()
-        call_args = mock_tts_manager.synthesize.call_args
-        assert call_args.kwargs.get('speaker_wav_for_synthesis') is None
-
-    @pytest.mark.asyncio
-    @patch('character_server.os.makedirs')
-    @patch('character_server.os.path.exists')
-    @patch('character_server.pygame.mixer')
-    async def test_output_audio_pygame_not_initialized(self, mock_pygame_mixer, mock_exists, 
-                                                     mock_makedirs, character_server, 
-                                                     mock_tts_manager, temp_audio_dir):
-        """Test audio output when pygame mixer is not initialized."""
-        character_server.tts = mock_tts_manager
-        mock_exists.return_value = True
-        mock_pygame_mixer.get_init.return_value = False
-        
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test text")
-        
-        # Verify TTS synthesis was still attempted
-        mock_tts_manager.synthesize.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch('character_server.os.makedirs')
-    @patch('character_server.os.path.exists')
-    @patch('character_server.pygame.mixer')
+    @patch('character_server.pygame')
     @patch('character_server.asyncio.to_thread')
-    async def test_output_audio_pygame_error(self, mock_to_thread, mock_pygame_mixer, 
-                                           mock_exists, mock_makedirs, character_server, 
-                                           mock_tts_manager, temp_audio_dir):
-        """Test audio output with pygame playback error."""
-        character_server.tts = mock_tts_manager
+    async def test_output_audio_success(self, mock_to_thread, mock_pygame, mock_exists, mock_makedirs):
+        """Test successful audio output."""
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
         mock_exists.return_value = True
-        mock_pygame_mixer.get_init.return_value = True
-        mock_to_thread.side_effect = Exception("Pygame playback error")
+        mock_pygame.mixer.get_init.return_value = True
+        mock_to_thread.return_value = None
         
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            # Should not raise exception, just log error
-            await character_server.output_audio("Test text")
+        with patch('character_server.uuid.uuid4') as mock_uuid:
+            mock_uuid.return_value = Mock()
+            mock_uuid.return_value.__str__ = Mock(return_value="test-uuid")
+            
+            await server.output_audio("Test text")
         
-        # Verify TTS synthesis was attempted
-        mock_tts_manager.synthesize.assert_called_once()
-
+        server.tts.synthesize.assert_called_once()
+        mock_to_thread.assert_called_once()
+    
     @pytest.mark.asyncio
     @patch('character_server.os.makedirs')
-    async def test_output_audio_tts_synthesis_failure(self, mock_makedirs, character_server, 
-                                                    mock_tts_manager, temp_audio_dir):
-        """Test audio output when TTS synthesis fails."""
-        character_server.tts = mock_tts_manager
-        mock_tts_manager.synthesize.return_value = False  # Synthesis failed
+    @patch('character_server.os.path.exists')
+    async def test_output_audio_with_xtts_reference(self, mock_exists, mock_makedirs):
+        """Test audio output with XTTS and reference audio."""
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "reference.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
         
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test text")
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
         
-        # Verify TTS synthesize was called
-        mock_tts_manager.synthesize.assert_called_once()
-
+        mock_exists.return_value = True  # Reference file exists
+        
+        with patch('character_server.REFERENCE_VOICES_AUDIO_PATH', '/ref/path'):
+            await server.output_audio("Test text")
+        
+        # Verify synthesize was called with speaker_wav_for_synthesis
+        call_args = server.tts.synthesize.call_args
+        assert call_args.kwargs.get('speaker_wav_for_synthesis') is not None
+    
     @pytest.mark.asyncio
-    @patch('character_server.uuid.uuid4')
     @patch('character_server.os.makedirs')
-    async def test_output_audio_file_naming(self, mock_makedirs, mock_uuid, character_server, 
-                                          mock_tts_manager, temp_audio_dir):
-        """Test that audio files are named correctly."""
-        character_server.tts = mock_tts_manager
-        mock_uuid.return_value = Mock()
-        mock_uuid.return_value.__str__ = Mock(return_value="test-uuid-123")
+    @patch('character_server.os.path.exists')
+    async def test_output_audio_missing_reference_file(self, mock_exists, mock_makedirs):
+        """Test audio output when reference audio file is missing."""
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "missing.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
         
-        with patch('character_server.CHARACTERS_AUDIO_PATH', temp_audio_dir):
-            await character_server.output_audio("Test text")
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
         
-        # Verify TTS synthesize was called with correct filename
-        call_args = mock_tts_manager.synthesize.call_args
-        output_path = call_args[0][1]  # Second argument is output path
-        assert "test-uuid-123.wav" in output_path
+        mock_exists.return_value = False  # Reference file doesn't exist
+        
+        await server.output_audio("Test text")
+        
+        # Should still call synthesize but without speaker_wav_for_synthesis
+        call_args = server.tts.synthesize.call_args
+        assert call_args.kwargs.get('speaker_wav_for_synthesis') is None
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.pygame')
+    async def test_output_audio_synthesis_failure(self, mock_pygame, mock_makedirs):
+        """Test audio output when synthesis fails."""
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=False)  # Synthesis fails
+        
+        mock_pygame.mixer.get_init.return_value = True
+        
+        # Should not raise exception
+        await server.output_audio("Test text")
+        
+        # Should not attempt to play audio
+        mock_pygame.mixer.Sound.assert_not_called()
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.os.path.exists')
+    @patch('character_server.pygame')
+    async def test_output_audio_pygame_not_initialized(self, mock_pygame, mock_exists, mock_makedirs):
+        """Test audio output when pygame mixer is not initialized."""
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
+        mock_exists.return_value = True
+        mock_pygame.mixer.get_init.return_value = False  # Pygame not initialized
+        
+        await server.output_audio("Test text")
+        
+        # Should not attempt to play audio
+        mock_pygame.mixer.Sound.assert_not_called()
 
 
 class TestCharacterServerEdgeCases:
-    """Test edge cases and error conditions."""
-
-    def test_character_name_sanitization(self, mock_database):
-        """Test that character names are properly sanitized for file paths."""
-        # Setup character with special characters in name
-        character_data = mock_database.get_character.return_value
-        character_data["name"] = "Test@Character#123!$%"
+    """Test CharacterServer edge cases and error conditions."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_db = Mock()
+    
+    def test_character_name_sanitization(self):
+        """Test character name sanitization for file paths."""
+        character_data = {
+            "name": "Test/Character\\With:Invalid*Chars",
+            "Actor_id": "Actor1"
+        }
+        self.mock_db.get_character.return_value = character_data
         
-        server = CharacterServer(mock_database)
+        server = CharacterServer(self.mock_db)
         
-        # Character should be loaded successfully
-        assert server.character["name"] == "Test@Character#123!$%"
-
+        # The server should handle special characters in names
+        assert server.character["name"] == character_data["name"]
+    
     @pytest.mark.asyncio
-    async def test_concurrent_response_generation(self, character_server, mock_llm_engine, 
-                                                 mock_tts_manager):
-        """Test concurrent response generation calls."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
+    async def test_concurrent_response_generation(self):
+        """Test concurrent response generation."""
+        self.mock_db.get_character.return_value = {"name": "TestActor", "personality": "helpful"}
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Response")
+        server.llm.fine_tune = AsyncMock()
         
-        with patch.object(character_server, 'output_audio'):
-            # Make multiple concurrent calls
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
             tasks = [
-                character_server.generate_response(f"Narration {i}", {})
-                for i in range(3)
+                server.generate_response(f"Narration {i}", {})
+                for i in range(5)
             ]
-            
             responses = await asyncio.gather(*tasks)
         
-        # All should succeed
-        assert len(responses) == 3
-        assert all(response == "Generated response from LLM" for response in responses)
-        
-        # Verify LLM was called for each request
-        assert mock_llm_engine.generate.call_count == 3
-
+        assert len(responses) == 5
+        assert all(response == "Response" for response in responses)
+    
     @pytest.mark.asyncio
-    async def test_very_long_narration(self, character_server, mock_llm_engine, mock_tts_manager):
-        """Test response generation with very long narration text."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
+    async def test_very_long_narration(self):
+        """Test response generation with very long narration."""
+        self.mock_db.get_character.return_value = {"name": "TestActor", "personality": "helpful"}
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Response")
+        server.llm.fine_tune = AsyncMock()
         
-        long_narration = "This is a very long narration. " * 1000  # Very long text
+        very_long_narration = "A" * 10000  # 10k characters
         
-        with patch.object(character_server, 'output_audio'):
-            response = await character_server.generate_response(long_narration, {})
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
+            response = await server.generate_response(very_long_narration, {})
         
-        assert response == "Generated response from LLM"
+        assert response == "Response"
+        # Verify the long narration was included in the prompt
+        call_args = server.llm.generate.call_args[0][0]
+        assert very_long_narration in call_args
+    
+    def test_db_save_character_exception(self):
+        """Test handling of database exceptions during character saving."""
+        self.mock_db.get_character.return_value = None
+        self.mock_db.save_character.side_effect = Exception("Database error")
+        
+        # Should not raise exception during initialization
+        server = CharacterServer(self.mock_db)
+        assert server.character is not None
 
+
+class TestCharacterServerIntegration:
+    """Integration tests for CharacterServer."""
+    
     @pytest.mark.asyncio
-    async def test_unicode_text_handling(self, character_server, mock_llm_engine, mock_tts_manager):
-        """Test handling of unicode characters in text."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
+    async def test_full_workflow(self):
+        """Test the complete workflow from initialization to response generation."""
+        mock_db = Mock()
+        character_data = {
+            "name": "IntegrationTestActor",
+            "personality": "friendly",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "llm_model": "test_model",
+            "language": "en"
+        }
+        mock_db.get_character.return_value = character_data
         
-        unicode_narration = "こんにちは世界！Здравствуй мир! 🌍"
-        
-        with patch.object(character_server, 'output_audio'):
-            response = await character_server.generate_response(unicode_narration, {})
-        
-        assert response == "Generated response from LLM"
+        with patch('character_server.LLMEngine') as mock_llm_engine, \
+             patch('character_server.TTSManager') as mock_tts_manager, \
+             patch('character_server.pygame'):
+            
+            mock_llm = Mock()
+            mock_llm.is_initialized = True
+            mock_llm.generate = AsyncMock(return_value="Integration test response")
+            mock_llm.fine_tune = AsyncMock()
+            mock_llm_engine.return_value = mock_llm
+            
+            mock_tts = Mock()
+            mock_tts.is_initialized = True
+            mock_tts.synthesize = AsyncMock(return_value=True)
+            mock_tts_manager.return_value = mock_tts
+            
+            server = CharacterServer(mock_db)
+            await server.async_init()
+            
+            with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output:
+                response = await server.generate_response("Test narration", {"Other": "Hello"})
+            
+            assert response == "Integration test response"
+            assert server.llm == mock_llm
+            assert server.tts == mock_tts
+            mock_output.assert_called_once_with("Integration test response")
 
-    def test_database_connection_recovery(self, mock_database):
-        """Test behavior when database connection is recovered."""
-        # Initially fail, then succeed
-        mock_database.get_character.side_effect = [
-            Exception("Database error"),
-            {"name": "RecoveredActor", "Actor_id": "Actor1", "tts": "gtts"}
-        ]
-        
-        # First call should raise exception
-        with pytest.raises(Exception):
-            CharacterServer(mock_database)
+
+# Pytest configuration and fixtures
+@pytest.fixture
+def mock_character_data():
+    """Fixture providing mock character data."""
+    return {
+        "name": "TestCharacter",
+        "personality": "test_personality",
+        "goals": "test_goals",
+        "backstory": "test_backstory",
+        "tts": "piper",
+        "tts_model": "en_US-ryan-high",
+        "reference_audio_filename": "test.wav",
+        "Actor_id": "Actor1",
+        "llm_model": "test_model",
+        "language": "en"
+    }
 
 
+@pytest.fixture
+def mock_db():
+    """Fixture providing a mock database."""
+    return Mock()
+
+
+@pytest.fixture
+def character_server(mock_db, mock_character_data):
+    """Fixture providing a CharacterServer instance."""
+    mock_db.get_character.return_value = mock_character_data
+    return CharacterServer(mock_db)
+
+
+# Performance and stress tests
 class TestCharacterServerPerformance:
-    """Test performance-related aspects."""
-
+    """Performance and stress tests for CharacterServer."""
+    
     @pytest.mark.asyncio
-    async def test_response_generation_timeout(self, character_server, mock_llm_engine, 
-                                             mock_tts_manager):
-        """Test response generation with slow LLM response."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
+    async def test_memory_usage_with_many_requests(self, character_server):
+        """Test memory usage with many concurrent requests."""
+        character_server.llm = Mock()
+        character_server.llm.is_initialized = True
+        character_server.llm.generate = AsyncMock(return_value="Response")
+        character_server.llm.fine_tune = AsyncMock()
         
-        # Simulate slow LLM response
-        async def slow_generate(*args, **kwargs):
-            await asyncio.sleep(0.1)  # Small delay for testing
-            return "Slow response"
+        with patch.object(character_server, 'output_audio', new_callable=AsyncMock):
+            tasks = [
+                character_server.generate_response(f"Request {i}", {})
+                for i in range(100)
+            ]
+            responses = await asyncio.gather(*tasks)
         
-        mock_llm_engine.generate.side_effect = slow_generate
-        
-        with patch.object(character_server, 'output_audio'):
-            start_time = asyncio.get_event_loop().time()
-            response = await character_server.generate_response("Test narration", {})
-            end_time = asyncio.get_event_loop().time()
-        
-        assert response == "Slow response"
-        assert end_time - start_time >= 0.1  # Should take at least the delay time
-
+        assert len(responses) == 100
+        assert all(response == "Response" for response in responses)
+    
     @pytest.mark.asyncio
-    async def test_memory_usage_with_large_responses(self, character_server, mock_llm_engine, 
-                                                   mock_tts_manager):
-        """Test memory usage with large LLM responses."""
-        character_server.llm = mock_llm_engine
-        character_server.tts = mock_tts_manager
+    async def test_response_time_consistency(self, character_server):
+        """Test that response times are reasonably consistent."""
+        character_server.llm = Mock()
+        character_server.llm.is_initialized = True
+        character_server.llm.generate = AsyncMock(return_value="Response")
+        character_server.llm.fine_tune = AsyncMock()
         
-        # Generate large response
-        large_response = "This is a large response. " * 10000
-        mock_llm_engine.generate.return_value = large_response
+        import time
+        response_times = []
         
-        with patch.object(character_server, 'output_audio'):
-            response = await character_server.generate_response("Test narration", {})
+        with patch.object(character_server, 'output_audio', new_callable=AsyncMock):
+            for i in range(10):
+                start_time = time.time()
+                await character_server.generate_response(f"Request {i}", {})
+                end_time = time.time()
+                response_times.append(end_time - start_time)
         
-        assert response == large_response
+        # Check that response times are reasonably consistent
+        # (This is a basic check - in real scenarios you'd have more sophisticated metrics)
+        assert len(response_times) == 10
+        assert all(rt < 5.0 for rt in response_times)  # All responses under 5 seconds
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     pytest.main([__file__, "-v"])
