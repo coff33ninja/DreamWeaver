@@ -400,15 +400,13 @@ def start_heartbeat_task(client: CharacterClient):
         _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))
 
 def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):
-<<<<<<< HEAD
-=======
     """
     Asynchronously initializes the CharacterClient singleton and starts the heartbeat task if not already running.
     
     Ensures required client directories exist, creates and initializes a CharacterClient instance with the provided parameters, stores it in the FastAPI app state, and schedules the heartbeat background task. If the client is already initialized, no action is taken.
     """
     global _heartbeat_task_instance
->>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d
+
     if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:
         ensure_client_directories()
         # Use the async factory to create and initialize the client
