@@ -4,6 +4,11 @@ import uvicorn
 from src.character_client import app, initialize_character_client, start_heartbeat_task
 
 def main():
+    """
+    Parses command-line arguments and environment variables to configure and launch the DreamWeaver Character Client API server.
+    
+    Initializes the character client instance, starts a heartbeat background task if initialization succeeds, and runs the FastAPI app using Uvicorn. If required configuration (such as the authentication token) is missing or initialization fails, the server does not start and an error message is printed.
+    """
     parser = argparse.ArgumentParser(description="DreamWeaver Character Client")
     parser.add_argument(
         "--server_url",

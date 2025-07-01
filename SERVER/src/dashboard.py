@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in FastAPI dependencies, ensuring the connection is closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,12 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Retrieve current server performance metrics and detailed statuses for all clients.
+    
+    Returns:
+        dict: A dictionary containing:
+            - 'server_performance': CPU and memory usage statistics for the server.
+            - 'client_statuses': A list of client status dictionaries, each with actor ID, combined IP address and port, last seen timestamp (UTC), and status category.
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +77,9 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Serves the main HTML dashboard page for monitoring server performance and client statuses.
+    
+    The returned page includes embedded CSS and JavaScript for live updates, displaying server metrics and a table of client statuses with color-coded status indicators. Data is fetched dynamically from the `/dashboard/status` endpoint and refreshed every 6 seconds.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.

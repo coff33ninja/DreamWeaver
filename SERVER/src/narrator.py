@@ -8,6 +8,11 @@ from .config import NARRATOR_AUDIO_PATH, DEFAULT_WHISPER_MODEL_SIZE, DIARIZATION
 import uuid
 class Narrator:
     def __init__(self, model_size=None):
+        """
+        Initialize the Narrator instance with a Whisper speech-to-text model and optionally a Pyannote diarization pipeline.
+        
+        If diarization is enabled, attempts to load the diarization pipeline with user-interactive retries on failure. Sets up default speaker labeling and prepares storage for the last transcription.
+        """
         if model_size is None:
             model_size = DEFAULT_WHISPER_MODEL_SIZE
         print(f"Narrator: Loading Whisper STT model '{model_size}'...")
@@ -56,10 +61,12 @@ class Narrator:
 
     async def process_narration(self, audio_filepath: str) -> dict:
         """
-        Performs Speech-to-Text (STT) on the given audio file.
-        Optionally performs diarization if configured.
-        Returns a dictionary: {"text": "transcribed text", "audio_path": "path_to_input_audio", "speaker": "speaker_name"}
-        Also saves a copy of the audio to NARRATOR_AUDIO_PATH with a unique filename.
+        Asynchronously transcribes speech from an audio file and optionally identifies the speaker.
+        
+        The method saves a uniquely named copy of the input audio file, performs speech-to-text transcription using the loaded Whisper model, and, if enabled and available, applies speaker diarization to determine the speaker label. Returns a dictionary containing the transcribed text, the path to the saved audio copy, and the speaker name. If transcription or diarization fails, returns fallback values with an empty transcription and the default speaker.
+         
+        Returns:
+            dict: A dictionary with keys "text" (transcribed text), "audio_path" (path to the saved audio copy), and "speaker" (identified or default speaker label).
         """
         if not self.stt_model:
             print("Narrator: STT model not loaded. Cannot process narration.")
@@ -96,15 +103,9 @@ class Narrator:
                 try:
                     print(f"Narrator: Performing diarization on {audio_filepath}...")
                     diarization_output = await asyncio.to_thread(self.diarization_pipeline, audio_filepath)
-                    # Aggregate speaker durations to find the most prominent speaker
-                    speaker_durations = {}
-                    for turn in diarization_output.itertracks(yield_label=True):
-                        segment, _, label = turn
-                        duration = segment.end - segment.start
-                        speaker_durations[label] = speaker_durations.get(label, 0) + duration
-                    if speaker_durations:
-                        # Select the speaker with the longest total duration
-                        speaker = max(speaker_durations, key=speaker_durations.get)
+                    first_turn = next(iter(diarization_output.itertracks(yield_label=True)), None)
+                    if first_turn:
+                        speaker = first_turn[2]  # speaker label
                     print(f"Narrator: Diarization complete. Determined speaker: {speaker}")
                 except Exception as e:
                     print(f"Narrator: Error during diarization: {e}. Using default speaker.")
@@ -116,7 +117,12 @@ class Narrator:
             return {"text": "", "audio_path": dest_path, "speaker": self.default_speaker_name}
 
     def correct_last_transcription(self, new_text: str):
-        """Update the last transcription with user-corrected text."""
+        """
+        Update the stored last transcription with corrected text provided by the user.
+        
+        Parameters:
+            new_text (str): The corrected transcription text to replace the previous value.
+        """
         self.last_transcription = new_text
         print(f"Narrator: Last transcription corrected to: {new_text}")
 
@@ -126,6 +132,11 @@ if __name__ == '__main__':
     # E.g., using ffmpeg: ffmpeg -f lavfi -i "anoisesrc=d=5:c=1:r=16000:a=0.1" dummy_narrator_audio.wav
 
     async def test_narrator():
+        """
+        Asynchronously tests the Narrator class by generating a dummy audio file and running speech-to-text transcription.
+        
+        Creates a 1-second 16kHz mono WAV file with a 440 Hz tone if it does not exist, then processes it using the Narrator's transcription method and prints the result. Skips the test if the STT model fails to load or if the audio file cannot be created.
+        """
         print("Testing Narrator...")
         narrator_instance = Narrator(model_size="tiny") # Use tiny for faster test
         if not narrator_instance.stt_model:

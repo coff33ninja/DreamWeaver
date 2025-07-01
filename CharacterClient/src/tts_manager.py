@@ -18,6 +18,17 @@ except ImportError:
 
 class TTSManager:
     def __init__(self, tts_service_name: str, model_name: Optional[str] = None, speaker_wav_path: Optional[str] = None, language: Optional[str] = 'en'):
+        """
+        Initialize a TTSManager instance for the specified text-to-speech service.
+        
+        Parameters:
+            tts_service_name (str): The name of the TTS backend service to use (e.g., "gtts", "xttsv2").
+            model_name (Optional[str]): The model identifier or path for services that require a model (e.g., Coqui XTTSv2).
+            speaker_wav_path (Optional[str]): Path to a speaker WAV file for voice cloning, if supported by the service.
+            language (Optional[str]): Language code for synthesis (default is "en").
+        
+        Initializes environment variables and directories required for the selected TTS service and model, and performs blocking service initialization.
+        """
         self.service_name = tts_service_name
         self.model_name = model_name or ""
         self.speaker_wav_path = speaker_wav_path or ""
@@ -32,7 +43,11 @@ class TTSManager:
         self._initialize_service_blocking() # Keep init blocking for now
 
     def _initialize_service_blocking(self):
-        """Synchronous/blocking model loading for TTS, called during __init__."""
+        """
+        Synchronously initializes the TTS backend service and loads the required model.
+        
+        This method sets up the appropriate TTS instance for the selected service (e.g., gTTS or XTTSv2), loading models and configuring devices as needed. It updates the internal initialization state and prints status or error messages if dependencies or models are missing.
+        """
         if self.service_name == "gtts":
             if gtts:
                 self.tts_instance = self._gtts_synthesize_blocking
@@ -65,12 +80,25 @@ class TTSManager:
         # else: print(f"Client TTSManager: Unsupported TTS service '{self.service_name}'.")
 
     def _gtts_synthesize_blocking(self, text: str, output_file_path: str, lang: str):
+        """
+        Synchronously synthesizes speech from text using the gTTS service and saves it to a file.
+        
+        Parameters:
+            text (str): The text to be converted to speech.
+            output_file_path (str): The file path where the synthesized audio will be saved.
+            lang (str): The language code for the speech synthesis.
+        """
         if gtts and hasattr(gtts, 'gTTS'):
             gtts.gTTS(text=text, lang=lang).save(output_file_path)
         else:
             print("gTTS is not available. Cannot synthesize.")
 
     def _xttsv2_synthesize_blocking(self, text: str, output_file_path: str, speaker_wav: Optional[str] = None, lang: str = "en"):
+        """
+        Synchronously synthesizes speech from text using the Coqui XTTSv2 backend and saves it to a file.
+        
+        If a valid speaker WAV file is provided and exists, it is used for voice cloning; otherwise, the default voice is used. If the requested language is not supported, the first available language is selected.
+        """
         if self.tts_instance is None or not hasattr(self.tts_instance, 'tts_to_file') or not callable(getattr(self.tts_instance, 'tts_to_file')):
             print("XTTSv2 instance is not available or invalid. Cannot synthesize.")
             return
@@ -89,6 +117,17 @@ class TTSManager:
             self.tts_instance.tts_to_file(text=text, language=lang_to_use, file_path=output_file_path)
 
     async def synthesize(self, text: str, output_filename_no_path: str, speaker_wav_for_synthesis: Optional[str] = None) -> str | None:
+        """
+        Asynchronously synthesizes speech from text and saves the audio to a file using the configured TTS backend.
+        
+        Parameters:
+            text (str): The text to be converted to speech.
+            output_filename_no_path (str): The output audio filename (without directory path).
+            speaker_wav_for_synthesis (Optional[str]): Optional path to a speaker WAV file for voice cloning (used by supported services).
+        
+        Returns:
+            str | None: The full path to the generated audio file on success, or None if synthesis fails.
+        """
         if not self.is_initialized or not self.tts_instance:
             print("Client TTSManager: Not initialized, cannot synthesize.")
             return None
@@ -114,6 +153,11 @@ class TTSManager:
             return None
 
     def _get_or_download_model_blocking(self, service_name: str, model_identifier: str):
+        """
+        Return the model identifier for the specified service, creating the service's model directory if needed.
+        
+        For the "xttsv2" service, this method returns the provided model identifier directly. For other services, it returns None.
+        """
         target_dir_base = os.path.join(CLIENT_TTS_MODELS_PATH, service_name.lower())
         os.makedirs(target_dir_base, exist_ok=True)
         if service_name == "xttsv2":
@@ -122,6 +166,12 @@ class TTSManager:
 
     @staticmethod
     def list_services():
+        """
+        Return a list of available text-to-speech (TTS) services based on installed libraries.
+        
+        Returns:
+            services (list of str): Names of supported TTS services available in the current environment.
+        """
         services = []
         if gtts:
             services.append("gtts")
@@ -131,6 +181,15 @@ class TTSManager:
 
     @staticmethod
     def get_available_models(service_name: str):
+        """
+        Return a list of available model identifiers for the specified TTS service.
+        
+        Parameters:
+            service_name (str): The name of the TTS service ("gtts" or "xttsv2").
+        
+        Returns:
+            list[str]: A list of available model names or identifiers for the given service. Returns an empty list if the service is unsupported.
+        """
         if service_name == "gtts":
             return ["N/A (uses language codes)"]
         if service_name == "xttsv2":
@@ -139,6 +198,11 @@ class TTSManager:
 
 if __name__ == "__main__":
     async def test_async_tts_manager():
+        """
+        Asynchronously tests the TTSManager with available TTS services and outputs synthesized audio files.
+        
+        This function initializes TTSManager instances for each supported backend (gTTS and XTTSv2), synthesizes sample text asynchronously, and prints the paths to the generated audio files. Output files are saved in the configured temporary audio directory.
+        """
         print("--- Client TTSManager Async Test ---")
         test_output_dir = CLIENT_TEMP_AUDIO_PATH # Use configured temp path
         os.makedirs(test_output_dir, exist_ok=True)

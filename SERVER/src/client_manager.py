@@ -22,6 +22,11 @@ SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS = 15 # Timeout for the actual /character 
 
 class ClientManager:
     def __init__(self, db: Database):
+        """
+        Initializes the ClientManager with a database instance and prepares audio playback and health check controls.
+        
+        Attempts to initialize the pygame mixer for audio playback, handling initialization errors gracefully. Sets up threading controls for managing periodic client health checks.
+        """
         self.db = db
         if not pygame.mixer.get_init():
             try:
@@ -34,6 +39,14 @@ class ClientManager:
         # Consider starting health checks from CSM or main app to ensure DB is fully ready.
 
     def generate_token(self, Actor_id: str) -> str:
+        """
+        Generate and store a secure token for the specified Actor ID.
+        
+        If the character does not exist and the Actor ID is "Actor1", creates a default internal server character before generating the token. Saves the token in the database and returns it. Logs a warning if the character does not exist for other Actor IDs.
+        
+        Returns:
+            str: The generated token for the Actor ID.
+        """
         token = secrets.token_hex(24)
         char = self.db.get_character(Actor_id)
         if not char and Actor_id == "Actor1": # Should Actor1 even have a token generated this way?
@@ -45,13 +58,30 @@ class ClientManager:
         return token
 
     def get_clients_for_story_progression(self):
+        """
+        Retrieve the list of clients relevant for story progression from the database.
+        
+        Returns:
+            List of client records as provided by the database.
+        """
         return self.db.get_clients_for_story_progression()
 
     def validate_token(self, Actor_id: str, token: str) -> bool:
+        """
+        Verify that the provided token matches the stored token for the given Actor ID and that the client is not deactivated.
+        
+        Returns:
+            bool: True if the token is valid and the client is active; otherwise, False.
+        """
         client_details = self.db.get_client_token_details(Actor_id)
         return bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
 
     def _perform_single_health_check_blocking(self, client_info: dict):
+        """
+        Performs a blocking health check on a client and updates its status in the database.
+        
+        Checks the client's `/health` endpoint and sets the client's status based on the response or encountered errors. If the health check is successful, the status is set to "Online_Responsive" or "Error_API_Degraded" depending on the reported health. If the check fails due to timeout, connection, or other errors, the status is updated accordingly.
+        """
         Actor_id = client_info.get("Actor_id")
         ip_address = client_info.get("ip_address")
         client_port = client_info.get("client_port")
@@ -89,6 +119,11 @@ class ClientManager:
         self.db.update_client_status(Actor_id, new_status)
 
     def _periodic_health_check_loop(self):
+        """
+        Continuously performs periodic health checks on all clients, updating their statuses based on health endpoint responses and heartbeat freshness.
+        
+        This method runs in a background thread, iterating over all clients retrieved from the database. For clients with certain statuses, it performs a blocking health check. For clients marked as "Online_Responsive", it checks if their last heartbeat is stale and marks them as "Offline" if necessary. The loop continues until the stop event is set.
+        """
         print("ClientManager: Periodic health check thread started.")
         while not self.stop_health_check_event.is_set():
             try:
@@ -111,18 +146,43 @@ class ClientManager:
         print("ClientManager: Periodic health check thread stopped.")
 
     def start_periodic_health_checks(self):
+        """
+        Start the background thread that performs periodic health checks on all clients.
+        
+        If the health check thread is not already running, this method initializes and starts it.
+        """
         if self.health_check_thread is None or not self.health_check_thread.is_alive():
             self.stop_health_check_event.clear()
             self.health_check_thread = threading.Thread(target=self._periodic_health_check_loop, daemon=True)
             self.health_check_thread.start()
 
     def stop_periodic_health_checks(self):
+        """
+        Stops the background thread responsible for periodic client health checks.
+        
+        Signals the health check thread to terminate and waits for it to finish execution.
+        """
         self.stop_health_check_event.set()
         if self.health_check_thread and self.health_check_thread.is_alive():
             self.health_check_thread.join(timeout=max(1, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS + 1))
 
 
     async def send_to_client(self, client_Actor_id: str, client_ip: str, client_port: int, narration: str, character_texts: dict) -> str:
+        """
+        Asynchronously sends narration and character texts to a client, handles audio playback, and manages client status with retry logic.
+        
+        Attempts to deliver a narration and character-specific texts to a client via HTTP POST, including a secure token. On success, decodes and plays any returned audio using pygame, and updates the client's status to "Online_Responsive". Implements exponential backoff retries for network or request failures, updating client status accordingly if all attempts fail.
+        
+        Parameters:
+            client_Actor_id (str): The unique identifier for the client character.
+            client_ip (str): The IP address of the client.
+            client_port (int): The port number of the client.
+            narration (str): The narration text to send.
+            character_texts (dict): A mapping of character names to their respective texts.
+        
+        Returns:
+            str: The text response from the client, or an empty string if delivery fails after all retries.
+        """
         character = self.db.get_character(client_Actor_id) # Blocking DB call
         if not character:
             print(f"send_to_client: No character data for {client_Actor_id}.")
@@ -139,6 +199,12 @@ class ClientManager:
         request_payload = {"narration": narration, "character_texts": character_texts, "token": token}
 
         def _blocking_post_request():
+            """
+            Send a blocking HTTP POST request to the specified URL with the given JSON payload and a timeout.
+            
+            Returns:
+                Response: The HTTP response object from the POST request.
+            """
             return requests.post(url, json=request_payload, timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS)
 
         for attempt in range(SEND_TO_CLIENT_MAX_RETRIES + 1):
@@ -153,6 +219,11 @@ class ClientManager:
                 if encoded_audio_data and pygame.mixer.get_init():
                     # This part (decode, save, play) is also blocking
                     def _handle_audio():
+                        """
+                        Decodes base64-encoded audio data, saves it as a WAV file in a character-specific directory, and plays the audio using pygame mixer.
+                        
+                        The audio file is named using the client Actor ID and a unique identifier to avoid collisions.
+                        """
                         sane_char_name = "".join(c if c.isalnum() else "_" for c in character.get('name', client_Actor_id))
                         audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
                         os.makedirs(audio_dir, exist_ok=True)
@@ -193,8 +264,14 @@ class ClientManager:
         return "" # Return empty if all retries fail
 
     def deactivate_client_Actor(self, Actor_id: str): # Blocking DB call
+        """
+        Mark a client as deactivated in the database by updating its status to "Deactivated".
+        """
         self.db.update_client_status(Actor_id, "Deactivated")
         print(f"Client {Actor_id} marked as Deactivated.")
 
     def __del__(self):
+        """
+        Ensures that periodic health checks are stopped when the ClientManager instance is destroyed.
+        """
         self.stop_periodic_health_checks()

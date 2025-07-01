@@ -14,6 +14,11 @@ from .config import ADAPTERS_PATH, MODELS_PATH # Ensure MODELS_PATH is available
 
 class LLMEngine:
     def __init__(self, model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0", db=None): # Updated default model
+        """
+        Initialize the LLMEngine with a specified model and optional database handle.
+        
+        Sets up directory paths for LoRA adapters and base model caching, initializes model and tokenizer attributes, and attempts to load the model and tokenizer. The engine is configured for use with "Actor1" by default.
+        """
         self.db = db
         self.model_name = model_name
         sane_model_name = self.model_name.replace("/", "_") # For path safety
@@ -29,7 +34,11 @@ class LLMEngine:
         self._load_model() # Initial load attempt
 
     def _load_model(self):
-        """Loads the model and tokenizer. This is a blocking operation."""
+        """
+        Load the tokenizer and model for text generation, applying quantization and LoRA adapter configuration as appropriate.
+        
+        If CUDA is available, loads the model with 4-bit quantization using BitsAndBytes and prepares it for k-bit training. Attempts to load existing LoRA adapters for "Actor1"; if none are found, initializes a new LoRA configuration targeting common LLaMA projection modules. Sets the model to evaluation mode and updates the initialization status. On failure, resets model state and initialization flag.
+        """
         print(f"LLMEngine (Server/Actor1): Loading model '{self.model_name}'...")
         try:
             bnb_config = None
@@ -90,11 +99,27 @@ class LLMEngine:
 
 
     async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
+        """
+        Asynchronously generates a text completion for the given prompt using the loaded language model.
+        
+        Parameters:
+            prompt (str): The input text prompt to generate a continuation for.
+            max_new_tokens (int, optional): The maximum number of new tokens to generate. Defaults to 150.
+        
+        Returns:
+            str: The generated text continuation, or an error string if generation fails or the model is not initialized.
+        """
         if not self.is_initialized or not self.model or not self.tokenizer:
             print("LLMEngine (Server/Actor1): Not initialized. Cannot generate text.")
             return "[LLM_ERROR: NOT_INITIALIZED]"
 
         def _blocking_generate():
+            """
+            Generates a text continuation for the given prompt using the loaded model and tokenizer.
+            
+            Returns:
+                str: The generated text following the input prompt, or an error string if the model or tokenizer is not initialized.
+            """
             if self.model is None or self.tokenizer is None:
                 return "[LLM_ERROR: MODEL_OR_TOKENIZER_NOT_INITIALIZED]"
             inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True,
@@ -117,6 +142,11 @@ class LLMEngine:
             return "[LLM_ERROR: GENERATION_FAILED]"
 
     async def fine_tune(self, new_data_point: dict, Actor_id: str):
+        """
+        Asynchronously fine-tunes the model for Actor1 using new and existing training data.
+        
+        If a database is available, retrieves all training data for Actor1, appends the new data point if not already present, and performs LoRA-based fine-tuning in a background thread. Saves updated LoRA adapters after training. Only operates for Actor1; calls for other actors are ignored. The model is returned to evaluation mode after fine-tuning or on error.
+        """
         if not self.is_initialized or not self.model or not self.tokenizer:
             print("LLMEngine (Server/Actor1): Not initialized. Cannot fine-tune.")
             return
@@ -144,6 +174,11 @@ class LLMEngine:
             return
 
         def _blocking_fine_tune():
+            """
+            Performs synchronous fine-tuning of the loaded model on all available training data for Actor1 using LoRA adapters.
+            
+            This method formats and tokenizes the training data, configures training parameters based on dataset size, runs the training loop, and saves the updated LoRA adapters if supported. The model is set to training mode during fine-tuning and returned to evaluation mode afterward.
+            """
             if self.model is None or self.tokenizer is None:
                 print("LLMEngine (Server/Actor1): Model or tokenizer not initialized. Cannot fine-tune.")
                 return
@@ -154,6 +189,15 @@ class LLMEngine:
             dataset = Dataset.from_list([{"text": text} for text in formatted_texts])
 
             def tokenize_function(examples):
+                """
+                Tokenizes input text examples using the initialized tokenizer with truncation and padding.
+                
+                Parameters:
+                    examples (dict): A dictionary containing a "text" key with input strings to tokenize.
+                
+                Returns:
+                    dict: Tokenized representations of the input text.
+                """
                 if tokenizer is None:
                     raise RuntimeError("Tokenizer is not initialized.")
                 return tokenizer(examples["text"], truncation=True, padding="max_length",
@@ -215,10 +259,24 @@ class LLMEngine:
 if __name__ == "__main__":
     # Basic test (requires DB setup for fine-tuning part)
     async def main_test():
+        """
+        Asynchronously tests the LLMEngine's initialization and text generation using a dummy database.
+        
+        This function creates an instance of LLMEngine with a mock database, checks if the engine is initialized, and if so, generates and prints a response to a sample prompt. Fine-tuning is commented out and requires a real or mock database with data.
+        """
         print("LLMEngine (Server/Actor1) Test:")
         # Dummy DB for testing generate, fine_tune would need a real one or mock
         class DummyDB:
-            def get_training_data_for_Actor(self, Actor_id): return []
+            def get_training_data_for_Actor(self, Actor_id): """
+Return an empty list as a placeholder for retrieving training data for the specified actor.
+
+Parameters:
+    Actor_id (str): The identifier of the actor for whom training data is requested.
+
+Returns:
+    list: An empty list, indicating no training data is available.
+"""
+return []
 
         engine = LLMEngine(db=DummyDB()) # Provide a dummy DB
         if engine.is_initialized:
