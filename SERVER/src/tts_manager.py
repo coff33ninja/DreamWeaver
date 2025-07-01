@@ -91,7 +91,7 @@ class TTSManager:
     async def synthesize(self, text: str, output_path: str, speaker_wav_for_synthesis: Optional[str] = None) -> bool:
         if not self.is_initialized or not self.tts_instance:
             print("Server TTSManager: Not initialized, cannot synthesize.")
-            return False
+            raise RuntimeError("TTSManager is not initialized.")
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         try:
@@ -103,7 +103,7 @@ class TTSManager:
                 await asyncio.to_thread(self._xttsv2_synthesize_blocking, text, output_path, speaker_wav, self.language)
             else:
                 print(f"Server TTSManager: No async synthesis method for '{self.service_name}'.")
-                return False
+                raise ValueError(f"Unsupported TTS service: {self.service_name}")
             return True
         except Exception as e:
             print(f"Server TTSManager: Error during async TTS synthesis with {self.service_name}: {e}")

@@ -52,6 +52,7 @@ class ClientManager:
         return bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
 
     def _perform_single_health_check_blocking(self, client_info: dict):
+        """Blocking /health check and DB-status update."""
         Actor_id = client_info.get("Actor_id")
         ip_address = client_info.get("ip_address")
         client_port = client_info.get("client_port")
@@ -139,6 +140,7 @@ class ClientManager:
         request_payload = {"narration": narration, "character_texts": character_texts, "token": token}
 
         def _blocking_post_request():
+            """POST to client with timeout."""
             return requests.post(url, json=request_payload, timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS)
 
         for attempt in range(SEND_TO_CLIENT_MAX_RETRIES + 1):
@@ -153,6 +155,7 @@ class ClientManager:
                 if encoded_audio_data and pygame.mixer.get_init():
                     # This part (decode, save, play) is also blocking
                     def _handle_audio():
+                        """Decode, save, and play audio response."""
                         sane_char_name = "".join(c if c.isalnum() else "_" for c in character.get('name', client_Actor_id))
                         audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
                         os.makedirs(audio_dir, exist_ok=True)

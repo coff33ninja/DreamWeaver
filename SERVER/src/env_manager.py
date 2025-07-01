@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 from .config import PROJECT_ROOT
 
 # Path to the .env file in the project root
@@ -10,7 +11,7 @@ def get_env_file_status():
         return f".env file found at {ENV_FILE_PATH}"
     return f".env file not found. It will be created at {ENV_FILE_PATH} upon saving."
 
-def load_env_vars(mask_sensitive=False):
+def load_env_vars(*, mask_sensitive: bool = False) -> Dict[str, str]:
     """
     Loads environment variables from the .env file.
 

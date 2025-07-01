@@ -56,10 +56,20 @@ class Narrator:
 
     async def process_narration(self, audio_filepath: str) -> dict:
         """
-        Performs Speech-to-Text (STT) on the given audio file.
-        Optionally performs diarization if configured.
-        Returns a dictionary: {"text": "transcribed text", "audio_path": "path_to_input_audio", "speaker": "speaker_name"}
-        Also saves a copy of the audio to NARRATOR_AUDIO_PATH with a unique filename.
+        Transcribes speech from an audio file and optionally identifies the speaker.
+
+        The method saves a uniquely named copy of the input audio file, performs speech-to-text transcription using the loaded Whisper model, and, if enabled and available, applies speaker diarization to determine the speaker label. Returns a dictionary containing the transcribed text, the path to the saved audio copy, and the identified speaker name. If transcription or diarization fails, returns empty text and the default speaker name.
+
+        If saving the audio copy fails, the original audio_filepath is returned as the 'audio_path' in the result.
+
+        Parameters:
+            audio_filepath (str): Path to the input audio file to be processed.
+
+        Returns:
+            dict: A dictionary with keys:
+                - "text": The transcribed text from the audio.
+                - "audio_path": Path to the saved copy of the audio file (or original if copy fails).
+                - "speaker": The identified speaker label or default speaker name.
         """
         if not self.stt_model:
             print("Narrator: STT model not loaded. Cannot process narration.")

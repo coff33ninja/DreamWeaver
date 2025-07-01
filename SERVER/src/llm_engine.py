@@ -26,7 +26,9 @@ class LLMEngine:
         self.model = None
         self.tokenizer = None
         self.is_initialized = False # Flag to track initialization status
-        self._load_model() # Initial load attempt
+
+        # Kick the heavyweight load off-thread to keep the event loop free
+        asyncio.get_event_loop().run_in_executor(None, self._load_model)
 
     def _load_model(self):
         """Loads the model and tokenizer. This is a blocking operation."""

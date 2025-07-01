@@ -35,7 +35,7 @@ async def get_system_status(db: Database = Depends(get_db)):
         for client_data in raw_clients:
             # Convert Row object to dict if necessary, or access by attribute/key
             # Assuming client_data is already a dict-like object from db.get_all_client_statuses()
-            Actor_id = client_data.get("Actor_id", "Unknown Actor")
+            actor_id = client_data.get("Actor_id", "Unknown Actor")
             ip_addr = client_data.get("ip_address", "N/A")
             port = client_data.get("client_port", "N/A")
             last_seen_iso = client_data.get("last_seen")
@@ -52,7 +52,7 @@ async def get_system_status(db: Database = Depends(get_db)):
                     last_seen_display = last_seen_iso # Show raw if parsing fails
 
             processed_clients.append({
-                "Actor_id": Actor_id,
+                "Actor_id": actor_id,
                 "ip_address": f"{ip_addr}:{port}" if ip_addr != "N/A" and port != "N/A" else ip_addr,
                 "last_seen": last_seen_display,
                 "status": current_status # Directly use the status from DB

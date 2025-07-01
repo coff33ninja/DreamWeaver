@@ -161,11 +161,11 @@ async def get_reference_audio(
     if not client_manager.validate_token(Actor_id, token):
         raise HTTPException(status_code=401, detail="Invalid or expired token for audio download")
 
-    # Basic security check for filename (already in plan, good to have here)
-    if ".." in filename or "/" in filename or "\\" in filename:
+    # Harden path sanitisation using os.path.basename
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename format.")
-
-    file_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, filename)
+    file_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, safe_name)
 
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail=f"Reference audio file '{filename}' not found.")
@@ -174,13 +174,5 @@ async def get_reference_audio(
     if not os.path.abspath(file_path).startswith(os.path.abspath(REFERENCE_VOICES_AUDIO_PATH)):
         raise HTTPException(status_code=403, detail="Access to this file path is forbidden.")
 
-    return FileResponse(file_path, media_type="audio/wav", filename=filename)
+    return FileResponse(file_path, media_type="audio/wav", filename=safe_name)
 
-
-# Example of how main.py might run this (if not using the existing main.py from project root)
-# if __name__ == "__main__":
-#     import uvicorn
-#     # Ensure config.py creates directories if they don't exist
-#     # from .config import इंश्योर_डिरेक्टरीज_एग्जिस्ट # (pseudo-code for ensure dirs)
-#     # ensure_directories_exist()
-#     uvicorn.run(app, host="0.0.0.0", port=8000)

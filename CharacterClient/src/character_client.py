@@ -126,6 +126,16 @@ class CharacterClient:
 
     def _register_with_server_blocking(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
         # (Implementation is the same as original _register_with_server with retries, just named for clarity)
+        """
+        Register the client with the server using a blocking HTTP POST request, retrying with exponential backoff on failure.
+
+        Parameters:
+        max_retries (int): Maximum number of retry attempts.
+        base_delay (float): Initial delay in seconds before retrying, doubled after each failed attempt.
+
+        Returns:
+        bool: True if registration succeeds, False if all retries fail.
+        """
         payload = {"Actor_id": self.Actor_id, "token": self.token, "client_port": self.client_port}
         for attempt in range(max_retries + 1):
             try:
@@ -274,7 +284,6 @@ def start_heartbeat_task(client: CharacterClient):
         _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))
 
 def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):
-    global _heartbeat_task_instance
     if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:
         ensure_client_directories()
         # Use the async factory to create and initialize the client

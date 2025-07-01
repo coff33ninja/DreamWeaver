@@ -103,7 +103,6 @@ class TTSManager:
             else:
                 print(f"Client TTSManager: No async synthesis method for '{self.service_name}'.")
                 return None
-            return output_full_path
         except Exception as e:
             print(f"Client TTSManager: Error during async TTS synthesis with {self.service_name} for '{text[:30]}...': {e}")
             if os.path.exists(output_full_path):
@@ -112,6 +111,7 @@ class TTSManager:
                 except OSError:
                     pass
             return None
+        return output_full_path
 
     def _get_or_download_model_blocking(self, service_name: str, model_identifier: str):
         target_dir_base = os.path.join(CLIENT_TTS_MODELS_PATH, service_name.lower())

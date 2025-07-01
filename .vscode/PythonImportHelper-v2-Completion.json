@@ -396,6 +396,166 @@
         "documentation": {}
     },
     {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Union",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Any",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Any",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "List",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Optional",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Dict",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
+        "label": "Any",
+        "importPath": "typing",
+        "description": "typing",
+        "isExtraImport": true,
+        "detail": "typing",
+        "documentation": {}
+    },
+    {
         "label": "Optional",
         "importPath": "typing",
         "description": "typing",
@@ -510,26 +670,50 @@
     },
     {
         "label": "BitsAndBytesConfig",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.utils.quantization_config",
+        "description": "transformers.utils.quantization_config",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.utils.quantization_config",
+        "documentation": {}
+    },
+    {
+        "label": "BitsAndBytesConfig",
+        "importPath": "transformers.utils.quantization_config",
+        "description": "transformers.utils.quantization_config",
+        "isExtraImport": true,
+        "detail": "transformers.utils.quantization_config",
         "documentation": {}
     },
     {
         "label": "Trainer",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.trainer",
+        "description": "transformers.trainer",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.trainer",
+        "documentation": {}
+    },
+    {
+        "label": "Trainer",
+        "importPath": "transformers.trainer",
+        "description": "transformers.trainer",
+        "isExtraImport": true,
+        "detail": "transformers.trainer",
         "documentation": {}
     },
     {
         "label": "TrainingArguments",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.training_args",
+        "description": "transformers.training_args",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.training_args",
+        "documentation": {}
+    },
+    {
+        "label": "TrainingArguments",
+        "importPath": "transformers.training_args",
+        "description": "transformers.training_args",
+        "isExtraImport": true,
+        "detail": "transformers.training_args",
         "documentation": {}
     },
     {
@@ -539,6 +723,659 @@
         "importPath": "json",
         "description": "json",
         "detail": "json",
+        "documentation": {}
+    },
+    {
+        "label": "pytest",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "pytest",
+        "description": "pytest",
+        "detail": "pytest",
+        "documentation": {}
+    },
+    {
+        "label": "unittest.mock",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "mock_open",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "mock_open",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "mock_open",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "Mock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "patch",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "MagicMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "call",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "AsyncMock",
+        "importPath": "unittest.mock",
+        "description": "unittest.mock",
+        "isExtraImport": true,
+        "detail": "unittest.mock",
+        "documentation": {}
+    },
+    {
+        "label": "RequestException",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "Timeout",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "ConnectionError",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPError",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "ConnectionError",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "Timeout",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "HTTPError",
+        "importPath": "requests.exceptions",
+        "description": "requests.exceptions",
+        "isExtraImport": true,
+        "detail": "requests.exceptions",
+        "documentation": {}
+    },
+    {
+        "label": "threading",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "threading",
+        "description": "threading",
+        "detail": "threading",
+        "documentation": {}
+    },
+    {
+        "label": "CharacterClient",
+        "importPath": "character_client",
+        "description": "character_client",
+        "isExtraImport": true,
+        "detail": "character_client",
+        "documentation": {}
+    },
+    {
+        "label": "tempfile",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "tempfile",
+        "description": "tempfile",
+        "detail": "tempfile",
+        "documentation": {}
+    },
+    {
+        "label": "yaml",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "yaml",
+        "description": "yaml",
+        "detail": "yaml",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "Path",
+        "importPath": "pathlib",
+        "description": "pathlib",
+        "isExtraImport": true,
+        "detail": "pathlib",
+        "documentation": {}
+    },
+    {
+        "label": "ThreadPoolExecutor",
+        "importPath": "concurrent.futures",
+        "description": "concurrent.futures",
+        "isExtraImport": true,
+        "detail": "concurrent.futures",
+        "documentation": {}
+    },
+    {
+        "label": "as_completed",
+        "importPath": "concurrent.futures",
+        "description": "concurrent.futures",
+        "isExtraImport": true,
+        "detail": "concurrent.futures",
+        "documentation": {}
+    },
+    {
+        "label": "TTSManager",
+        "importPath": "tts_manager",
+        "description": "tts_manager",
+        "isExtraImport": true,
+        "detail": "tts_manager",
         "documentation": {}
     },
     {
@@ -894,21 +1731,36 @@
         "documentation": {}
     },
     {
+        "label": "datetime",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "timezone",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
+        "label": "timedelta",
+        "importPath": "datetime",
+        "description": "datetime",
+        "isExtraImport": true,
+        "detail": "datetime",
+        "documentation": {}
+    },
+    {
         "label": "secrets",
         "kind": 6,
         "isExtraImport": true,
         "importPath": "secrets",
         "description": "secrets",
         "detail": "secrets",
-        "documentation": {}
-    },
-    {
-        "label": "threading",
-        "kind": 6,
-        "isExtraImport": true,
-        "importPath": "threading",
-        "description": "threading",
-        "detail": "threading",
         "documentation": {}
     },
     {
@@ -977,30 +1829,6 @@
         "description": "transformers.models.auto.tokenization_auto",
         "isExtraImport": true,
         "detail": "transformers.models.auto.tokenization_auto",
-        "documentation": {}
-    },
-    {
-        "label": "TrainingArguments",
-        "importPath": "transformers.training_args",
-        "description": "transformers.training_args",
-        "isExtraImport": true,
-        "detail": "transformers.training_args",
-        "documentation": {}
-    },
-    {
-        "label": "Trainer",
-        "importPath": "transformers.trainer",
-        "description": "transformers.trainer",
-        "isExtraImport": true,
-        "detail": "transformers.trainer",
-        "documentation": {}
-    },
-    {
-        "label": "BitsAndBytesConfig",
-        "importPath": "transformers.utils.quantization_config",
-        "description": "transformers.utils.quantization_config",
-        "isExtraImport": true,
-        "detail": "transformers.utils.quantization_config",
         "documentation": {}
     },
     {
@@ -1083,6 +1911,24 @@
         "importPath": "gtts",
         "description": "gtts",
         "detail": "gtts",
+        "documentation": {}
+    },
+    {
+        "label": "unittest",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "unittest",
+        "description": "unittest",
+        "detail": "unittest",
+        "documentation": {}
+    },
+    {
+        "label": "statistics",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "statistics",
+        "description": "statistics",
+        "detail": "statistics",
         "documentation": {}
     },
     {
@@ -4229,7 +5075,7 @@
         "kind": 2,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "def start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        # Use the async factory to create and initialize the client",
+        "peekOfCode": "def start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        # Use the async factory to create and initialize the client\n        async def _init():",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4238,7 +5084,7 @@
         "kind": 2,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        # Use the async factory to create and initialize the client\n        async def _init():\n            client_instance = await CharacterClient.create(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)\n            app.state.character_client_instance = client_instance\n            llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else \"N/A\"\n            tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else \"N/A\"",
+        "peekOfCode": "def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        # Use the async factory to create and initialize the client\n        async def _init():\n            client_instance = await CharacterClient.create(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)\n            app.state.character_client_instance = client_instance\n            llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else \"N/A\"\n            tts_ready_msg = client_instance.tts.is_initialized if client_instance.tts else \"N/A\"\n            print(f\"CharacterClient for {Actor_id} initialized (LLM Ready: {llm_ready_msg}, TTS Ready: {tts_ready_msg}).\")",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4283,7 +5129,7 @@
         "kind": 5,
         "importPath": "CharacterClient.src.character_client",
         "description": "CharacterClient.src.character_client",
-        "peekOfCode": "_heartbeat_task_instance = None\ndef start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    global _heartbeat_task_instance\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()",
+        "peekOfCode": "_heartbeat_task_instance = None\ndef start_heartbeat_task(client: CharacterClient):\n    global _heartbeat_task_instance\n    if _heartbeat_task_instance is None or _heartbeat_task_instance.done():\n        loop = asyncio.get_running_loop()\n        _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))\ndef initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):\n    if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:\n        ensure_client_directories()\n        # Use the async factory to create and initialize the client",
         "detail": "CharacterClient.src.character_client",
         "documentation": {}
     },
@@ -4420,6 +5266,276 @@
         "description": "CharacterClient.src.tts_manager",
         "peekOfCode": "class TTSManager:\n    def __init__(self, tts_service_name: str, model_name: Optional[str] = None, speaker_wav_path: Optional[str] = None, language: Optional[str] = 'en'):\n        self.service_name = tts_service_name\n        self.model_name = model_name or \"\"\n        self.speaker_wav_path = speaker_wav_path or \"\"\n        self.language = language or \"en\"\n        self.tts_instance = None\n        self.is_initialized = False\n        os.environ['TTS_HOME'] = CLIENT_TTS_MODELS_PATH # For Coqui TTS\n        os.makedirs(os.path.join(CLIENT_TTS_MODELS_PATH, \"tts_models\"), exist_ok=True)",
         "detail": "CharacterClient.src.tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "test_api_key",
+        "kind": 2,
+        "importPath": "CharacterClient.tests.conftest",
+        "description": "CharacterClient.tests.conftest",
+        "peekOfCode": "def test_api_key():\n    \"\"\"Session-scoped fixture for test API key.\"\"\"\n    return \"test_api_key_12345\"\n@pytest.fixture(scope=\"session\")\ndef test_base_url():\n    \"\"\"Session-scoped fixture for test base URL.\"\"\"\n    return \"https://api.test-character.com\"\n@pytest.fixture\ndef mock_character_data():\n    \"\"\"Fixture providing mock character data for testing.\"\"\"",
+        "detail": "CharacterClient.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "test_base_url",
+        "kind": 2,
+        "importPath": "CharacterClient.tests.conftest",
+        "description": "CharacterClient.tests.conftest",
+        "peekOfCode": "def test_base_url():\n    \"\"\"Session-scoped fixture for test base URL.\"\"\"\n    return \"https://api.test-character.com\"\n@pytest.fixture\ndef mock_character_data():\n    \"\"\"Fixture providing mock character data for testing.\"\"\"\n    return {\n        \"id\": 42,\n        \"name\": \"Mock Character\",\n        \"level\": 25,",
+        "detail": "CharacterClient.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_character_data",
+        "kind": 2,
+        "importPath": "CharacterClient.tests.conftest",
+        "description": "CharacterClient.tests.conftest",
+        "peekOfCode": "def mock_character_data():\n    \"\"\"Fixture providing mock character data for testing.\"\"\"\n    return {\n        \"id\": 42,\n        \"name\": \"Mock Character\",\n        \"level\": 25,\n        \"class\": \"Adventurer\",\n        \"health\": 150,\n        \"mana\": 75,\n        \"experience\": 12500,",
+        "detail": "CharacterClient.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_characters_list",
+        "kind": 2,
+        "importPath": "CharacterClient.tests.conftest",
+        "description": "CharacterClient.tests.conftest",
+        "peekOfCode": "def mock_characters_list(mock_character_data):\n    \"\"\"Fixture providing a list of mock characters for testing.\"\"\"\n    characters = []\n    for i in range(5):\n        character = mock_character_data.copy()\n        character[\"id\"] = i + 1\n        character[\"name\"] = f\"Mock Character {i + 1}\"\n        character[\"level\"] = 10 + (i * 5)\n        characters.append(character)\n    return characters",
+        "detail": "CharacterClient.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "main",
+        "kind": 2,
+        "importPath": "CharacterClient.tests.run_tests",
+        "description": "CharacterClient.tests.run_tests",
+        "peekOfCode": "def main():\n    \"\"\"Run the test suite with appropriate configuration.\"\"\"\n    # Change to the test directory\n    test_dir = os.path.dirname(os.path.abspath(__file__))\n    os.chdir(test_dir)\n    # Default pytest arguments\n    args = [\n        '-v',  # Verbose output\n        '--tb=short',  # Short traceback format\n        '--strict-markers',  # Strict marker checking",
+        "detail": "CharacterClient.tests.run_tests",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterClient",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_character_client",
+        "description": "CharacterClient.tests.test_character_client",
+        "peekOfCode": "class TestCharacterClient:\n    \"\"\"\n    Comprehensive test suite for CharacterClient.\n    Testing framework: pytest\n    \"\"\"\n    @pytest.fixture\n    def client(self):\n        \"\"\"Fixture to create a CharacterClient instance for testing.\"\"\"\n        return CharacterClient(base_url=\"https://api.test.com\", api_key=\"test_api_key\")\n    @pytest.fixture",
+        "detail": "CharacterClient.tests.test_character_client",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterClientConfiguration",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_character_client",
+        "description": "CharacterClient.tests.test_character_client",
+        "peekOfCode": "class TestCharacterClientConfiguration:\n    \"\"\"Test class for CharacterClient configuration and setup.\"\"\"\n    def test_session_is_configured(self):\n        \"\"\"Test that the session is properly configured.\"\"\"\n        client = CharacterClient(api_key=\"test_key\")\n        assert hasattr(client, 'session')\n        assert isinstance(client.session, requests.Session)\n    def test_session_headers_with_api_key(self):\n        \"\"\"Test that session headers are set correctly with API key.\"\"\"\n        api_key = \"test_api_key\"",
+        "detail": "CharacterClient.tests.test_character_client",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterClientIntegration",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_character_client_integration",
+        "description": "CharacterClient.tests.test_character_client_integration",
+        "peekOfCode": "class TestCharacterClientIntegration:\n    \"\"\"Integration tests for CharacterClient with realistic scenarios.\"\"\"\n    @pytest.fixture\n    def character_client(self):\n        \"\"\"Create CharacterClient instance for integration testing.\"\"\"\n        with patch('character_client.Config') as mock_config_class:\n            mock_config_instance = Mock()\n            mock_config_instance.get.side_effect = lambda key, default=None: {\n                'CHARACTER_API_URL': 'https://test-api.character.com/v1',\n                'CHARACTER_API_KEY': 'test-integration-key'",
+        "detail": "CharacterClient.tests.test_character_client_integration",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfig",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfig:\n    \"\"\"Test cases for the Config class.\"\"\"\n    @pytest.fixture\n    def sample_config_data(self):\n        \"\"\"Fixture providing sample configuration data.\"\"\"\n        return {\n            'api_endpoint': 'https://api.example.com/v1',\n            'api_key': 'test_api_key_12345',\n            'timeout': 30,\n            'retry_attempts': 3,",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigManager",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfigManager:\n    \"\"\"Test cases for the ConfigManager class.\"\"\"\n    @pytest.fixture\n    def temp_config_path(self, tmp_path):\n        \"\"\"Fixture providing a temporary config file path.\"\"\"\n        return tmp_path / \"config.json\"\n    @pytest.fixture\n    def sample_config_data(self):\n        \"\"\"Fixture providing sample configuration data.\"\"\"\n        return {",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigUtilityFunctions",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfigUtilityFunctions:\n    \"\"\"Test cases for utility functions.\"\"\"\n    @pytest.fixture\n    def sample_config_data(self):\n        \"\"\"Fixture providing sample configuration data.\"\"\"\n        return {\n            'database': {\n                'host': 'localhost',\n                'port': 5432,\n                'name': 'character_db'",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigIntegration",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfigIntegration:\n    \"\"\"Integration tests for config functionality.\"\"\"\n    def test_config_roundtrip_json(self, tmp_path):\n        \"\"\"Test complete roundtrip: create config, save to JSON, load from JSON.\"\"\"\n        original_data = {\n            'app_settings': {\n                'theme': 'dark',\n                'language': 'en',\n                'auto_save': True\n            },",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigPerformance",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfigPerformance:\n    \"\"\"Performance tests for config operations.\"\"\"\n    def test_config_large_dataset_performance(self):\n        \"\"\"Test Config performance with large datasets.\"\"\"\n        # Create large config data\n        large_data = {}\n        for i in range(1000):\n            large_data[f'key_{i}'] = {\n                'value': f'value_{i}',\n                'index': i,",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigParametrized",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_config",
+        "description": "CharacterClient.tests.test_config",
+        "peekOfCode": "class TestConfigParametrized:\n    \"\"\"Parametrized tests for comprehensive coverage.\"\"\"\n    @pytest.mark.parametrize(\"input_data,expected_type\", [\n        ({}, dict),\n        ({'key': 'value'}, dict),\n        ({'nested': {'key': 'value'}}, dict),\n        ({'list': [1, 2, 3]}, dict),\n        ({'mixed': {'str': 'value', 'int': 42, 'bool': True}}, dict)\n    ])\n    def test_config_to_dict_with_various_inputs(self, input_data, expected_type):",
+        "detail": "CharacterClient.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngine",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngine:\n    \"\"\"Comprehensive test suite for LLM Engine functionality.\"\"\"\n    @pytest.fixture\n    def default_config(self):\n        \"\"\"Provide a default configuration for tests.\"\"\"\n        return LLMConfig(\n            model=\"gpt-3.5-turbo\",\n            temperature=0.7,\n            max_tokens=150,\n            api_key=\"test-key-12345\",",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMResponse",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMResponse:\n    \"\"\"Comprehensive test suite for LLM Response objects.\"\"\"\n    def test_response_creation_minimal(self):\n        \"\"\"Test LLM response creation with minimal parameters.\"\"\"\n        response = LLMResponse()\n        assert hasattr(response, 'text')\n        assert hasattr(response, 'tokens')\n        assert hasattr(response, 'model')\n        assert hasattr(response, 'metadata')\n    def test_response_creation_full(self):",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMConfig",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMConfig:\n    \"\"\"Comprehensive test suite for LLM Configuration.\"\"\"\n    def test_config_creation_empty(self):\n        \"\"\"Test configuration creation with no parameters.\"\"\"\n        config = LLMConfig()\n        assert hasattr(config, '__dict__')\n    def test_config_creation_partial(self):\n        \"\"\"Test configuration creation with partial parameters.\"\"\"\n        config = LLMConfig(model=\"gpt-3.5-turbo\", temperature=0.8)\n        assert config.model == \"gpt-3.5-turbo\"",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMErrors",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMErrors:\n    \"\"\"Comprehensive test suite for LLM error handling.\"\"\"\n    def test_base_llm_error(self):\n        \"\"\"Test base LLM error functionality.\"\"\"\n        error = LLMError(\"Base error message\")\n        assert str(error) == \"Base error message\"\n        assert isinstance(error, Exception)\n    def test_llm_error_with_error_code(self):\n        \"\"\"Test LLM error with error code.\"\"\"\n        error = LLMError(\"Error with code\", error_code=400)",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEnginePerformance",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEnginePerformance:\n    \"\"\"Performance and stress tests for LLM Engine.\"\"\"\n    @pytest.mark.slow\n    def test_response_time_under_load(self, llm_engine, mock_response):\n        \"\"\"Test response times under concurrent load.\"\"\"\n        response_times = []\n        def measure_response_time():\n            with patch.object(llm_engine, '_make_api_call', return_value=mock_response):\n                start = time.time()\n                llm_engine.generate(\"Performance test under load\")",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineIntegration",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_llm_engine",
+        "description": "CharacterClient.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineIntegration:\n    \"\"\"Integration-style tests for complex scenarios.\"\"\"\n    def test_end_to_end_conversation_flow(self, llm_engine):\n        \"\"\"Test a complete conversation flow from start to finish.\"\"\"\n        conversation_responses = [\n            LLMResponse(\"Hello! I'm doing well, thank you for asking. How can I help you today?\", 20, \"gpt-3.5-turbo\"),\n            LLMResponse(\"I'd be happy to help you with Python programming. What specific topic would you like to learn about?\", 25, \"gpt-3.5-turbo\"),\n            LLMResponse(\"Great choice! Here's a simple Python function example:\\n\\ndef greet(name):\\n    return f'Hello, {name}!'\", 30, \"gpt-3.5-turbo\"),\n            LLMResponse(\"You're welcome! Feel free to ask if you have any more questions about Python or programming in general.\", 22, \"gpt-3.5-turbo\")\n        ]",
+        "detail": "CharacterClient.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerInitialization",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerInitialization:\n    \"\"\"Test suite for TTSManager initialization scenarios\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts', None)\n    @patch('tts_manager.CoquiTTS', None)\n    def test_initialization_no_libraries_available(self, mock_ensure_dirs):\n        \"\"\"Test initialization when no TTS libraries are available\"\"\"\n        manager = TTSManager(tts_service_name=\"gtts\")\n        assert manager.service_name == \"gtts\"\n        assert manager.is_initialized is False",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerGTTSSynthesis",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerGTTSSynthesis:\n    \"\"\"Test suite for gTTS synthesis functionality\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts')\n    def test_gtts_synthesize_blocking_success(self, mock_gtts_module, mock_ensure_dirs):\n        \"\"\"Test successful gTTS blocking synthesis\"\"\"\n        mock_gtts_instance = Mock()\n        mock_gtts_module.gTTS.return_value = mock_gtts_instance\n        manager = TTSManager(tts_service_name=\"gtts\", language=\"fr\")\n        manager._gtts_synthesize_blocking(\"Bonjour\", \"/path/to/output.mp3\", \"fr\")",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerXTTSv2Synthesis",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerXTTSv2Synthesis:\n    \"\"\"Test suite for XTTSv2 synthesis functionality\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.CoquiTTS')\n    @patch('os.path.exists', return_value=True)\n    def test_xttsv2_synthesize_blocking_with_speaker(self, mock_exists, mock_coqui, mock_ensure_dirs):\n        \"\"\"Test XTTSv2 synthesis with speaker wav file\"\"\"\n        mock_tts_instance = Mock()\n        mock_tts_instance.languages = [\"en\", \"es\", \"fr\"]\n        mock_coqui.return_value = mock_tts_instance",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerAsyncSynthesis",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerAsyncSynthesis:\n    \"\"\"Test suite for async synthesis functionality\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts')\n    @patch('tts_manager.CLIENT_TEMP_AUDIO_PATH', '/tmp/test_audio')\n    @patch('os.makedirs')\n    @patch('asyncio.to_thread')\n    async def test_synthesize_gtts_success(self, mock_to_thread, mock_makedirs, mock_gtts, mock_ensure_dirs):\n        \"\"\"Test successful async gTTS synthesis\"\"\"\n        mock_to_thread.return_value = None  # Successful synthesis",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerStaticMethods",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerStaticMethods:\n    \"\"\"Test suite for static methods\"\"\"\n    @patch('tts_manager.gtts')\n    @patch('tts_manager.CoquiTTS')\n    def test_list_services_both_available(self, mock_coqui, mock_gtts):\n        \"\"\"Test listing services when both are available\"\"\"\n        services = TTSManager.list_services()\n        assert \"gtts\" in services\n        assert \"xttsv2\" in services\n        assert len(services) == 2",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerModelHandling",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerModelHandling:\n    \"\"\"Test suite for model handling functionality\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.CLIENT_TTS_MODELS_PATH', '/tmp/test_models')\n    @patch('os.makedirs')\n    def test_get_or_download_model_blocking_xttsv2(self, mock_makedirs, mock_ensure_dirs):\n        \"\"\"Test model handling for XTTSv2\"\"\"\n        manager = TTSManager(tts_service_name=\"gtts\")  # Any service for testing\n        result = manager._get_or_download_model_blocking(\"xttsv2\", \"test_model\")\n        assert result == \"test_model\"",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerEdgeCases",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerEdgeCases:\n    \"\"\"Test suite for edge cases and error conditions\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts')\n    async def test_synthesize_empty_text(self, mock_gtts, mock_ensure_dirs):\n        \"\"\"Test synthesis with empty text\"\"\"\n        manager = TTSManager(tts_service_name=\"gtts\")\n        with patch('asyncio.to_thread') as mock_to_thread:\n            result = await manager.synthesize(\"\", \"output.mp3\")\n            # Should still attempt synthesis - TTS service handles empty text",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerLanguageHandling",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerLanguageHandling:\n    \"\"\"Test suite for language-specific functionality\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts')\n    def test_initialization_various_languages(self, mock_gtts, mock_ensure_dirs):\n        \"\"\"Test initialization with various language codes\"\"\"\n        languages = [\"en\", \"es\", \"fr\", \"de\", \"it\", \"pt\", \"ru\", \"ja\", \"ko\", \"zh\"]\n        for lang in languages:\n            manager = TTSManager(tts_service_name=\"gtts\", language=lang)\n            assert manager.language == lang",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerConcurrency",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerConcurrency:\n    \"\"\"Test suite for concurrent operations\"\"\"\n    @patch('tts_manager.ensure_client_directories')  \n    @patch('tts_manager.gtts')\n    async def test_concurrent_synthesis_requests(self, mock_gtts, mock_ensure_dirs):\n        \"\"\"Test handling multiple concurrent synthesis requests\"\"\"\n        manager = TTSManager(tts_service_name=\"gtts\")\n        with patch('asyncio.to_thread') as mock_to_thread:\n            mock_to_thread.return_value = None\n            # Create multiple concurrent synthesis tasks",
+        "detail": "CharacterClient.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerFileSystemOperations",
+        "kind": 6,
+        "importPath": "CharacterClient.tests.test_tts_manager",
+        "description": "CharacterClient.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerFileSystemOperations:\n    \"\"\"Test suite for file system related operations\"\"\"\n    @patch('tts_manager.ensure_client_directories')\n    @patch('tts_manager.gtts')\n    @patch('os.makedirs', side_effect=PermissionError(\"Permission denied\"))\n    async def test_synthesize_makedirs_permission_error(self, mock_makedirs, mock_gtts, mock_ensure_dirs):\n        \"\"\"Test synthesis when directory creation fails due to permissions\"\"\"\n        manager = TTSManager(tts_service_name=\"gtts\")\n        with pytest.raises(PermissionError):\n            await manager.synthesize(\"Hello\", \"output.mp3\")",
+        "detail": "CharacterClient.tests.test_tts_manager",
         "documentation": {}
     },
     {
@@ -5282,7 +6398,7 @@
         "kind": 6,
         "importPath": "SERVER.src.checkpoint_manager",
         "description": "SERVER.src.checkpoint_manager",
-        "peekOfCode": "class CheckpointManager:\n    def __init__(self, server_model_name=\"TinyLLaMA\", server_Actor_id=\"Actor1\"):\n        self.server_model_name = server_model_name\n        self.server_Actor_id = server_Actor_id\n        self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_Actor_id)\n        os.makedirs(BASE_CHECKPOINT_PATH, exist_ok=True)\n        # Ensure the specific server adapter path for Actor1 also exists, as it's a target for copying\n        os.makedirs(self.server_adapter_specific_path, exist_ok=True)\n    def list_checkpoints(self):\n        \"\"\"Returns a list of available checkpoint names, sorted by most recent first.\"\"\"",
+        "peekOfCode": "class CheckpointManager:\n    def __init__(self, server_model_name=\"TinyLLaMA\", server_Actor_id=\"Actor1\"):\n        \"\"\"Initialize and ensure checkpoint + adapter directories exist.\"\"\"\n        self.server_model_name = server_model_name\n        self.server_Actor_id = server_Actor_id\n        self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_Actor_id)\n        os.makedirs(BASE_CHECKPOINT_PATH, exist_ok=True)\n        # Ensure the specific server adapter path for Actor1 also exists, as it's a target for copying\n        os.makedirs(self.server_adapter_specific_path, exist_ok=True)\n    def list_checkpoints(self):",
         "detail": "SERVER.src.checkpoint_manager",
         "documentation": {}
     },
@@ -5525,7 +6641,7 @@
         "kind": 2,
         "importPath": "SERVER.src.env_manager",
         "description": "SERVER.src.env_manager",
-        "peekOfCode": "def get_env_file_status():\n    \"\"\"Checks if the .env file exists and returns its status.\"\"\"\n    if os.path.exists(ENV_FILE_PATH):\n        return f\".env file found at {ENV_FILE_PATH}\"\n    return f\".env file not found. It will be created at {ENV_FILE_PATH} upon saving.\"\ndef load_env_vars(mask_sensitive=False):\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:\n        mask_sensitive (bool): If True, masks values of keys containing 'TOKEN', 'KEY', or 'SECRET'.",
+        "peekOfCode": "def get_env_file_status():\n    \"\"\"Checks if the .env file exists and returns its status.\"\"\"\n    if os.path.exists(ENV_FILE_PATH):\n        return f\".env file found at {ENV_FILE_PATH}\"\n    return f\".env file not found. It will be created at {ENV_FILE_PATH} upon saving.\"\ndef load_env_vars(*, mask_sensitive: bool = False) -> Dict[str, str]:\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:\n        mask_sensitive (bool): If True, masks values of keys containing 'TOKEN', 'KEY', or 'SECRET'.",
         "detail": "SERVER.src.env_manager",
         "documentation": {}
     },
@@ -5534,7 +6650,7 @@
         "kind": 2,
         "importPath": "SERVER.src.env_manager",
         "description": "SERVER.src.env_manager",
-        "peekOfCode": "def load_env_vars(mask_sensitive=False):\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:\n        mask_sensitive (bool): If True, masks values of keys containing 'TOKEN', 'KEY', or 'SECRET'.\n    Returns:\n        dict: A dictionary of environment variables.\n    \"\"\"\n    env_vars = {}\n    if not os.path.exists(ENV_FILE_PATH):",
+        "peekOfCode": "def load_env_vars(*, mask_sensitive: bool = False) -> Dict[str, str]:\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:\n        mask_sensitive (bool): If True, masks values of keys containing 'TOKEN', 'KEY', or 'SECRET'.\n    Returns:\n        dict: A dictionary of environment variables.\n    \"\"\"\n    env_vars = {}\n    if not os.path.exists(ENV_FILE_PATH):",
         "detail": "SERVER.src.env_manager",
         "documentation": {}
     },
@@ -5552,7 +6668,7 @@
         "kind": 5,
         "importPath": "SERVER.src.env_manager",
         "description": "SERVER.src.env_manager",
-        "peekOfCode": "ENV_FILE_PATH = os.path.join(PROJECT_ROOT, \".env\")\ndef get_env_file_status():\n    \"\"\"Checks if the .env file exists and returns its status.\"\"\"\n    if os.path.exists(ENV_FILE_PATH):\n        return f\".env file found at {ENV_FILE_PATH}\"\n    return f\".env file not found. It will be created at {ENV_FILE_PATH} upon saving.\"\ndef load_env_vars(mask_sensitive=False):\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:",
+        "peekOfCode": "ENV_FILE_PATH = os.path.join(PROJECT_ROOT, \".env\")\ndef get_env_file_status():\n    \"\"\"Checks if the .env file exists and returns its status.\"\"\"\n    if os.path.exists(ENV_FILE_PATH):\n        return f\".env file found at {ENV_FILE_PATH}\"\n    return f\".env file not found. It will be created at {ENV_FILE_PATH} upon saving.\"\ndef load_env_vars(*, mask_sensitive: bool = False) -> Dict[str, str]:\n    \"\"\"\n    Loads environment variables from the .env file.\n    Args:",
         "detail": "SERVER.src.env_manager",
         "documentation": {}
     },
@@ -5719,11 +6835,686 @@
         "documentation": {}
     },
     {
+        "label": "TestServerAPIPytest",
+        "kind": 6,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "class TestServerAPIPytest:\n    \"\"\"Pytest-style tests for Server API.\"\"\"\n    @pytest.mark.asyncio\n    async def test_server_startup_with_fixture(self, server_config):\n        \"\"\"Test server startup using pytest fixtures.\"\"\"\n        from test_server_api import ServerAPI, ServerConfig\n        config = ServerConfig(server_config)\n        server = ServerAPI(config)\n        result = await server.start()\n        assert result is True",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "server_config",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def server_config():\n    \"\"\"Fixture providing standard server configuration for tests.\"\"\"\n    return {\n        'host': 'localhost',\n        'port': 8080,\n        'debug': True,\n        'max_connections': 100,\n        'timeout': 30,\n        'workers': 1\n    }",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "temp_config_file",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def temp_config_file(server_config):\n    \"\"\"Fixture providing a temporary configuration file.\"\"\"\n    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:\n        json.dump(server_config, f)\n        temp_file = f.name\n    yield temp_file\n    # Cleanup\n    if os.path.exists(temp_file):\n        os.unlink(temp_file)\n@pytest.fixture",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_server_environment",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def mock_server_environment(monkeypatch):\n    \"\"\"Fixture for mocking server environment variables.\"\"\"\n    test_env = {\n        'SERVER_HOST': 'test.localhost',\n        'SERVER_PORT': '9999',\n        'SERVER_DEBUG': 'true',\n        'SERVER_MAX_CONNECTIONS': '50'\n    }\n    for key, value in test_env.items():\n        monkeypatch.setenv(key, value)",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "event_loop",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def event_loop():\n    \"\"\"Create an instance of the default event loop for the test session.\"\"\"\n    loop = asyncio.get_event_loop_policy().new_event_loop()\n    yield loop\n    loop.close()\n@pytest.fixture\nasync def running_server(server_config):\n    \"\"\"Fixture providing a running server instance.\"\"\"\n    from test_server_api import ServerAPI, ServerConfig\n    config = ServerConfig(server_config)",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_request_data",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def mock_request_data():\n    \"\"\"Fixture providing mock request data for testing.\"\"\"\n    return {\n        'action': 'test_action',\n        'data': {\n            'key1': 'value1',\n            'key2': 'value2',\n            'nested': {\n                'inner_key': 'inner_value'\n            }",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_database",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def mock_database():\n    \"\"\"Fixture providing a mock database for testing.\"\"\"\n    database = Mock()\n    database.connect.return_value = True\n    database.disconnect.return_value = True\n    database.query.return_value = {'result': 'success'}\n    database.insert.return_value = {'id': 1, 'created': True}\n    database.update.return_value = {'updated': True}\n    database.delete.return_value = {'deleted': True}\n    return database",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "mock_external_api",
+        "kind": 2,
+        "importPath": "SERVER.tests.conftest",
+        "description": "SERVER.tests.conftest",
+        "peekOfCode": "def mock_external_api():\n    \"\"\"Fixture providing a mock external API for testing.\"\"\"\n    api = Mock()\n    api.get.return_value = {'status': 'success', 'data': 'mock_data'}\n    api.post.return_value = {'status': 'created', 'id': 'mock_id'}\n    api.put.return_value = {'status': 'updated'}\n    api.delete.return_value = {'status': 'deleted'}\n    return api\n# Pytest-specific test classes\nclass TestServerAPIPytest:",
+        "detail": "SERVER.tests.conftest",
+        "documentation": {}
+    },
+    {
+        "label": "MockCharacterServer",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class MockCharacterServer:\n    \"\"\"Mock character server for testing when actual implementation isn't available.\"\"\"\n    def __init__(self):\n        self.characters = {}\n        self.next_id = 1\n    def create_character(self, character_data: Dict) -> Dict:\n        if not self.validate_character_data(character_data):\n            raise ValueError(\"Invalid character data\")\n        character = {**character_data, 'id': self.next_id}\n        self.characters[self.next_id] = character",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterCreation",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterCreation:\n    \"\"\"Test suite for character creation functionality.\"\"\"\n    def test_create_character_success(self, character_server, valid_character_data):\n        \"\"\"Test successful character creation with valid data.\"\"\"\n        result = character_server.create_character(valid_character_data)\n        assert result['id'] is not None\n        assert result['name'] == valid_character_data['name']\n        assert result['class'] == valid_character_data['class']\n        assert result['level'] == valid_character_data['level']\n    def test_create_character_minimal_data(self, character_server):",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterRetrieval",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterRetrieval:\n    \"\"\"Test suite for character retrieval functionality.\"\"\"\n    def test_get_character_success(self, character_server, valid_character_data):\n        \"\"\"Test successful character retrieval.\"\"\"\n        created_char = character_server.create_character(valid_character_data)\n        retrieved_char = character_server.get_character(created_char['id'])\n        assert retrieved_char is not None\n        assert retrieved_char['id'] == created_char['id']\n        assert retrieved_char['name'] == valid_character_data['name']\n    def test_get_character_nonexistent(self, character_server):",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterUpdate",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterUpdate:\n    \"\"\"Test suite for character update functionality.\"\"\"\n    def test_update_character_success(self, character_server, valid_character_data):\n        \"\"\"Test successful character update.\"\"\"\n        created_char = character_server.create_character(valid_character_data)\n        update_data = {'level': 15, 'hp': 150}\n        updated_char = character_server.update_character(created_char['id'], update_data)\n        assert updated_char is not None\n        assert updated_char['level'] == 15\n        assert updated_char['hp'] == 150",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterDeletion",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterDeletion:\n    \"\"\"Test suite for character deletion functionality.\"\"\"\n    def test_delete_character_success(self, character_server, valid_character_data):\n        \"\"\"Test successful character deletion.\"\"\"\n        created_char = character_server.create_character(valid_character_data)\n        result = character_server.delete_character(created_char['id'])\n        assert result is True\n        # Verify character is actually deleted\n        retrieved_char = character_server.get_character(created_char['id'])\n        assert retrieved_char is None",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterListing",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterListing:\n    \"\"\"Test suite for character listing functionality.\"\"\"\n    def test_list_characters_empty(self, character_server):\n        \"\"\"Test listing characters when none exist.\"\"\"\n        result = character_server.list_characters()\n        assert result == []\n    def test_list_characters_single(self, character_server, valid_character_data):\n        \"\"\"Test listing characters with single character.\"\"\"\n        character_server.create_character(valid_character_data)\n        result = character_server.list_characters()",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterValidation",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterValidation:\n    \"\"\"Test suite for character data validation.\"\"\"\n    @pytest.mark.parametrize(\"valid_data\", [\n        {'name': 'Hero', 'class': 'Warrior', 'level': 1},\n        {'name': 'A', 'class': 'Mage', 'level': 100},\n        {'name': 'Test Hero', 'class': 'Rogue', 'level': 50},\n        {'name': 'Hérö-123', 'class': 'Paladin', 'level': 25},\n    ])\n    def test_validate_character_data_valid_cases(self, valid_data):\n        \"\"\"Test validation with various valid character data.\"\"\"",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterServerEdgeCases",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterServerEdgeCases:\n    \"\"\"Test suite for edge cases and boundary conditions.\"\"\"\n    def test_character_id_sequence(self, character_server, valid_character_data):\n        \"\"\"Test that character IDs are assigned sequentially.\"\"\"\n        char1 = character_server.create_character({**valid_character_data, 'name': 'Hero1'})\n        char2 = character_server.create_character({**valid_character_data, 'name': 'Hero2'})\n        char3 = character_server.create_character({**valid_character_data, 'name': 'Hero3'})\n        assert char2['id'] == char1['id'] + 1\n        assert char3['id'] == char2['id'] + 1\n    def test_character_id_after_deletion(self, character_server, valid_character_data):",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCharacterServerPerformance",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestCharacterServerPerformance:\n    \"\"\"Test suite for performance-related scenarios.\"\"\"\n    def test_create_many_characters(self, character_server, valid_character_data):\n        \"\"\"Test creating many characters to check performance degradation.\"\"\"\n        num_characters = 1000\n        for i in range(num_characters):\n            char_data = {**valid_character_data, 'name': f'Hero{i}'}\n            result = character_server.create_character(char_data)\n            assert result is not None\n        # Verify all characters exist",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestAsyncCharacterOperations",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "class TestAsyncCharacterOperations:\n    \"\"\"Test suite for asynchronous character operations.\"\"\"\n    @pytest.mark.asyncio\n    async def test_async_character_creation(self):\n        \"\"\"Test asynchronous character creation.\"\"\"\n        # This would test async functionality if the server supports it\n        async def mock_create_character_async(data):\n            await asyncio.sleep(0.01)  # Simulate async operation\n            return {'id': 1, **data}\n        with patch('character_server.create_character_async', side_effect=mock_create_character_async):",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "character_server",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "def character_server():\n    \"\"\"Fixture providing a fresh character server instance for each test.\"\"\"\n    return MockCharacterServer()\n@pytest.fixture\ndef valid_character_data():\n    \"\"\"Fixture providing valid character data for testing.\"\"\"\n    return {\n        'name': 'TestHero',\n        'class': 'Warrior',\n        'level': 10,",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "valid_character_data",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "def valid_character_data():\n    \"\"\"Fixture providing valid character data for testing.\"\"\"\n    return {\n        'name': 'TestHero',\n        'class': 'Warrior',\n        'level': 10,\n        'hp': 100,\n        'mp': 50,\n        'strength': 15,\n        'dexterity': 12,",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "invalid_character_data",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_character_server",
+        "description": "SERVER.tests.test_character_server",
+        "peekOfCode": "def invalid_character_data():\n    \"\"\"Fixture providing invalid character data for testing.\"\"\"\n    return {\n        'name': '',  # Invalid empty name\n        'class': 'InvalidClass',\n        'level': -5,  # Invalid negative level\n        'hp': 'not_a_number',  # Invalid type\n        'strength': None\n    }\nclass TestCharacterCreation:",
+        "detail": "SERVER.tests.test_character_server",
+        "documentation": {}
+    },
+    {
+        "label": "TestCheckpointManager",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_checkpoint_manager",
+        "description": "SERVER.tests.test_checkpoint_manager",
+        "peekOfCode": "class TestCheckpointManager(unittest.TestCase):\n    \"\"\"Comprehensive test suite for CheckpointManager.\"\"\"\n    def setUp(self):\n        \"\"\"Set up test fixtures before each test method.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)\n        self.sample_data = {\n            'model_state': {'weights': [1, 2, 3], 'biases': [0.1, 0.2]},\n            'optimizer_state': {'learning_rate': 0.001, 'momentum': 0.9},\n            'epoch': 42,",
+        "detail": "SERVER.tests.test_checkpoint_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestCheckpointManagerEdgeCases",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_checkpoint_manager",
+        "description": "SERVER.tests.test_checkpoint_manager",
+        "peekOfCode": "class TestCheckpointManagerEdgeCases(unittest.TestCase):\n    \"\"\"Additional edge case tests for CheckpointManager.\"\"\"\n    def setUp(self):\n        \"\"\"Set up test fixtures for edge cases.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)\n    def tearDown(self):\n        \"\"\"Clean up after edge case tests.\"\"\"\n        if os.path.exists(self.temp_dir):\n            shutil.rmtree(self.temp_dir)",
+        "detail": "SERVER.tests.test_checkpoint_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestClientManager",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_client_manager",
+        "description": "SERVER.tests.test_client_manager",
+        "peekOfCode": "class TestClientManager(unittest.TestCase):\n    \"\"\"\n    Comprehensive unit tests for ClientManager class.\n    Testing Framework: Python unittest (standard library)\n    This test suite covers:\n    - Initialization and setup\n    - Token generation and validation\n    - Health check functionality (sync and async patterns)\n    - Client communication (async send_to_client method)\n    - Threading behavior for periodic health checks",
+        "detail": "SERVER.tests.test_client_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestClientManagerAsyncPatterns",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_client_manager",
+        "description": "SERVER.tests.test_client_manager",
+        "peekOfCode": "class TestClientManagerAsyncPatterns(unittest.TestCase):\n    \"\"\"\n    Additional tests focused on async/await patterns and coroutine behavior.\n    Testing Framework: Python unittest with asyncio support\n    \"\"\"\n    def setUp(self):\n        \"\"\"Set up async test fixtures.\"\"\"\n        self.mock_db = Mock(spec=Database)\n        with patch('client_manager.pygame.mixer') as mock_mixer:\n            mock_mixer.get_init.return_value = True",
+        "detail": "SERVER.tests.test_client_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationLoading",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationLoading:\n    \"\"\"Test configuration loading functionality\"\"\"\n    def test_load_config_from_file_success(self):\n        \"\"\"Test successful configuration loading from file\"\"\"\n        config_data = {\n            \"database\": {\n                \"host\": \"localhost\",\n                \"port\": 5432,\n                \"name\": \"testdb\"\n            },",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationValidation",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationValidation:\n    \"\"\"Test configuration validation functionality\"\"\"\n    def test_validate_config_valid_structure(self):\n        \"\"\"Test validation of valid configuration structure\"\"\"\n        valid_config = {\n            \"database\": {\n                \"host\": \"localhost\",\n                \"port\": 5432,\n                \"name\": \"testdb\",\n                \"user\": \"testuser\",",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationDefaults",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationDefaults:\n    \"\"\"Test configuration default values and fallbacks\"\"\"\n    def test_get_default_config(self):\n        \"\"\"Test getting default configuration\"\"\"\n        try:\n            default_config = get_default_config()\n            assert isinstance(default_config, dict)\n            assert len(default_config) > 0\n            # Check for common configuration sections\n            expected_sections = [\"database\", \"api\", \"server\", \"logging\"]",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestEnvironmentVariables",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestEnvironmentVariables:\n    \"\"\"Test environment variable configuration overrides\"\"\"\n    @patch.dict(os.environ, {\n        \"DB_HOST\": \"env_host\",\n        \"DB_PORT\": \"3306\",\n        \"API_PORT\": \"9000\"\n    })\n    def test_load_config_from_env_variables(self):\n        \"\"\"Test loading configuration from environment variables\"\"\"\n        try:",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationSerialization",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationSerialization:\n    \"\"\"Test configuration serialization and deserialization\"\"\"\n    def test_config_to_json(self):\n        \"\"\"Test converting configuration to JSON\"\"\"\n        config = {\n            \"database\": {\n                \"host\": \"localhost\",\n                \"port\": 5432\n            }\n        }",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationUtilities",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationUtilities:\n    \"\"\"Test configuration utility functions\"\"\"\n    def test_get_config_value_existing_key(self):\n        \"\"\"Test getting existing configuration value\"\"\"\n        config = {\n            \"database\": {\n                \"host\": \"localhost\",\n                \"port\": 5432\n            }\n        }",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationEdgeCases",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationEdgeCases:\n    \"\"\"Test edge cases and error conditions\"\"\"\n    def test_config_with_unicode_characters(self):\n        \"\"\"Test configuration with unicode characters\"\"\"\n        config = {\n            \"database\": {\n                \"name\": \"test_db_ñáéíóú\",\n                \"user\": \"test_user_测试\"\n            }\n        }",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationSecurity",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationSecurity:\n    \"\"\"Test security aspects of configuration handling\"\"\"\n    def test_config_with_sensitive_data_masking(self):\n        \"\"\"Test that sensitive configuration data is properly handled\"\"\"\n        config = {\n            \"database\": {\n                \"host\": \"localhost\",\n                \"password\": \"secret_password\",\n                \"api_key\": \"sensitive_api_key\"\n            }",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationIntegration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationIntegration:\n    \"\"\"Integration tests for configuration system\"\"\"\n    def test_full_config_lifecycle(self, temp_config_file):\n        \"\"\"Test complete configuration lifecycle\"\"\"\n        try:\n            # Load config from file\n            loaded_config = load_config(temp_config_file)\n            # Validate loaded config\n            assert isinstance(loaded_config, dict)\n            assert \"database\" in loaded_config",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigurationPerformance",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "class TestConfigurationPerformance:\n    \"\"\"Test performance aspects of configuration handling\"\"\"\n    def test_config_loading_performance(self, temp_config_file):\n        \"\"\"Test that configuration loading is reasonably fast\"\"\"\n        import time\n        start_time = time.time()\n        # Load config multiple times\n        for _ in range(100):\n            try:\n                load_config(temp_config_file)",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "temp_config_file",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "def temp_config_file():\n    \"\"\"Fixture to create a temporary config file for testing\"\"\"\n    config_data = {\n        \"database\": {\n            \"host\": \"localhost\",\n            \"port\": 5432,\n            \"name\": \"testdb\"\n        },\n        \"api\": {\n            \"host\": \"0.0.0.0\",",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "sample_config",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "def sample_config():\n    \"\"\"Fixture providing a sample configuration for testing\"\"\"\n    return {\n        \"database\": {\n            \"host\": \"localhost\",\n            \"port\": 5432,\n            \"name\": \"testdb\",\n            \"user\": \"testuser\",\n            \"password\": \"testpass\"\n        },",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "config_with_env_vars",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_config",
+        "description": "SERVER.tests.test_config",
+        "peekOfCode": "def config_with_env_vars():\n    \"\"\"Fixture providing configuration with environment variable references\"\"\"\n    return {\n        \"database\": {\n            \"host\": \"${DB_HOST:localhost}\",\n            \"port\": \"${DB_PORT:5432}\",\n            \"name\": \"${DB_NAME:testdb}\"\n        },\n        \"api\": {\n            \"host\": \"${API_HOST:0.0.0.0}\",",
+        "detail": "SERVER.tests.test_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestConfigSchema",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_config_schema",
+        "description": "SERVER.tests.test_config_schema",
+        "peekOfCode": "class TestConfigSchema(unittest.TestCase):\n    \"\"\"Test configuration against predefined schemas.\"\"\"\n    def setUp(self):\n        \"\"\"Set up schema definitions.\"\"\"\n        self.config_schema = {\n            \"type\": \"object\",\n            \"properties\": {\n                \"database\": {\n                    \"type\": \"object\",\n                    \"properties\": {",
+        "detail": "SERVER.tests.test_config_schema",
+        "documentation": {}
+    },
+    {
+        "label": "TestCSM",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_csm",
+        "description": "SERVER.tests.test_csm",
+        "peekOfCode": "class TestCSM:\n    \"\"\"Comprehensive unit tests for the CSM (Character Story Manager) class.\n    Testing Framework: pytest\n    This test suite covers:\n    - Happy path scenarios\n    - Edge cases and boundary conditions  \n    - Failure modes and error handling\n    - Concurrent processing\n    - Component integration\n    \"\"\"",
+        "detail": "SERVER.tests.test_csm",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineConfiguration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineConfiguration:\n    \"\"\"Test configuration and initialization scenarios.\"\"\"\n    def test_engine_initialization_with_valid_config(self):\n        \"\"\"Test engine initializes correctly with valid configuration.\"\"\"\n        config = {\n            'model_name': 'test-model',\n            'api_key': 'test-key',\n            'max_tokens': 1000,\n            'temperature': 0.7\n        }",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineTextGeneration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineTextGeneration:\n    \"\"\"Test text generation functionality with various scenarios.\"\"\"\n    @pytest.fixture\n    def mock_engine(self):\n        \"\"\"Create a mock LLM engine for testing.\"\"\"\n        with patch('SERVER.llm_engine.LLMEngine') as mock_class:\n            mock_instance = Mock()\n            mock_class.return_value = mock_instance\n            yield mock_instance\n    def test_generate_text_happy_path(self, mock_engine):",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineAsyncOperations",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineAsyncOperations:\n    \"\"\"Test asynchronous operations if the engine supports them.\"\"\"\n    @pytest.fixture\n    def mock_async_engine(self):\n        \"\"\"Create a mock async LLM engine for testing.\"\"\"\n        mock_engine = AsyncMock()\n        return mock_engine\n    @pytest.mark.asyncio\n    async def test_async_generate_text_success(self, mock_async_engine):\n        \"\"\"Test successful asynchronous text generation.\"\"\"",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineErrorHandling",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineErrorHandling:\n    \"\"\"Test error handling and edge cases.\"\"\"\n    @pytest.fixture\n    def mock_engine(self):\n        \"\"\"Create a mock engine for error testing.\"\"\"\n        mock_engine = Mock()\n        return mock_engine\n    def test_api_connection_error(self, mock_engine):\n        \"\"\"Test handling of API connection errors.\"\"\"\n        mock_engine.generate_text.side_effect = ConnectionError(\"Failed to connect to API\")",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineParameterValidation",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineParameterValidation:\n    \"\"\"Test parameter validation and sanitization.\"\"\"\n    @pytest.fixture\n    def mock_engine(self):\n        \"\"\"Create mock engine for parameter testing.\"\"\"\n        return Mock()\n    @pytest.mark.parametrize(\"temperature,expected\", [\n        (0.0, True),\n        (0.5, True),\n        (1.0, True),",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineStateManagement",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineStateManagement:\n    \"\"\"Test state management and persistence.\"\"\"\n    def test_save_and_load_state(self):\n        \"\"\"Test saving and loading engine state.\"\"\"\n        with patch('SERVER.llm_engine.LLMEngine') as mock_class:\n            mock_instance = Mock()\n            mock_class.return_value = mock_instance\n            # Mock state data\n            test_state = {'model': 'test-model', 'config': {'temp': 0.7}}\n            mock_instance.get_state.return_value = test_state",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineMemoryManagement",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineMemoryManagement:\n    \"\"\"Test memory management and resource cleanup.\"\"\"\n    def test_engine_cleanup_on_destruction(self):\n        \"\"\"Test that engine properly cleans up resources.\"\"\"\n        with patch('SERVER.llm_engine.LLMEngine') as mock_class:\n            mock_instance = Mock()\n            mock_instance.cleanup = Mock()\n            mock_class.return_value = mock_instance\n            engine = mock_class()\n            engine.cleanup()",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEnginePerformanceMetrics",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEnginePerformanceMetrics:\n    \"\"\"Test performance monitoring and metrics collection.\"\"\"\n    @pytest.fixture\n    def mock_engine_with_metrics(self):\n        \"\"\"Create mock engine with performance tracking.\"\"\"\n        mock_engine = Mock()\n        mock_engine.get_metrics.return_value = {\n            'total_requests': 0,\n            'successful_requests': 0,\n            'failed_requests': 0,",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineIntegration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineIntegration:\n    \"\"\"Integration tests for complete workflows.\"\"\"\n    @pytest.fixture\n    def integration_engine(self):\n        \"\"\"Create engine for integration testing.\"\"\"\n        with patch('SERVER.llm_engine.LLMEngine') as mock_class:\n            mock_instance = Mock()\n            mock_class.return_value = mock_instance\n            yield mock_instance\n    def test_complete_generation_workflow(self, integration_engine):",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineEdgeCases",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineEdgeCases:\n    \"\"\"Test various edge cases and boundary conditions.\"\"\"\n    def test_unicode_handling(self):\n        \"\"\"Test proper handling of Unicode characters.\"\"\"\n        with patch('SERVER.llm_engine.LLMEngine') as mock_class:\n            mock_instance = Mock()\n            mock_class.return_value = mock_instance\n            mock_instance.generate_text.return_value = \"Unicode response: 测试 🎉\"\n            unicode_prompt = \"Test Unicode: 你好世界 émojis 🚀🌟\"\n            result = mock_instance.generate_text(unicode_prompt)",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineStreamingOperations",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineStreamingOperations:\n    \"\"\"Test streaming text generation capabilities.\"\"\"\n    @pytest.fixture\n    def mock_streaming_engine(self):\n        \"\"\"Create mock engine with streaming capabilities.\"\"\"\n        mock_engine = Mock()\n        return mock_engine\n    def test_streaming_text_generation(self, mock_streaming_engine):\n        \"\"\"Test streaming text generation functionality.\"\"\"\n        # Mock streaming response",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineLogging",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineLogging:\n    \"\"\"Test logging and debugging capabilities.\"\"\"\n    @pytest.fixture\n    def mock_engine_with_logging(self):\n        \"\"\"Create mock engine with logging capabilities.\"\"\"\n        mock_engine = Mock()\n        return mock_engine\n    def test_request_logging(self, mock_engine_with_logging):\n        \"\"\"Test that requests are properly logged.\"\"\"\n        mock_engine_with_logging.enable_logging.return_value = True",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestLLMEngineConfiguration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_llm_engine",
+        "description": "SERVER.tests.test_llm_engine",
+        "peekOfCode": "class TestLLMEngineConfiguration:\n    \"\"\"Test configuration management and updates.\"\"\"\n    @pytest.fixture\n    def mock_configurable_engine(self):\n        \"\"\"Create mock engine with configuration capabilities.\"\"\"\n        mock_engine = Mock()\n        return mock_engine\n    def test_runtime_configuration_update(self, mock_configurable_engine):\n        \"\"\"Test updating configuration at runtime.\"\"\"\n        new_config = {\"temperature\": 0.8, \"max_tokens\": 2000}",
+        "detail": "SERVER.tests.test_llm_engine",
+        "documentation": {}
+    },
+    {
+        "label": "TestNarratorInitialization",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "class TestNarratorInitialization:\n    \"\"\"Test cases for Narrator class initialization.\"\"\"\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')\n    def test_init_default_model_size(self, mock_pipeline, mock_load_model):\n        \"\"\"Test initialization with default model size.\"\"\"\n        mock_load_model.return_value = Mock()\n        narrator = Narrator()\n        mock_load_model.assert_called_once()\n        assert narrator.stt_model is not None",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "TestNarratorProcessNarration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "class TestNarratorProcessNarration:\n    \"\"\"Test cases for the process_narration method.\"\"\"\n    def setup_method(self):\n        \"\"\"Set up test fixtures.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n        self.test_audio_file = os.path.join(self.temp_dir, \"test_audio.wav\")\n        # Create a dummy audio file\n        with open(self.test_audio_file, 'wb') as f:\n            f.write(b'dummy audio content')\n    def teardown_method(self):",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "TestNarratorCorrectLastTranscription",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "class TestNarratorCorrectLastTranscription:\n    \"\"\"Test cases for the correct_last_transcription method.\"\"\"\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')\n    def test_correct_last_transcription(self, mock_pipeline, mock_load_model):\n        \"\"\"Test correcting the last transcription.\"\"\"\n        mock_load_model.return_value = Mock()\n        narrator = Narrator()\n        narrator.last_transcription = \"Original transcription\"\n        narrator.correct_last_transcription(\"Corrected transcription\")",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "TestNarratorEdgeCases",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "class TestNarratorEdgeCases:\n    \"\"\"Test edge cases and error conditions.\"\"\"\n    def setup_method(self):\n        \"\"\"Set up test fixtures.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n    def teardown_method(self):\n        \"\"\"Clean up test fixtures.\"\"\"\n        shutil.rmtree(self.temp_dir, ignore_errors=True)\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "TestNarratorIntegration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "class TestNarratorIntegration:\n    \"\"\"Integration test cases.\"\"\"\n    def setup_method(self):\n        \"\"\"Set up integration test fixtures.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n    def teardown_method(self):\n        \"\"\"Clean up integration test fixtures.\"\"\"\n        shutil.rmtree(self.temp_dir, ignore_errors=True)\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "test_narrator_initialization_different_models",
+        "kind": 2,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "def test_narrator_initialization_different_models(mock_pipeline, mock_load_model, model_size):\n    \"\"\"Test narrator initialization with different model sizes.\"\"\"\n    mock_load_model.return_value = Mock()\n    narrator = Narrator(model_size=model_size)\n    mock_load_model.assert_called_once_with(model_size)\n    assert narrator.stt_model is not None\n@pytest.mark.parametrize(\"text_input,expected_length\", [\n    (\"\", 0),\n    (\"Hello\", 5),\n    (\"Hello world\", 11),",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "sys.modules['whisper']",
+        "kind": 5,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "sys.modules['whisper'] = Mock()\nsys.modules['pyannote'] = Mock()\nsys.modules['pyannote.audio'] = Mock()\ntry:\n    from narrator import Narrator\nexcept ImportError as e:\n    pytest.skip(f\"Narrator module not found: {e}\", allow_module_level=True)\nclass TestNarratorInitialization:\n    \"\"\"Test cases for Narrator class initialization.\"\"\"\n    @patch('narrator.load_model')",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "sys.modules['pyannote']",
+        "kind": 5,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "sys.modules['pyannote'] = Mock()\nsys.modules['pyannote.audio'] = Mock()\ntry:\n    from narrator import Narrator\nexcept ImportError as e:\n    pytest.skip(f\"Narrator module not found: {e}\", allow_module_level=True)\nclass TestNarratorInitialization:\n    \"\"\"Test cases for Narrator class initialization.\"\"\"\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "sys.modules['pyannote.audio']",
+        "kind": 5,
+        "importPath": "SERVER.tests.test_narrator",
+        "description": "SERVER.tests.test_narrator",
+        "peekOfCode": "sys.modules['pyannote.audio'] = Mock()\ntry:\n    from narrator import Narrator\nexcept ImportError as e:\n    pytest.skip(f\"Narrator module not found: {e}\", allow_module_level=True)\nclass TestNarratorInitialization:\n    \"\"\"Test cases for Narrator class initialization.\"\"\"\n    @patch('narrator.load_model')\n    @patch('narrator.Pipeline')\n    def test_init_default_model_size(self, mock_pipeline, mock_load_model):",
+        "detail": "SERVER.tests.test_narrator",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerAPI",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestServerAPI(unittest.TestCase):\n    \"\"\"Comprehensive unit tests for ServerAPI class.\"\"\"\n    def setUp(self):\n        \"\"\"Set up test fixtures before each test method.\"\"\"\n        self.test_config = ServerConfig({\n            'host': 'localhost',\n            'port': 8080,\n            'debug': True,\n            'max_connections': 10,\n            'timeout': 30",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerConfig",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestServerConfig(unittest.TestCase):\n    \"\"\"Unit tests for ServerConfig class.\"\"\"\n    def test_config_initialization_empty(self):\n        \"\"\"Test ServerConfig initialization with empty config.\"\"\"\n        config = ServerConfig({})\n        self.assertIsInstance(config.config, dict)\n    def test_config_initialization_none(self):\n        \"\"\"Test ServerConfig initialization with None.\"\"\"\n        config = ServerConfig(None)\n        self.assertIsInstance(config.config, dict)",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestAPIResponse",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestAPIResponse(unittest.TestCase):\n    \"\"\"Unit tests for APIResponse class.\"\"\"\n    def test_response_initialization_defaults(self):\n        \"\"\"Test APIResponse initialization with defaults.\"\"\"\n        response = APIResponse()\n        self.assertIsNone(response.data)\n        self.assertEqual(response.status_code, 200)\n        self.assertEqual(response.message, \"\")\n    def test_response_initialization_with_data(self):\n        \"\"\"Test APIResponse initialization with data.\"\"\"",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestAPIError",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestAPIError(unittest.TestCase):\n    \"\"\"Unit tests for APIError class.\"\"\"\n    def test_api_error_initialization_defaults(self):\n        \"\"\"Test APIError initialization with defaults.\"\"\"\n        error = APIError(\"Test error\")\n        self.assertEqual(error.message, \"Test error\")\n        self.assertEqual(error.status_code, 500)\n        self.assertEqual(str(error), \"Test error\")\n    def test_api_error_initialization_with_status(self):\n        \"\"\"Test APIError initialization with status code.\"\"\"",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestRequestHandler",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestRequestHandler(unittest.TestCase):\n    \"\"\"Unit tests for RequestHandler class.\"\"\"\n    def setUp(self):\n        \"\"\"Set up test fixtures.\"\"\"\n        self.config = ServerConfig()\n        self.handler = RequestHandler(self.config)\n    def test_handler_initialization(self):\n        \"\"\"Test RequestHandler initialization.\"\"\"\n        self.assertIsInstance(self.handler.config, ServerConfig)\n        self.assertIsInstance(self.handler.middleware, list)",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerAPIIntegration",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestServerAPIIntegration(unittest.TestCase):\n    \"\"\"Integration tests for Server API components.\"\"\"\n    def setUp(self):\n        \"\"\"Set up integration test fixtures.\"\"\"\n        self.temp_dir = tempfile.mkdtemp()\n        self.config_file = os.path.join(self.temp_dir, 'test_config.json')\n    def tearDown(self):\n        \"\"\"Clean up integration test fixtures.\"\"\"\n        import shutil\n        if os.path.exists(self.temp_dir):",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerAPIPerformance",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_api",
+        "description": "SERVER.tests.test_server_api",
+        "peekOfCode": "class TestServerAPIPerformance(unittest.TestCase):\n    \"\"\"Performance tests for Server API.\"\"\"\n    def setUp(self):\n        \"\"\"Set up performance test fixtures.\"\"\"\n        self.config = ServerConfig({\n            'host': 'localhost',\n            'port': 8083,\n            'max_connections': 100\n        })\n        self.server = ServerAPI(self.config)",
+        "detail": "SERVER.tests.test_server_api",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerConfigComprehensive",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_config",
+        "description": "SERVER.tests.test_server_config",
+        "peekOfCode": "class TestServerConfigComprehensive(unittest.TestCase):\n    \"\"\"Comprehensive tests for ServerConfig class.\"\"\"\n    def test_config_validation_valid_port(self):\n        \"\"\"Test configuration validation with valid port.\"\"\"\n        config = ServerConfig({'port': 8080})\n        self.assertTrue(config.validate())\n    def test_config_validation_invalid_port_zero(self):\n        \"\"\"Test configuration validation with zero port.\"\"\"\n        config = ServerConfig({'port': 0})\n        with self.assertRaises(ConfigError):",
+        "detail": "SERVER.tests.test_server_config",
+        "documentation": {}
+    },
+    {
+        "label": "TestServerAPIPerformanceBenchmarks",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_server_performance",
+        "description": "SERVER.tests.test_server_performance",
+        "peekOfCode": "class TestServerAPIPerformanceBenchmarks(unittest.TestCase):\n    \"\"\"Performance benchmarking tests for Server API.\"\"\"\n    def setUp(self):\n        \"\"\"Set up performance test environment.\"\"\"\n        self.config = ServerConfig({\n            'host': 'localhost',\n            'port': 8084,\n            'max_connections': 1000,\n            'timeout': 5\n        })",
+        "detail": "SERVER.tests.test_server_performance",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerInitialization",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_tts_manager",
+        "description": "SERVER.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerInitialization(unittest.TestCase):\n    \"\"\"Test TTSManager initialization and configuration.\"\"\"\n    def test_init_gtts_service(self):\n        \"\"\"Test initialization with gTTS service.\"\"\"\n        with patch('tts_manager.gtts') as mock_gtts:\n            mock_gtts.__bool__ = Mock(return_value=True)\n            manager = TTSManager(tts_service_name=\"gtts\", language=\"en\")\n            self.assertEqual(manager.service_name, \"gtts\")\n            self.assertEqual(manager.language, \"en\")\n            self.assertIsNotNone(manager)",
+        "detail": "SERVER.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerServiceInitialization",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_tts_manager",
+        "description": "SERVER.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerServiceInitialization(unittest.TestCase):\n    \"\"\"Test service-specific initialization logic.\"\"\"\n    @patch('tts_manager.gtts')\n    def test_gtts_initialization_success(self, mock_gtts):\n        \"\"\"Test successful gTTS initialization.\"\"\"\n        mock_gtts.__bool__ = Mock(return_value=True)\n        manager = TTSManager(tts_service_name=\"gtts\")\n        self.assertTrue(manager.is_initialized)\n        self.assertIsNotNone(manager.tts_instance)\n    @patch('tts_manager.gtts', None)",
+        "detail": "SERVER.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerSynthesis",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_tts_manager",
+        "description": "SERVER.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerSynthesis(unittest.TestCase):\n    \"\"\"Test text-to-speech synthesis functionality.\"\"\"\n    def setUp(self):\n        \"\"\"Set up test fixtures.\"\"\"\n        self.test_text = \"Hello, this is a test message.\"\n        self.output_path = \"/tmp/test_output.wav\"\n    def test_synthesize_gtts_success(self):\n        \"\"\"Test successful gTTS synthesis.\"\"\"\n        with patch('tts_manager.gtts') as mock_gtts:\n            mock_gtts.__bool__ = Mock(return_value=True)",
+        "detail": "SERVER.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
+        "label": "TestTTSManagerBlockingSynthesis",
+        "kind": 6,
+        "importPath": "SERVER.tests.test_tts_manager",
+        "description": "SERVER.tests.test_tts_manager",
+        "peekOfCode": "class TestTTSManagerBlockingSynthesis(unittest.TestCase):\n    \"\"\"Test blocking synthesis methods.\"\"\"\n    def test_gtts_synthesize_blocking(self):\n        \"\"\"Test gTTS blocking synthesis method.\"\"\"\n        with patch('tts_manager.gtts') as mock_gtts:\n            mock_gtts_instance = Mock()\n            mock_gtts.gTTS.return_value = mock_gtts_instance\n            mock_gtts.__bool__ = Mock(return_value=True)\n            manager = TTSManager(tts_service_name=\"gtts\")\n            manager._gtts_synthesize_blocking(\"test text\", \"/tmp/output.wav\", \"en\")",
+        "detail": "SERVER.tests.test_tts_manager",
+        "documentation": {}
+    },
+    {
         "label": "run_gradio",
         "kind": 2,
         "importPath": "SERVER.main",
         "description": "SERVER.main",
-        "peekOfCode": "def run_gradio():\n    \"\"\"Target function for the Gradio process.\"\"\"\n    launch_interface()\ndef run_fastapi():\n    \"\"\"Target function for the FastAPI process.\"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")\ndef terminate_process(proc, name):\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")\n        proc.terminate()",
+        "peekOfCode": "def run_gradio():\n    \"\"\"Target function for the Gradio process.\"\"\"\n    launch_interface()\ndef run_fastapi() -> None:\n    \"\"\"\n    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.\n    \"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")\ndef terminate_process(proc: multiprocessing.Process, name: str) -> None:\n    \"\"\"",
         "detail": "SERVER.main",
         "documentation": {}
     },
@@ -5732,7 +7523,7 @@
         "kind": 2,
         "importPath": "SERVER.main",
         "description": "SERVER.main",
-        "peekOfCode": "def run_fastapi():\n    \"\"\"Target function for the FastAPI process.\"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")\ndef terminate_process(proc, name):\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")\n        proc.terminate()\n        proc.join(timeout=5)\n        if proc.is_alive():\n            print(f\"{name} did not terminate gracefully, killing...\")",
+        "peekOfCode": "def run_fastapi() -> None:\n    \"\"\"\n    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.\n    \"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")\ndef terminate_process(proc: multiprocessing.Process, name: str) -> None:\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.",
         "detail": "SERVER.main",
         "documentation": {}
     },
@@ -5741,7 +7532,7 @@
         "kind": 2,
         "importPath": "SERVER.main",
         "description": "SERVER.main",
-        "peekOfCode": "def terminate_process(proc, name):\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")\n        proc.terminate()\n        proc.join(timeout=5)\n        if proc.is_alive():\n            print(f\"{name} did not terminate gracefully, killing...\")\n            proc.kill()\n        else:\n            print(f\"{name} terminated.\")",
+        "peekOfCode": "def terminate_process(proc: multiprocessing.Process, name: str) -> None:\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.\n        name (str): A human-readable name for the process, used in status messages.\n    \"\"\"\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")\n        proc.terminate()",
         "detail": "SERVER.main",
         "documentation": {}
     },

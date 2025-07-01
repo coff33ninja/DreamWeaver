@@ -9,11 +9,20 @@ def run_gradio():
     """Target function for the Gradio process."""
     launch_interface()
 
-def run_fastapi():
-    """Target function for the FastAPI process."""
+def run_fastapi() -> None:
+    """
+    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.
+    """
     uvicorn.run(server_api_app, host="0.0.0.0", port=8000, log_level="info")
 
-def terminate_process(proc, name):
+def terminate_process(proc: multiprocessing.Process, name: str) -> None:
+    """
+    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.
+    
+    Parameters:
+        proc (multiprocessing.Process): The process to terminate.
+        name (str): A human-readable name for the process, used in status messages.
+    """
     if proc.is_alive():
         print(f"Terminating {name} (PID: {proc.pid})...")
         proc.terminate()
