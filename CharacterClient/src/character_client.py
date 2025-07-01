@@ -23,6 +23,17 @@ DEFAULT_BASE_DELAY_SECONDS = 2
 
 class CharacterClient:
     def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):
+        """
+        Initialize a CharacterClient instance with authentication and connection details.
+        
+        This constructor sets up the basic attributes required for the client, but does not perform any blocking or network operations. Full initialization, including server registration and subsystem setup, must be completed by calling `async_init()` after construction.
+        
+        Parameters:
+            token (str): Authentication token for server communication.
+            Actor_id (str): Unique identifier for the character client.
+            server_url (str): URL of the server to register and communicate with.
+            client_port (int): Port number on which the client operates.
+        """
         self.token = token
         self.Actor_id = Actor_id
         self.server_url = server_url
@@ -36,18 +47,42 @@ class CharacterClient:
 
     @classmethod
     async def create(cls, token: str, Actor_id: str, server_url: str, client_port: int):
-        """Async factory for CharacterClient."""
+        """
+        Asynchronously creates and initializes a CharacterClient instance.
+        
+        This async factory method constructs a CharacterClient and performs all necessary asynchronous initialization steps before returning the ready-to-use instance.
+        
+        Returns:
+            CharacterClient: An initialized CharacterClient object.
+        """
         self = cls(token, Actor_id, server_url, client_port)
         await self.async_init()
         return self
 
     async def async_init(self):
         # Perform all blocking/model loading operations here, using asyncio.to_thread for blocking I/O
+        """
+        Asynchronously initializes the CharacterClient by performing registration, fetching character traits, downloading reference audio if needed, and initializing TTS and LLM subsystems.
+        
+        This method offloads blocking I/O operations to background threads to avoid blocking the event loop. If registration or trait fetching fails, it logs critical warnings and applies default character settings. Initializes TTSManager and LLMEngine instances based on the retrieved or default traits.
+        """
         def _register():
             return self._register_with_server_blocking()
         def _fetch():
+            """
+            Fetches character traits from the server using a blocking call.
+            
+            Returns:
+                dict or None: The character traits if successfully fetched, otherwise None.
+            """
             return self._fetch_traits_blocking()
         def _download():
+            """
+            Downloads the reference audio file for the character if required by the TTS model.
+            
+            Returns:
+                The result of the blocking reference audio download operation, or None if not applicable.
+            """
             return self._download_reference_audio_blocking()
 
         registered = await asyncio.to_thread(_register)
@@ -87,6 +122,11 @@ class CharacterClient:
     # --- Blocking I/O methods for use during __init__ or when async context isn't readily available ---
     def _download_reference_audio_blocking(self):
         # (Implementation is the same as original _download_reference_audio, just named for clarity)
+        """
+        Downloads the reference audio file for the character from the server and saves it locally if not already present.
+        
+        If the character traits or reference audio filename are missing, the method exits without downloading. On failure, logs the error and sets the local reference audio path to None.
+        """
         if not self.character:
             print("No character traits available for downloading reference audio.")
             return
@@ -116,6 +156,12 @@ class CharacterClient:
 
     def _fetch_traits_blocking(self):
         # (Implementation is the same as original fetch_traits, just named for clarity)
+        """
+        Fetches character traits from the server in a blocking manner.
+        
+        Returns:
+            dict or None: The character traits as a dictionary if successful, otherwise None.
+        """
         try:
             response = requests.get(f"{self.server_url}/get_traits", params={"Actor_id": self.Actor_id, "token": self.token}, timeout=10)
             response.raise_for_status()
@@ -126,6 +172,16 @@ class CharacterClient:
 
     def _register_with_server_blocking(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
         # (Implementation is the same as original _register_with_server with retries, just named for clarity)
+        """
+        Attempt to register the client with the server using HTTP POST, retrying with exponential backoff on failure.
+        
+        Parameters:
+        	max_retries (int): Maximum number of registration attempts before giving up.
+        	base_delay (int): Base delay in seconds for exponential backoff between retries.
+        
+        Returns:
+        	bool: True if registration succeeds, False if all attempts fail.
+        """
         payload = {"Actor_id": self.Actor_id, "token": self.token, "client_port": self.client_port}
         for attempt in range(max_retries + 1):
             try:
@@ -144,11 +200,26 @@ class CharacterClient:
     # --- End of blocking I/O methods ---
 
     async def send_heartbeat_async(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
-        """Asynchronously sends a heartbeat with retries."""
+        """
+        Asynchronously sends a heartbeat signal to the server with retry logic and exponential backoff.
+        
+        Parameters:
+        	max_retries (int): Maximum number of retry attempts if the heartbeat fails.
+        	base_delay (int): Base delay in seconds for exponential backoff between retries.
+        
+        Returns:
+        	bool: True if the heartbeat was successfully sent, False if all retries failed.
+        """
         payload = {"Actor_id": self.Actor_id, "token": self.token}
         url = f"{self.server_url}/heartbeat"
 
         def _blocking_heartbeat_call():
+            """
+            Send a blocking HTTP POST request with the specified payload to the configured URL as part of the heartbeat mechanism.
+            
+            Returns:
+                Response: The HTTP response object from the POST request.
+            """
             return requests.post(url, json=payload, timeout=5)
 
         for attempt in range(max_retries + 1):
@@ -166,7 +237,16 @@ class CharacterClient:
         return False
 
     async def generate_response_async(self, narration: str, character_texts: dict) -> str:
-        """Asynchronously generates LLM response and handles fine-tuning placeholder."""
+        """
+        Asynchronously generates a character response using the LLM and saves training data for future fine-tuning.
+        
+        Parameters:
+            narration (str): The narration text to include in the prompt.
+            character_texts (dict): Dialogue or context from other characters to include in the prompt.
+        
+        Returns:
+            str: The generated response text from the character.
+        """
         if not self.llm or not self.llm.is_initialized or not self.character:
             char_name = self.character["name"] if self.character and "name" in self.character else self.Actor_id
             return f"[{char_name} LLM not ready]"
@@ -180,6 +260,9 @@ class CharacterClient:
         await self.llm.fine_tune_async({"input": prompt, "output": text}, self.Actor_id)
 
         def _save_training_data_blocking():
+            """
+            Sends a POST request to the server to save training data consisting of the input prompt and generated output text for the current actor.
+            """
             requests.post(f"{self.server_url}/save_training_data",
                           json={"dataset": {"input": prompt, "output": text}, "Actor_id": self.Actor_id, "token": self.token},
                           timeout=10)
@@ -190,7 +273,15 @@ class CharacterClient:
         return text
 
     async def synthesize_audio_async(self, text_to_synthesize: str) -> str | None:
-        """Asynchronously synthesizes audio using the TTSManager."""
+        """
+        Asynchronously synthesizes speech audio from the provided text using the TTS engine.
+        
+        Parameters:
+            text_to_synthesize (str): The text to convert to speech.
+        
+        Returns:
+            str | None: The file path to the generated audio if successful, or None if TTS is not initialized.
+        """
         if not self.tts or not self.tts.is_initialized:
             print(f"Error: TTS not initialized for {self.Actor_id} (async synthesize).")
             return None
@@ -211,7 +302,14 @@ class CharacterClient:
 
 @app.post("/character")
 async def handle_character_generation_request(data: dict, request: Request):
-    """FastAPI endpoint, now fully asynchronous."""
+    """
+    Handles POST requests to generate a character response and synthesize audio asynchronously.
+    
+    Validates the provided token and narration, generates a character response using the LLM, synthesizes audio for the response, encodes the audio as base64, and returns both the generated text and audio data.
+    
+    Returns:
+        dict: A dictionary containing the generated response text and base64-encoded audio data.
+    """
     client: CharacterClient = request.app.state.character_client_instance
     if not client:
         raise HTTPException(status_code=503, detail="CharacterClient not available.")
@@ -233,6 +331,12 @@ async def handle_character_generation_request(data: dict, request: Request):
     if audio_path and os.path.exists(audio_path):
         # Reading file can be blocking, run in thread
         def _read_audio_file():
+            """
+            Read and return the binary contents of the specified audio file.
+            
+            Returns:
+                bytes: The raw binary data of the audio file.
+            """
             with open(audio_path, "rb") as f:
                 return f.read()
         audio_data = await asyncio.to_thread(_read_audio_file)
@@ -247,6 +351,12 @@ async def handle_character_generation_request(data: dict, request: Request):
 
 @app.get("/health", status_code=200)
 async def health_check(request: Request):
+    """
+    Checks the readiness status of the character client's LLM and TTS subsystems.
+    
+    Returns:
+        dict: A JSON-compatible dictionary containing the overall status ("ok" or "degraded"), the Actor ID, readiness flags for LLM and TTS, and a detail message if any subsystem is not ready.
+    """
     client: CharacterClient = request.app.state.character_client_instance
     if not client:
         raise HTTPException(status_code=503, detail="Client service not initialized.")
@@ -258,7 +368,11 @@ async def health_check(request: Request):
 
 
 async def _heartbeat_task_runner(client: CharacterClient):
-    """Runs send_heartbeat_async periodically."""
+    """
+    Periodically sends heartbeat messages for the given CharacterClient instance.
+    
+    Continuously sleeps for a configured interval and invokes the client's asynchronous heartbeat method to maintain server connectivity.
+    """
     while True:
         await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS) # Use asyncio.sleep
         if client:
@@ -268,17 +382,32 @@ async def _heartbeat_task_runner(client: CharacterClient):
 _heartbeat_task_instance = None
 
 def start_heartbeat_task(client: CharacterClient):
+    """
+    Starts the asynchronous heartbeat task for the given CharacterClient if it is not already running.
+    
+    This ensures that only one heartbeat task is active at a time for the client.
+    """
     global _heartbeat_task_instance
     if _heartbeat_task_instance is None or _heartbeat_task_instance.done():
         loop = asyncio.get_running_loop()
         _heartbeat_task_instance = loop.create_task(_heartbeat_task_runner(client))
 
 def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):
+    """
+    Initializes the CharacterClient instance asynchronously and schedules the heartbeat task if not already running.
+    
+    If the client is already initialized, this function does nothing. Otherwise, it creates the necessary directories, initializes the CharacterClient with the provided credentials and configuration, stores it in the FastAPI app state, and starts the background heartbeat task to maintain server connectivity.
+    """
     global _heartbeat_task_instance
     if not hasattr(app.state, 'character_client_instance') or app.state.character_client_instance is None:
         ensure_client_directories()
         # Use the async factory to create and initialize the client
         async def _init():
+            """
+            Asynchronously initializes the CharacterClient instance and schedules the heartbeat task if not already running.
+            
+            This function creates and stores a fully initialized CharacterClient in the FastAPI app state, prints readiness status for LLM and TTS subsystems, and ensures the heartbeat background task is started for the client.
+            """
             client_instance = await CharacterClient.create(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port)
             app.state.character_client_instance = client_instance
             llm_ready_msg = client_instance.llm.is_initialized if client_instance.llm else "N/A"

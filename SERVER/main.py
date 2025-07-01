@@ -6,14 +6,27 @@ import uvicorn
 import multiprocessing
 
 def run_gradio():
-    """Target function for the Gradio process."""
+    """
+    Starts the Gradio server by launching the Gradio interface in a separate process.
+    """
     launch_interface()
 
 def run_fastapi():
-    """Target function for the FastAPI process."""
+    """
+    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000.
+    
+    This function is intended to be used as the target for a separate process.
+    """
     uvicorn.run(server_api_app, host="0.0.0.0", port=8000, log_level="info")
 
 def terminate_process(proc, name):
+    """
+    Attempt to gracefully terminate a multiprocessing process, escalating to forceful kill if necessary.
+    
+    Parameters:
+        proc (multiprocessing.Process): The process to terminate.
+        name (str): A human-readable name for the process, used in status messages.
+    """
     if proc.is_alive():
         print(f"Terminating {name} (PID: {proc.pid})...")
         proc.terminate()
@@ -26,6 +39,11 @@ def terminate_process(proc, name):
 
 def main():
     # Use 'spawn' for Windows safety and cross-platform compatibility
+    """
+    Launches Gradio and FastAPI servers in separate processes and manages their lifecycle, ensuring graceful shutdown on signals or unexpected exits.
+    
+    This function starts both servers using multiprocessing, monitors their status, and handles termination signals to ensure both processes are properly shut down if one exits or if the program receives a shutdown signal.
+    """
     multiprocessing.set_start_method("spawn", force=True)
     print("Starting Gradio and FastAPI servers in separate processes...")
 
@@ -39,6 +57,13 @@ def main():
     print(f"FastAPI process started with PID: {fastapi_process.pid}")
 
     def shutdown_handler(signum, frame):
+        """
+        Handles termination signals by shutting down both the Gradio and FastAPI server processes and exiting the program.
+        
+        Parameters:
+            signum (int): The signal number received.
+            frame (FrameType): The current stack frame (unused).
+        """
         print(f"\nReceived signal {signum}. Shutting down servers...")
         terminate_process(gradio_process, "GradioInterface")
         terminate_process(fastapi_process, "FastAPIServer")

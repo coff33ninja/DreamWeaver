@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in FastAPI dependencies, ensuring the connection is closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,11 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Returns current server performance metrics and a list of all client statuses for the dashboard.
+    
+    The response includes CPU and memory usage statistics, as well as detailed status information for each client, such as actor ID, combined IP address and port, last seen time (formatted in UTC), and status category.
+    Returns:
+        dict: A dictionary containing `server_performance` (CPU and memory metrics) and `client_statuses` (list of client status details).
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +76,9 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Serves the HTML page for the Hive Dashboard, providing a live-updating UI for server performance and client statuses.
+    
+    The returned page includes embedded CSS and JavaScript to display system metrics and client status information, dynamically fetching data from the `/dashboard/status` endpoint and updating the dashboard every 6 seconds.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.

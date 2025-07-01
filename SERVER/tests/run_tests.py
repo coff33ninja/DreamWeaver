@@ -23,7 +23,12 @@ from test_csm import (
 )
 
 def run_all_tests():
-    """Run all CSM tests."""
+    """
+    Runs all CSM-related unit tests and returns whether they all passed.
+    
+    Returns:
+        bool: True if all tests pass, False otherwise.
+    """
     # Create test suite
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -50,7 +55,15 @@ def run_all_tests():
     return result.wasSuccessful()
 
 def run_specific_test(test_class_name):
-    """Run a specific test class."""
+    """
+    Run all tests from a specified test class by name.
+    
+    Parameters:
+        test_class_name (str): The name of the test class to run (case-insensitive).
+    
+    Returns:
+        bool: True if all tests in the specified class pass, False otherwise or if the class name is unrecognized.
+    """
     test_classes = {
         'initialization': TestCSMInitialization,
         'process_story': TestCSMProcessStory,

@@ -32,7 +32,11 @@ CLIENT_TEMP_AUDIO_PATH = os.path.join(CLIENT_DATA_PATH, "temp_audio")
 
 # --- Function to Create Directories ---
 def ensure_client_directories():
-    """Creates all necessary client directories if they don't exist."""
+    """
+    Ensure that all required directories for the CharacterClient exist, creating them if necessary.
+    
+    If a directory cannot be created due to an OS error (such as insufficient permissions), a warning is printed but execution continues.
+    """
     paths_to_create = [
         CLIENT_DATA_PATH,
         CLIENT_MODELS_PATH,

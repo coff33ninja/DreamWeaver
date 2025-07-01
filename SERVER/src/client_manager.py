@@ -22,6 +22,11 @@ SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS = 15 # Timeout for the actual /character 
 
 class ClientManager:
     def __init__(self, db: Database):
+        """
+        Initialize the ClientManager with a database connection and prepare audio playback and health check mechanisms.
+        
+        Attempts to initialize the pygame mixer for audio playback. Sets up threading primitives for managing periodic client health checks.
+        """
         self.db = db
         if not pygame.mixer.get_init():
             try:
@@ -34,6 +39,17 @@ class ClientManager:
         # Consider starting health checks from CSM or main app to ensure DB is fully ready.
 
     def generate_token(self, Actor_id: str) -> str:
+        """
+        Generate and store a unique authentication token for the specified character.
+        
+        If the character does not exist and the Actor_id is "Actor1", creates a default internal server character before generating the token. Otherwise, logs a warning if the character is missing. The generated token is saved in the database and returned.
+        
+        Parameters:
+            Actor_id (str): The unique identifier of the character for whom the token is generated.
+        
+        Returns:
+            str: The generated authentication token.
+        """
         token = secrets.token_hex(24)
         char = self.db.get_character(Actor_id)
         if not char and Actor_id == "Actor1": # Should Actor1 even have a token generated this way?
@@ -45,13 +61,30 @@ class ClientManager:
         return token
 
     def get_clients_for_story_progression(self):
+        """
+        Retrieve the list of clients relevant for story progression from the database.
+        
+        Returns:
+            List of client records associated with ongoing story progression.
+        """
         return self.db.get_clients_for_story_progression()
 
     def validate_token(self, Actor_id: str, token: str) -> bool:
+        """
+        Check if the provided token is valid and the client is not deactivated.
+        
+        Returns:
+            bool: True if the token matches the stored token for the given Actor_id and the client status is not "Deactivated"; otherwise, False.
+        """
         client_details = self.db.get_client_token_details(Actor_id)
         return bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
 
     def _perform_single_health_check_blocking(self, client_info: dict):
+        """
+        Performs a blocking health check on a client and updates its status in the database.
+        
+        Checks the client's `/health` endpoint via HTTP and sets the client status based on the response or encountered errors.
+        """
         Actor_id = client_info.get("Actor_id")
         ip_address = client_info.get("ip_address")
         client_port = client_info.get("client_port")
@@ -89,6 +122,11 @@ class ClientManager:
         self.db.update_client_status(Actor_id, new_status)
 
     def _periodic_health_check_loop(self):
+        """
+        Continuously performs periodic health checks on all clients, updating their status based on responsiveness.
+        
+        This method runs in a loop, checking each client's current status and performing health checks or marking clients as offline if their heartbeat is stale. The loop continues until signaled to stop.
+        """
         print("ClientManager: Periodic health check thread started.")
         while not self.stop_health_check_event.is_set():
             try:
@@ -111,18 +149,41 @@ class ClientManager:
         print("ClientManager: Periodic health check thread stopped.")
 
     def start_periodic_health_checks(self):
+        """
+        Start the background thread that performs periodic health checks on all clients.
+        
+        If the health check thread is already running, this method does nothing.
+        """
         if self.health_check_thread is None or not self.health_check_thread.is_alive():
             self.stop_health_check_event.clear()
             self.health_check_thread = threading.Thread(target=self._periodic_health_check_loop, daemon=True)
             self.health_check_thread.start()
 
     def stop_periodic_health_checks(self):
+        """
+        Stop the periodic health check thread and wait for it to terminate.
+        """
         self.stop_health_check_event.set()
         if self.health_check_thread and self.health_check_thread.is_alive():
             self.health_check_thread.join(timeout=max(1, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS + 1))
 
 
     async def send_to_client(self, client_Actor_id: str, client_ip: str, client_port: int, narration: str, character_texts: dict) -> str:
+        """
+        Asynchronously sends narration and character texts to a client, handles audio playback, and updates client status.
+        
+        Attempts to deliver narration and character data to the specified client via HTTP POST, retrying on failure with exponential backoff. If the client responds with audio data, decodes and plays it using pygame. Updates the client's status in the database based on the outcome.
+        
+        Parameters:
+            client_Actor_id (str): The unique identifier of the client character.
+            client_ip (str): The IP address of the client.
+            client_port (int): The port number on which the client is listening.
+            narration (str): The narration text to send to the client.
+            character_texts (dict): A dictionary of character-specific texts to send.
+        
+        Returns:
+            str: The text response from the client, or an empty string if delivery fails.
+        """
         character = self.db.get_character(client_Actor_id) # Blocking DB call
         if not character:
             print(f"send_to_client: No character data for {client_Actor_id}.")
@@ -139,6 +200,12 @@ class ClientManager:
         request_payload = {"narration": narration, "character_texts": character_texts, "token": token}
 
         def _blocking_post_request():
+            """
+            Send a blocking HTTP POST request with the specified payload and timeout.
+            
+            Returns:
+                Response: The HTTP response object from the POST request.
+            """
             return requests.post(url, json=request_payload, timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS)
 
         for attempt in range(SEND_TO_CLIENT_MAX_RETRIES + 1):
@@ -153,6 +220,11 @@ class ClientManager:
                 if encoded_audio_data and pygame.mixer.get_init():
                     # This part (decode, save, play) is also blocking
                     def _handle_audio():
+                        """
+                        Decodes base64-encoded audio data, saves it as a WAV file in a character-specific directory, and plays the audio using pygame.
+                        
+                        This function generates a sanitized directory name based on the character's name or client Actor ID, ensures the directory exists, writes the decoded audio to a uniquely named file, and plays the audio file.
+                        """
                         sane_char_name = "".join(c if c.isalnum() else "_" for c in character.get('name', client_Actor_id))
                         audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
                         os.makedirs(audio_dir, exist_ok=True)
@@ -193,8 +265,17 @@ class ClientManager:
         return "" # Return empty if all retries fail
 
     def deactivate_client_Actor(self, Actor_id: str): # Blocking DB call
+        """
+        Mark the specified client as deactivated in the database.
+        
+        Parameters:
+            Actor_id (str): The unique identifier of the client to deactivate.
+        """
         self.db.update_client_status(Actor_id, "Deactivated")
         print(f"Client {Actor_id} marked as Deactivated.")
 
     def __del__(self):
+        """
+        Ensures that periodic health checks are stopped when the ClientManager instance is destroyed.
+        """
         self.stop_periodic_health_checks()

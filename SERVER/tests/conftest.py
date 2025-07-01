@@ -12,14 +12,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 @pytest.fixture(scope="session")
 def temp_data_dir():
-    """Session-scoped temporary directory fixture."""
+    """
+    Provides a session-scoped temporary directory for use during tests.
+    
+    Yields:
+        str: The path to the temporary directory, which is automatically cleaned up after the test session.
+    """
     with tempfile.TemporaryDirectory() as temp_dir:
         yield temp_dir
 
 
 @pytest.fixture
 def mock_file_system():
-    """Mock file system operations."""
+    """
+    Temporarily mocks file system and JSON operations to prevent actual disk I/O during tests.
+    
+    Yields:
+        Control to the test while file system and JSON functions are mocked.
+    """
     with patch('builtins.open'), \
          patch('os.path.exists', return_value=True), \
          patch('os.makedirs'), \
@@ -30,7 +40,12 @@ def mock_file_system():
 
 @pytest.fixture
 def sample_character_data():
-    """Sample character data for testing."""
+    """
+    Provides a sample character data dictionary with typical attributes for use in tests.
+    
+    Returns:
+        dict: A dictionary representing a character, including id, name, level, health, mana, experience, class, stats, and inventory.
+    """
     return {
         'id': 'sample-char-001',
         'name': 'Sample Hero',
@@ -57,7 +72,12 @@ def sample_character_data():
 
 @pytest.fixture
 def multiple_character_data():
-    """Multiple characters data for testing."""
+    """
+    Return a list of dictionaries representing multiple sample characters for testing.
+    
+    Returns:
+        List[dict]: Each dictionary contains attributes such as id, name, level, health, mana, class, stats, and inventory for a character.
+    """
     return [
         {
             'id': 'multi-char-001',
@@ -93,12 +113,20 @@ def multiple_character_data():
 
 
 def pytest_runtest_setup(item):
-    """Setup hook for each test."""
+    """
+    Pytest hook executed before each test function.
+    
+    This function can be used to implement global setup logic that should run prior to every test.
+    """
     # Add any global test setup here if needed
     pass
 
 
 def pytest_runtest_teardown(item):
-    """Teardown hook for each test."""
+    """
+    Pytest hook executed after each test for potential global cleanup.
+    
+    This function is called after every test item, allowing for custom teardown logic if needed.
+    """
     # Add any global test cleanup here if needed
     pass

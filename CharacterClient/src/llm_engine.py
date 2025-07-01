@@ -19,12 +19,29 @@ DEFAULT_CLIENT_MODEL_NAME = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
 class JsonDataset(torch.utils.data.Dataset):
     def __init__(self, data_list, tokenizer, max_length=512):
+        """
+        Initialize the dataset with a list of input/output samples, a tokenizer, and a maximum token length.
+        
+        Parameters:
+            data_list (list): List of dictionaries containing 'input' and 'output' text samples.
+            tokenizer: Tokenizer used to process the text samples.
+            max_length (int, optional): Maximum number of tokens for input and output sequences. Defaults to 512.
+        """
         self.data = data_list
         self.tokenizer = tokenizer
         self.max_length = max_length
     def __len__(self):
+        """
+        Return the number of samples in the dataset.
+        """
         return len(self.data)
     def __getitem__(self, idx):
+        """
+        Tokenizes the input and output texts for a given index, returning input tensors and output labels for model training.
+        
+        Returns:
+        	A dictionary containing tokenized input IDs, attention masks, and labels derived from the output text.
+        """
         item = self.data[idx]
         enc = self.tokenizer(
             item['input'],
@@ -46,6 +63,13 @@ class JsonDataset(torch.utils.data.Dataset):
 
 class LLMEngine:
     def __init__(self, model_name: str = "", Actor_id: str = "default_client_Actor"):
+        """
+        Initialize the LLMEngine with specified model and Actor ID, setting up model and adapter directories and loading the model and tokenizer.
+        
+        Parameters:
+            model_name (str, optional): Name or path of the base language model to load. Defaults to a predefined model if not provided.
+            Actor_id (str, optional): Identifier for the client or actor, used to organize adapter storage. Defaults to "default_client_Actor".
+        """
         self.Actor_id = Actor_id or "default_client_Actor"
         self.model_name = model_name if model_name else DEFAULT_CLIENT_MODEL_NAME
         self.models_base_path = os.path.join(CLIENT_LLM_MODELS_PATH, "base_models")
@@ -62,7 +86,11 @@ class LLMEngine:
         self._load_model_and_tokenizer()
 
     def _load_model_and_tokenizer(self):
-        """Synchronous/blocking model loading method."""
+        """
+        Load the language model and tokenizer, applying quantization and LoRA adapters if available.
+        
+        Initializes the tokenizer and model from the specified pretrained model name, using 4-bit quantization if CUDA is available. Sets up the tokenizer's pad token if missing. Loads LoRA adapters if an adapter configuration is present. Sets the model to evaluation mode and updates the initialization status. Errors during loading are caught and logged, and the initialization flag is set accordingly.
+        """
         try:
             bnb_config = None
             if torch.cuda.is_available():
@@ -106,11 +134,27 @@ class LLMEngine:
             self.is_initialized = False
 
     async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
+        """
+        Asynchronously generates text from a given prompt using the loaded language model.
+        
+        Parameters:
+            prompt (str): The input text prompt to generate a continuation for.
+            max_new_tokens (int): The maximum number of new tokens to generate beyond the prompt.
+        
+        Returns:
+            str: The generated text, or an error string if the model is not initialized or generation fails.
+        """
         if not self.is_initialized or not self.model or not self.tokenizer:
             print("Client LLMEngine: Not initialized, cannot generate text.")
             return "[LLM_NOT_INITIALIZED]"
 
         def _blocking_generate_task():
+            """
+            Generates a text completion for the given prompt using the loaded language model in a blocking manner.
+            
+            Returns:
+                str: The generated text continuation, or "[LLM_NOT_INITIALIZED]" if the model or tokenizer is not loaded.
+            """
             if not self.tokenizer or not self.model:
                 return "[LLM_NOT_INITIALIZED]"
             max_prompt_len = (self.tokenizer.model_max_length or 2048) - max_new_tokens - 10
@@ -134,11 +178,24 @@ class LLMEngine:
             return "[LLM_GENERATION_ERROR]"
 
     async def fine_tune_async(self, training_data: dict, Actor_id_override: str = ""):
-        """Asynchronous fine-tuning using HuggingFace Trainer."""
+        """
+        Asynchronously fine-tunes the language model using locally stored training samples and HuggingFace Trainer.
+        
+        The provided training data sample is saved to disk, all available samples for the current Actor ID are loaded, and the model is fine-tuned on this dataset in a background thread. The fine-tuned model is saved to a dedicated adapter directory. If the model or tokenizer is not initialized, or if no training data is found, training is skipped.
+        
+        Parameters:
+            training_data (dict): A dictionary containing 'input' and 'output' fields for supervised fine-tuning.
+            Actor_id_override (str, optional): If provided, overrides the default Actor ID for data storage and adapter output.
+        """
         current_Actor_id = Actor_id_override if Actor_id_override else self.Actor_id
         print(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning requested.")
 
         def _save_data_blocking():
+            """
+            Save a training data sample as a JSON file in the local training data directory for the current Actor.
+            
+            Creates the directory if it does not exist and writes the provided training data to a uniquely named file.
+            """
             data_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "training_data_local", current_Actor_id)
             os.makedirs(data_dir, exist_ok=True)
             timestamp = torch.randint(0, 1000000, (1,)).item()
@@ -153,6 +210,12 @@ class LLMEngine:
         await asyncio.to_thread(_save_data_blocking)
 
         def _load_all_training_data():
+            """
+            Load all valid training data samples for the current Actor from the local training data directory.
+            
+            Returns:
+                all_data (list): A list of dictionaries, each containing 'input' and 'output' keys from valid JSON training samples.
+            """
             data_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "training_data_local", current_Actor_id)
             all_data = []
             if not os.path.exists(data_dir):
@@ -169,6 +232,11 @@ class LLMEngine:
             return all_data
 
         def _train_blocking():
+            """
+            Trains the language model on all locally saved training data samples and saves the fine-tuned model to disk.
+            
+            This function loads all available training data, constructs a dataset, configures training arguments, and performs a single epoch of fine-tuning using HuggingFace's Trainer. The resulting model is saved to an adapter directory specific to the current Actor and model name.
+            """
             if not self.model or not self.tokenizer:
                 print(f"Client LLMEngine ({current_Actor_id}): Model or tokenizer not initialized, skipping training.")
                 return
@@ -205,6 +273,11 @@ class LLMEngine:
         print(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning complete.")
 
     def fine_tune(self, training_data: dict, Actor_id_override: str = ""):
+        """
+        Save the provided training data sample to a local directory as a JSON file.
+        
+        This synchronous method stores the training data for later use but does not perform actual fine-tuning. It is a placeholder for synchronous fine-tuning functionality.
+        """
         current_Actor_id = Actor_id_override if Actor_id_override else self.Actor_id
         print(f"Client LLMEngine ({current_Actor_id}): Fine-tuning requested (SYNC placeholder).")
         data_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "training_data_local", current_Actor_id)
@@ -221,9 +294,18 @@ class LLMEngine:
         print("Client LLMEngine: Actual SYNC fine-tuning not implemented.")
 
     async def save_adapters_async(self):
-        """Asynchronously saves LoRA adapters if the model is a PeftModel."""
+        """
+        Asynchronously saves LoRA adapters to disk if the loaded model is a PEFT model.
+        
+        This method checks if the current model is an instance of `PeftModel` and, if so, saves its adapters to the configured adapter path in a background thread.
+        """
         if self.model and isinstance(self.model, PeftModel):
             def _save_adapters_blocking():
+                """
+                Save the model's adapters to the designated adapters path if the model is initialized.
+                
+                If the model is not initialized, logs a message indicating that adapters cannot be saved.
+                """
                 if self.model is not None:
                     self.model.save_pretrained(self.adapters_path)
                 else:
@@ -238,6 +320,11 @@ class LLMEngine:
 
 if __name__ == "__main__":
     async def test_async_llm_engine():
+        """
+        Demonstrates asynchronous usage of the LLMEngine for text generation and fine-tuning.
+        
+        Runs an end-to-end test that initializes the engine, generates a response to a prompt asynchronously, and performs asynchronous fine-tuning with a sample input/output pair. Prints results and status messages to the console.
+        """
         print("--- Client LLMEngine Async Test ---")
         engine = LLMEngine(Actor_id="test_Actor_async")
         if engine.is_initialized:

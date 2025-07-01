@@ -18,6 +18,12 @@ except ImportError:
     # Create mock classes for testing if the actual modules don't exist
     class Character:
         def __init__(self, data):
+            """
+            Initialize a Character instance with attributes from the provided data dictionary.
+            
+            Parameters:
+                data (dict): Dictionary containing character attributes such as id, name, level, health, max_health, mana, experience, class, stats, and inventory. Missing values are set to sensible defaults.
+            """
             self.id = data.get('id')
             self.name = data.get('name')
             self.level = data.get('level', 1)
@@ -32,25 +38,52 @@ except ImportError:
             self.last_login = datetime.now()
         
         def level_up(self):
+            """
+            Increase the character's level by one, raise maximum health by 10, and restore health to the new maximum.
+            """
             self.level += 1
             self.max_health += 10
             self.health = self.max_health
         
         def take_damage(self, amount):
+            """
+            Reduces the character's health by the specified amount, not allowing health to drop below zero.
+            
+            Parameters:
+                amount (int): The amount of damage to apply.
+            """
             self.health = max(0, self.health - amount)
         
         def heal(self, amount):
+            """
+            Restore health by a specified amount, not exceeding the character's maximum health.
+            
+            Parameters:
+                amount (int): The amount of health to restore.
+            """
             self.health = min(self.max_health, self.health + amount)
         
         def gain_experience(self, amount):
+            """
+            Adds experience points to the character and triggers a level up if the experience threshold for the current level is reached.
+            """
             self.experience += amount
             if self.experience >= self.level * 100:
                 self.level_up()
         
         def is_dead(self):
+            """
+            Return True if the character's health is zero or less, indicating death.
+            """
             return self.health <= 0
         
         def to_dict(self):
+            """
+            Serialize the character's attributes into a dictionary suitable for storage or transmission.
+            
+            Returns:
+            	dict: A dictionary containing all character attributes, including stats and inventory, with datetime fields in ISO format.
+            """
             return {
                 'id': self.id,
                 'name': self.name,
@@ -68,10 +101,25 @@ except ImportError:
         
         @classmethod
         def from_dict(cls, data):
+            """
+            Instantiate the class using the provided dictionary of attributes.
+            
+            Parameters:
+                data (dict): Dictionary containing the attributes required for class initialization.
+            
+            Returns:
+                Instance of the class initialized with the provided data.
+            """
             return cls(data)
     
     class CharacterStats:
         def __init__(self, data):
+            """
+            Initialize character stats with provided values or default to 10 for each stat.
+            
+            Parameters:
+                data (dict): Dictionary containing optional keys 'strength', 'agility', 'intelligence', and 'vitality' to set initial stat values.
+            """
             self.strength = data.get('strength', 10)
             self.agility = data.get('agility', 10)
             self.intelligence = data.get('intelligence', 10)
@@ -79,18 +127,39 @@ except ImportError:
             self._base_stats = data.copy()
         
         def modify_stat(self, stat_name, amount):
+            """
+            Modifies the specified character stat by a given amount.
+            
+            Raises:
+                KeyError: If the provided stat name does not exist.
+            """
             if not hasattr(self, stat_name):
                 raise KeyError(f"Invalid stat: {stat_name}")
             setattr(self, stat_name, getattr(self, stat_name) + amount)
         
         def total(self):
+            """
+            Return the sum of all character stats.
+            
+            Returns:
+                int: The total value of strength, agility, intelligence, and vitality.
+            """
             return self.strength + self.agility + self.intelligence + self.vitality
         
         def reset(self):
+            """
+            Reset all character stats to their original base values.
+            """
             for stat, value in self._base_stats.items():
                 setattr(self, stat, value)
         
         def to_dict(self):
+            """
+            Serialize the character's stats to a dictionary.
+            
+            Returns:
+                dict: A dictionary containing the strength, agility, intelligence, and vitality values.
+            """
             return {
                 'strength': self.strength,
                 'agility': self.agility,
@@ -100,10 +169,19 @@ except ImportError:
     
     class CharacterInventory:
         def __init__(self, data):
+            """
+            Initialize the inventory with gold and items from the provided data dictionary.
+            
+            Parameters:
+                data (dict): Dictionary containing optional 'gold' (int) and 'items' (list) keys to set up the inventory.
+            """
             self.gold = data.get('gold', 0)
             self.items = data.get('items', [])
         
         def add_item(self, item):
+            """
+            Adds an item to the inventory, increasing quantity if the item already exists; otherwise, appends the new item.
+            """
             existing = self.find_item(item['id'])
             if existing:
                 existing['quantity'] += item['quantity']
@@ -111,6 +189,12 @@ except ImportError:
                 self.items.append(item)
         
         def remove_item(self, item_id, quantity):
+            """
+            Removes a specified quantity of an item from the inventory.
+            
+            Raises:
+                ValueError: If the item is not found or if there is insufficient quantity to remove.
+            """
             item = self.find_item(item_id)
             if not item:
                 raise ValueError(f"Item {item_id} not found")
@@ -121,24 +205,66 @@ except ImportError:
                 self.items.remove(item)
         
         def find_item(self, item_id):
+            """
+            Return the item dictionary with the specified item ID from the inventory, or None if not found.
+            
+            Parameters:
+                item_id: The unique identifier of the item to search for.
+            
+            Returns:
+                dict or None: The item dictionary if found, otherwise None.
+            """
             return next((item for item in self.items if item['id'] == item_id), None)
         
         def has_item(self, item_id):
+            """
+            Check if an item with the specified ID exists in the inventory.
+            
+            Parameters:
+                item_id: The unique identifier of the item to check.
+            
+            Returns:
+                bool: True if the item exists in the inventory, False otherwise.
+            """
             return self.find_item(item_id) is not None
         
         def get_item_quantity(self, item_id):
+            """
+            Return the quantity of a specific item in the inventory.
+            
+            Parameters:
+                item_id: The unique identifier of the item to check.
+            
+            Returns:
+                int: The quantity of the item if it exists, otherwise 0.
+            """
             item = self.find_item(item_id)
             return item['quantity'] if item else 0
         
         def add_gold(self, amount):
+            """
+            Increase the amount of gold in the inventory by the specified amount.
+            """
             self.gold += amount
         
         def remove_gold(self, amount):
+            """
+            Removes the specified amount of gold from the inventory.
+            
+            Raises:
+                ValueError: If there is not enough gold to remove the requested amount.
+            """
             if self.gold < amount:
                 raise ValueError("Insufficient gold")
             self.gold -= amount
         
         def to_dict(self):
+            """
+            Serialize the inventory to a dictionary containing gold and items.
+            
+            Returns:
+                dict: A dictionary with keys 'gold' and 'items' representing the inventory state.
+            """
             return {
                 'gold': self.gold,
                 'items': self.items
@@ -146,18 +272,39 @@ except ImportError:
     
     class CharacterServer:
         def __init__(self, config):
+            """
+            Initialize the CharacterServer with the provided configuration.
+            
+            Raises:
+                ValueError: If the configuration is missing required keys.
+            """
             self.config = config
             self.characters = {}
             self.running = False
             self._validate_config()
         
         def _validate_config(self):
+            """
+            Validates that all required configuration keys are present in the server configuration.
+            
+            Raises:
+                ValueError: If any required configuration key is missing.
+            """
             required_keys = ['data_path', 'port', 'host', 'max_characters']
             for key in required_keys:
                 if key not in self.config:
                     raise ValueError(f"Missing required config key: {key}")
         
         def create_character(self, data):
+            """
+            Creates and stores a new character using the provided data.
+            
+            Raises:
+                ValueError: If a character with the same ID already exists or if the maximum number of characters has been reached.
+            
+            Returns:
+                Character: The newly created character instance.
+            """
             if data['id'] in self.characters:
                 raise ValueError("Character already exists")
             if len(self.characters) >= self.config['max_characters']:
@@ -167,9 +314,25 @@ except ImportError:
             return character
         
         def get_character(self, character_id):
+            """
+            Retrieve a character by its unique identifier.
+            
+            Returns:
+                Character: The character object if found, otherwise None.
+            """
             return self.characters.get(character_id)
         
         def update_character(self, character_id, data):
+            """
+            Updates the attributes of an existing character with the provided data.
+            
+            Parameters:
+                character_id (str): The unique identifier of the character to update.
+                data (dict): A dictionary of attribute names and their new values.
+            
+            Returns:
+                bool: True if the character was found and updated, False if the character does not exist.
+            """
             character = self.characters.get(character_id)
             if not character:
                 return False
@@ -179,12 +342,27 @@ except ImportError:
             return True
         
         def delete_character(self, character_id):
+            """
+            Removes a character from the server by its ID.
+            
+            Returns:
+                bool: True if the character was deleted, False if the character was not found.
+            """
             if character_id in self.characters:
                 del self.characters[character_id]
                 return True
             return False
         
         def list_characters(self, filters=None):
+            """
+            Return a list of all characters, optionally filtered by attribute values.
+            
+            Parameters:
+                filters (dict, optional): A dictionary where keys are character attribute names and values are the required values for filtering. Only characters matching all filter criteria are returned.
+            
+            Returns:
+                list: A list of Character instances matching the filter criteria, or all characters if no filters are provided.
+            """
             characters = list(self.characters.values())
             if filters:
                 for key, value in filters.items():
@@ -192,18 +370,36 @@ except ImportError:
             return characters
         
         def start(self):
+            """
+            Sets the server's running state to True, indicating that the server is active.
+            """
             self.running = True
         
         def stop(self):
+            """
+            Stops the server by setting its running state to False.
+            """
             self.running = False
         
         def is_running(self):
+            """
+            Return whether the server is currently running.
+            
+            Returns:
+                bool: True if the server is running, False otherwise.
+            """
             return self.running
         
         def save_character_data(self):
+            """
+            Placeholder method for saving all character data to persistent storage.
+            """
             pass  # Mock implementation
         
         def load_character_data(self):
+            """
+            Placeholder method for loading character data from persistent storage.
+            """
             pass  # Mock implementation
 
 
@@ -212,7 +408,12 @@ class TestCharacter:
     
     @pytest.fixture
     def character_data(self):
-        """Fixture providing test character data."""
+        """
+        Provides a dictionary containing sample character data for use in tests.
+        
+        Returns:
+            dict: A dictionary representing a test character with predefined attributes, stats, and inventory.
+        """
         return {
             'id': 'test-char-001',
             'name': 'Test Hero',
@@ -239,11 +440,23 @@ class TestCharacter:
     
     @pytest.fixture
     def character(self, character_data):
-        """Fixture providing a test character instance."""
+        """
+        Fixture that provides a Character instance initialized with the given character data.
+        
+        Parameters:
+            character_data (dict): Dictionary containing character attributes for initialization.
+        
+        Returns:
+            Character: An instance of the Character class.
+        """
         return Character(character_data)
     
     def test_character_initialization_valid_data(self, character):
-        """Test character initialization with valid data."""
+        """
+        Verify that a Character instance is correctly initialized with valid data.
+        
+        Asserts that all primary attributes of the character match the expected values after initialization.
+        """
         assert character.id == 'test-char-001'
         assert character.name == 'Test Hero'
         assert character.level == 5
@@ -253,7 +466,9 @@ class TestCharacter:
         assert character.character_class == 'warrior'
     
     def test_character_initialization_missing_required_fields(self):
-        """Test character initialization with missing required fields."""
+        """
+        Test that initializing a Character with missing required fields raises a KeyError.
+        """
         incomplete_data = {'name': 'Incomplete Character'}
         with pytest.raises(KeyError):
             Character(incomplete_data)
@@ -265,12 +480,16 @@ class TestCharacter:
         {'id': 'test', 'name': '', 'level': 1},
     ])
     def test_character_initialization_invalid_data(self, invalid_data):
-        """Test character initialization with various invalid data scenarios."""
+        """
+        Test that initializing a Character with invalid data raises a TypeError or ValueError.
+        """
         with pytest.raises((TypeError, ValueError)):
             Character(invalid_data)
     
     def test_character_level_up(self, character):
-        """Test character level up functionality."""
+        """
+        Verify that leveling up a character increases their level and maximum health, and restores health to the new maximum.
+        """
         initial_level = character.level
         initial_max_health = character.max_health
         character.level_up()
@@ -285,12 +504,20 @@ class TestCharacter:
         (150, 0),  # Damage exceeding health
     ])
     def test_character_take_damage(self, character, damage, expected_health):
-        """Test character taking various amounts of damage."""
+        """
+        Test that a character's health is correctly reduced when taking damage.
+        
+        Parameters:
+            damage (int): The amount of damage to apply.
+            expected_health (int): The expected health value after damage is applied.
+        """
         character.take_damage(damage)
         assert character.health == expected_health
     
     def test_character_take_damage_negative(self, character):
-        """Test character taking negative damage (should not heal)."""
+        """
+        Verify that applying negative damage to a character does not increase their health.
+        """
         initial_health = character.health
         character.take_damage(-10)
         assert character.health >= initial_health
@@ -301,13 +528,22 @@ class TestCharacter:
         (1000, 30, 120),  # Overheal should cap at max_health
     ])
     def test_character_heal(self, character, heal_amount, initial_damage, expected_health):
-        """Test character healing with various scenarios."""
+        """
+        Test that healing a character after taking damage restores health correctly in various scenarios.
+        
+        Parameters:
+            heal_amount (int): The amount of health to restore.
+            initial_damage (int): The amount of damage inflicted before healing.
+            expected_health (int): The expected health value after healing.
+        """
         character.take_damage(initial_damage)
         character.heal(heal_amount)
         assert character.health == expected_health
     
     def test_character_gain_experience_no_levelup(self, character):
-        """Test character gaining experience without leveling up."""
+        """
+        Test that a character gains experience without leveling up when the experience gained does not reach the threshold for the next level.
+        """
         initial_exp = character.experience
         initial_level = character.level
         character.gain_experience(50)
@@ -315,21 +551,27 @@ class TestCharacter:
         assert character.level == initial_level
     
     def test_character_gain_experience_with_levelup(self, character):
-        """Test character gaining enough experience to level up."""
+        """
+        Test that a character levels up when gaining enough experience to cross the level-up threshold.
+        """
         character.experience = 450  # Close to level up threshold
         initial_level = character.level
         character.gain_experience(100)
         assert character.level == initial_level + 1
     
     def test_character_death_state(self, character):
-        """Test character death state functionality."""
+        """
+        Test that a character is correctly marked as dead when health reaches zero after taking damage.
+        """
         assert not character.is_dead()
         character.take_damage(200)
         assert character.is_dead()
         assert character.health == 0
     
     def test_character_serialization(self, character):
-        """Test character serialization to dictionary."""
+        """
+        Verify that a Character instance can be correctly serialized to a dictionary with expected fields and values.
+        """
         char_dict = character.to_dict()
         assert isinstance(char_dict, dict)
         assert char_dict['id'] == character.id
@@ -339,7 +581,11 @@ class TestCharacter:
         assert 'last_login' in char_dict
     
     def test_character_deserialization(self, character_data):
-        """Test character deserialization from dictionary."""
+        """
+        Verify that a Character object can be accurately deserialized from a dictionary representation.
+        
+        This test ensures that serializing a Character to a dictionary and then deserializing it back produces an equivalent object with matching core attributes.
+        """
         original_character = Character(character_data)
         char_dict = original_character.to_dict()
         new_character = Character.from_dict(char_dict)
@@ -348,7 +594,11 @@ class TestCharacter:
         assert new_character.level == original_character.level
     
     def test_character_edge_cases(self, character):
-        """Test character edge cases and boundary conditions."""
+        """
+        Test boundary conditions for the Character class, including zero health, overhealing, and large experience gains.
+        
+        Verifies correct behavior when reducing health to zero, attempting to heal beyond maximum health, and gaining enough experience to trigger multiple level-ups.
+        """
         # Test zero values
         character.take_damage(character.health)
         assert character.health == 0
@@ -368,7 +618,12 @@ class TestCharacterStats:
     
     @pytest.fixture
     def stats_data(self):
-        """Fixture providing test stats data."""
+        """
+        Provides a dictionary of sample character stats for use in tests.
+        
+        Returns:
+            dict: A dictionary with keys 'strength', 'agility', 'intelligence', and 'vitality' mapped to integer values.
+        """
         return {
             'strength': 15,
             'agility': 12,
@@ -378,18 +633,24 @@ class TestCharacterStats:
     
     @pytest.fixture
     def stats(self, stats_data):
-        """Fixture providing a test stats instance."""
+        """
+        Fixture that returns a CharacterStats instance initialized with the provided stats data.
+        """
         return CharacterStats(stats_data)
     
     def test_stats_initialization(self, stats):
-        """Test stats initialization with valid data."""
+        """
+        Verify that a CharacterStats instance is initialized with the correct attribute values.
+        """
         assert stats.strength == 15
         assert stats.agility == 12
         assert stats.intelligence == 8
         assert stats.vitality == 18
     
     def test_stats_initialization_defaults(self):
-        """Test stats initialization with default values."""
+        """
+        Test that CharacterStats initializes all stats to default values when no data is provided.
+        """
         stats = CharacterStats({})
         assert stats.strength == 10
         assert stats.agility == 10
@@ -403,29 +664,44 @@ class TestCharacterStats:
         ('vitality', 0, 18),
     ])
     def test_stats_modification(self, stats, stat_name, modifier, expected):
-        """Test stats modification with various values."""
+        """
+        Test that modifying a character stat updates it to the expected value.
+        
+        Parameters:
+        	stat_name (str): The name of the stat to modify.
+        	modifier (int): The amount to modify the stat by.
+        	expected (int): The expected value of the stat after modification.
+        """
         stats.modify_stat(stat_name, modifier)
         assert getattr(stats, stat_name) == expected
     
     def test_stats_modification_invalid_stat(self, stats):
-        """Test stats modification with invalid stat name."""
+        """
+        Verify that modifying a stat with an invalid stat name raises a KeyError.
+        """
         with pytest.raises(KeyError):
             stats.modify_stat('invalid_stat', 5)
     
     def test_stats_total_calculation(self, stats):
-        """Test total stats calculation."""
+        """
+        Verify that the total method correctly calculates the sum of all character stats.
+        """
         expected_total = 15 + 12 + 8 + 18
         assert stats.total() == expected_total
     
     def test_stats_reset(self, stats):
-        """Test stats reset to base values."""
+        """
+        Verify that resetting stats restores all values to their base levels after modification.
+        """
         stats.modify_stat('strength', 10)
         assert stats.strength == 25
         stats.reset()
         assert stats.strength == 15
     
     def test_stats_serialization(self, stats):
-        """Test stats serialization to dictionary."""
+        """
+        Verify that CharacterStats serializes correctly to a dictionary with expected stat values.
+        """
         stats_dict = stats.to_dict()
         assert isinstance(stats_dict, dict)
         assert stats_dict['strength'] == 15
@@ -439,7 +715,9 @@ class TestCharacterInventory:
     
     @pytest.fixture
     def inventory_data(self):
-        """Fixture providing test inventory data."""
+        """
+        Provides sample inventory data for testing, including gold and a list of items.
+        """
         return {
             'gold': 500,
             'items': [
@@ -450,29 +728,39 @@ class TestCharacterInventory:
     
     @pytest.fixture
     def inventory(self, inventory_data):
-        """Fixture providing a test inventory instance."""
+        """
+        Fixture that returns a CharacterInventory instance initialized with the provided inventory data.
+        """
         return CharacterInventory(inventory_data)
     
     def test_inventory_initialization(self, inventory):
-        """Test inventory initialization with valid data."""
+        """
+        Test that a CharacterInventory instance initializes with the correct gold amount and item count.
+        """
         assert inventory.gold == 500
         assert len(inventory.items) == 2
     
     def test_inventory_initialization_empty(self):
-        """Test inventory initialization with empty data."""
+        """
+        Verify that initializing a CharacterInventory with empty data results in zero gold and no items.
+        """
         inventory = CharacterInventory({})
         assert inventory.gold == 0
         assert len(inventory.items) == 0
     
     def test_add_item_new(self, inventory):
-        """Test adding a new item to inventory."""
+        """
+        Test that adding a new item to the inventory increases the item count and makes the item available.
+        """
         new_item = {'id': 'armor_001', 'name': 'Leather Armor', 'quantity': 1}
         inventory.add_item(new_item)
         assert len(inventory.items) == 3
         assert inventory.has_item('armor_001')
     
     def test_add_item_existing_stackable(self, inventory):
-        """Test adding an existing stackable item to inventory."""
+        """
+        Test that adding an existing stackable item increases its quantity in the inventory.
+        """
         existing_item = {'id': 'potion_001', 'name': 'Health Potion', 'quantity': 2}
         initial_quantity = inventory.get_item_quantity('potion_001')
         inventory.add_item(existing_item)
@@ -485,23 +773,36 @@ class TestCharacterInventory:
         ('sword_001', 1, 0),
     ])
     def test_remove_item_partial(self, inventory, item_id, remove_quantity, expected_remaining):
-        """Test removing partial quantity of items."""
+        """
+        Test that removing a partial quantity of an item from the inventory updates the item's quantity correctly.
+        
+        Parameters:
+            item_id (str): The identifier of the item to remove.
+            remove_quantity (int): The quantity of the item to remove.
+            expected_remaining (int): The expected quantity remaining after removal.
+        """
         inventory.remove_item(item_id, remove_quantity)
         remaining = inventory.get_item_quantity(item_id)
         assert remaining == expected_remaining
     
     def test_remove_item_complete(self, inventory):
-        """Test removing all quantity of an item."""
+        """
+        Test that removing the full quantity of an item deletes it from the inventory.
+        """
         inventory.remove_item('sword_001', 1)
         assert not inventory.has_item('sword_001')
     
     def test_remove_item_nonexistent(self, inventory):
-        """Test removing an item that doesn't exist."""
+        """
+        Test that removing a non-existent item from the inventory raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Item nonexistent_item not found"):
             inventory.remove_item('nonexistent_item', 1)
     
     def test_remove_item_insufficient_quantity(self, inventory):
-        """Test removing more quantity than available."""
+        """
+        Test that removing more of an item than is available in the inventory raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Insufficient quantity"):
             inventory.remove_item('potion_001', 10)
     
@@ -511,22 +812,36 @@ class TestCharacterInventory:
         (1000, 1500),
     ])
     def test_add_gold(self, inventory, gold_amount, expected_total):
-        """Test adding gold to inventory."""
+        """
+        Test that adding a specified amount of gold to the inventory updates the total gold as expected.
+        
+        Parameters:
+            gold_amount (int): The amount of gold to add.
+            expected_total (int): The expected total gold after addition.
+        """
         inventory.add_gold(gold_amount)
         assert inventory.gold == expected_total
     
     def test_remove_gold_valid(self, inventory):
-        """Test removing gold from inventory."""
+        """
+        Test that removing a valid amount of gold from the inventory decreases the gold balance accordingly.
+        """
         inventory.remove_gold(100)
         assert inventory.gold == 400
     
     def test_remove_gold_insufficient(self, inventory):
-        """Test removing more gold than available."""
+        """
+        Test that removing more gold than available from the inventory raises a ValueError.
+        """
         with pytest.raises(ValueError, match="Insufficient gold"):
             inventory.remove_gold(1000)
     
     def test_inventory_serialization(self, inventory):
-        """Test inventory serialization to dictionary."""
+        """
+        Test that a CharacterInventory instance serializes correctly to a dictionary.
+        
+        Asserts that the resulting dictionary contains the expected gold amount and item count.
+        """
         inventory_dict = inventory.to_dict()
         assert isinstance(inventory_dict, dict)
         assert inventory_dict['gold'] == 500
@@ -538,13 +853,26 @@ class TestCharacterServer:
     
     @pytest.fixture
     def temp_dir(self):
-        """Fixture providing a temporary directory."""
+        """
+        Provides a temporary directory for use within a test, which is automatically cleaned up after the test completes.
+        
+        Yields:
+            temp_dir (str): Path to the temporary directory.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
     
     @pytest.fixture
     def server_config(self, temp_dir):
-        """Fixture providing server configuration."""
+        """
+        Provides a server configuration dictionary for testing, using the specified temporary directory as the data path.
+        
+        Parameters:
+            temp_dir (str): Path to a temporary directory for storing server data.
+        
+        Returns:
+            dict: Server configuration including data path, port, host, and maximum number of characters.
+        """
         return {
             'data_path': temp_dir,
             'port': 8080,
@@ -554,12 +882,22 @@ class TestCharacterServer:
     
     @pytest.fixture
     def server(self, server_config):
-        """Fixture providing a test server instance."""
+        """
+        Fixture that provides a CharacterServer instance configured with the given server_config.
+        
+        Parameters:
+            server_config (dict): Configuration dictionary for initializing the CharacterServer.
+        
+        Returns:
+            CharacterServer: A new CharacterServer instance for testing.
+        """
         return CharacterServer(server_config)
     
     @pytest.fixture
     def test_character_data(self):
-        """Fixture providing test character data."""
+        """
+        Provides a dictionary containing sample character data for use in tests.
+        """
         return {
             'id': 'test-char-001',
             'name': 'Test Hero',
@@ -581,7 +919,9 @@ class TestCharacterServer:
         }
     
     def test_server_initialization_valid_config(self, server):
-        """Test server initialization with valid config."""
+        """
+        Verify that the server initializes correctly with a valid configuration by checking key configuration values.
+        """
         assert server.config['port'] == 8080
         assert server.config['host'] == 'localhost'
         assert server.config['max_characters'] == 1000
@@ -592,12 +932,16 @@ class TestCharacterServer:
         {},  # Empty config
     ])
     def test_server_initialization_invalid_config(self, invalid_config):
-        """Test server initialization with invalid config."""
+        """
+        Test that initializing the server with an invalid configuration raises a ValueError.
+        """
         with pytest.raises(ValueError):
             CharacterServer(invalid_config)
     
     def test_create_character_valid(self, server, test_character_data):
-        """Test creating a character with valid data."""
+        """
+        Verify that creating a character with valid data succeeds and the character is retrievable from the server.
+        """
         character = server.create_character(test_character_data)
         assert character is not None
         assert character.id == 'test-char-001'
@@ -605,31 +949,43 @@ class TestCharacterServer:
         assert server.get_character('test-char-001') == character
     
     def test_create_character_duplicate_id(self, server, test_character_data):
-        """Test creating a character with duplicate ID."""
+        """
+        Test that creating a character with an ID that already exists raises a ValueError.
+        """
         server.create_character(test_character_data)
         with pytest.raises(ValueError, match="Character already exists"):
             server.create_character(test_character_data)
     
     def test_create_character_invalid_data(self, server):
-        """Test creating a character with invalid data."""
+        """
+        Test that creating a character with missing required fields raises a KeyError.
+        """
         invalid_data = {'name': 'Invalid Character'}  # Missing required fields
         with pytest.raises(KeyError):
             server.create_character(invalid_data)
     
     def test_get_character_existing(self, server, test_character_data):
-        """Test getting an existing character."""
+        """
+        Test retrieval of an existing character from the server.
+        
+        Creates a character using the provided test data, then verifies that the character can be retrieved by its ID and that the returned object has the correct ID.
+        """
         server.create_character(test_character_data)
         character = server.get_character('test-char-001')
         assert character is not None
         assert character.id == 'test-char-001'
     
     def test_get_character_nonexistent(self, server):
-        """Test getting a non-existent character."""
+        """
+        Verify that retrieving a character with a non-existent ID returns None.
+        """
         character = server.get_character('nonexistent-char')
         assert character is None
     
     def test_update_character_existing(self, server, test_character_data):
-        """Test updating an existing character."""
+        """
+        Verify that updating an existing character's attributes returns success and applies the changes.
+        """
         server.create_character(test_character_data)
         update_data = {'level': 6, 'experience': 1500}
         success = server.update_character('test-char-001', update_data)
@@ -640,13 +996,19 @@ class TestCharacterServer:
         assert updated_character.experience == 1500
     
     def test_update_character_nonexistent(self, server):
-        """Test updating a non-existent character."""
+        """
+        Test that updating a character that does not exist returns False.
+        """
         update_data = {'level': 6}
         success = server.update_character('nonexistent-char', update_data)
         assert success is False
     
     def test_delete_character_existing(self, server, test_character_data):
-        """Test deleting an existing character."""
+        """
+        Verify that deleting an existing character removes it from the server.
+        
+        This test ensures that after a character is created and then deleted, the character can no longer be retrieved from the server.
+        """
         server.create_character(test_character_data)
         success = server.delete_character('test-char-001')
         assert success is True
@@ -655,17 +1017,23 @@ class TestCharacterServer:
         assert character is None
     
     def test_delete_character_nonexistent(self, server):
-        """Test deleting a non-existent character."""
+        """
+        Verify that attempting to delete a character that does not exist returns False.
+        """
         success = server.delete_character('nonexistent-char')
         assert success is False
     
     def test_list_characters_empty(self, server):
-        """Test listing characters when none exist."""
+        """
+        Verify that listing characters on an empty server returns an empty list.
+        """
         characters = server.list_characters()
         assert len(characters) == 0
     
     def test_list_characters_with_data(self, server, test_character_data):
-        """Test listing characters when some exist."""
+        """
+        Verify that listing characters returns all created characters when multiple exist on the server.
+        """
         server.create_character(test_character_data)
         
         # Create another character
@@ -678,7 +1046,9 @@ class TestCharacterServer:
         assert len(characters) == 2
     
     def test_list_characters_with_filters(self, server, test_character_data):
-        """Test listing characters with filters applied."""
+        """
+        Verify that listing characters with attribute filters returns only those matching the specified criteria.
+        """
         server.create_character(test_character_data)
         
         # Create another character with different class
@@ -692,7 +1062,9 @@ class TestCharacterServer:
         assert warrior_characters[0].character_class == 'warrior'
     
     def test_server_start_stop(self, server):
-        """Test server start and stop functionality."""
+        """
+        Tests that the server correctly transitions between running and stopped states when start and stop methods are called.
+        """
         assert not server.is_running()
         
         server.start()
@@ -702,7 +1074,11 @@ class TestCharacterServer:
         assert not server.is_running()
     
     def test_max_characters_limit(self, server_config, test_character_data):
-        """Test maximum characters limit enforcement."""
+        """
+        Test that the CharacterServer enforces the maximum allowed number of characters.
+        
+        Verifies that creating characters up to the configured limit succeeds, and attempting to create an additional character raises a ValueError.
+        """
         server_config['max_characters'] = 2
         server = CharacterServer(server_config)
         
@@ -726,15 +1102,24 @@ class TestCharacterServer:
         {'id': 'test', 'name': 'Test', 'level': 1, 'health': -10},  # Negative health
     ])
     def test_character_validation(self, server, invalid_data):
-        """Test comprehensive character data validation."""
+        """
+        Tests that creating a character with invalid data raises a ValueError or KeyError.
+        """
         with pytest.raises((ValueError, KeyError)):
             server.create_character(invalid_data)
     
     def test_concurrent_character_operations(self, server, test_character_data):
-        """Test concurrent character operations."""
+        """
+        Verifies that concurrent updates to a character do not corrupt its state or cause loss of data.
+        
+        This test creates a character, then performs multiple concurrent updates to its level using threads. After all updates, it asserts that the character still exists and its level remains valid.
+        """
         server.create_character(test_character_data)
         
         def update_character():
+            """
+            Updates the character with ID 'test-char-001' on the server, setting its level to 10.
+            """
             server.update_character('test-char-001', {'level': 10})
         
         # Run concurrent operations
@@ -754,19 +1139,29 @@ class TestCharacterServer:
     
     @patch('character_server.CharacterServer.save_character_data')
     def test_save_character_data(self, mock_save, server, test_character_data):
-        """Test saving character data to file."""
+        """
+        Verify that the character server's save method is called when saving character data after creating a character.
+        """
         server.create_character(test_character_data)
         server.save_character_data()
         mock_save.assert_called_once()
     
     @patch('character_server.CharacterServer.load_character_data')
     def test_load_character_data(self, mock_load, server):
-        """Test loading character data from file."""
+        """
+        Test that the server's character data loading method calls the underlying load function exactly once.
+        """
         server.load_character_data()
         mock_load.assert_called_once()
     
     def test_performance_with_many_characters(self, server, test_character_data):
-        """Test performance with many characters."""
+        """
+        Measures the time required to create and retrieve 100 characters on the server, asserting both operations complete within specified performance thresholds.
+        
+        Parameters:
+            server: The CharacterServer instance under test.
+            test_character_data: Dictionary template for generating character data.
+        """
         start_time = time.time()
         
         # Create many characters
@@ -791,7 +1186,9 @@ class TestCharacterServer:
         assert retrieval_time < 2.0  # Should retrieve 100 characters in under 2 seconds
     
     def test_character_persistence(self, server, test_character_data):
-        """Test character data persistence between operations."""
+        """
+        Verify that character data modifications persist after updates by creating, updating, and retrieving a character from the server.
+        """
         # Create a character
         character = server.create_character(test_character_data)
         original_id = character.id
@@ -806,7 +1203,11 @@ class TestCharacterServer:
         assert updated_character.name == test_character_data['name']  # Unchanged field
     
     def test_server_edge_cases(self, server, test_character_data):
-        """Test server edge cases and boundary conditions."""
+        """
+        Test the character server's handling of minimal character data and operations on an empty server.
+        
+        Verifies that the server can process character creation with minimal required fields, and that operations such as listing, retrieving, updating, and deleting characters behave correctly when the server contains no characters.
+        """
         # Test with minimal character data
         minimal_data = {
             'id': 'minimal-char',
@@ -835,7 +1236,12 @@ class TestIntegration:
     
     @pytest.fixture
     def server_with_characters(self, server_config):
-        """Fixture providing a server with pre-created characters."""
+        """
+        Provides a CharacterServer instance initialized with a predefined set of test characters.
+        
+        Returns:
+            CharacterServer: The server populated with three characters of different classes for testing purposes.
+        """
         server = CharacterServer(server_config)
         
         # Create test characters
@@ -878,7 +1284,9 @@ class TestIntegration:
         return server
     
     def test_character_lifecycle_integration(self, server):
-        """Test complete character lifecycle integration."""
+        """
+        Performs an end-to-end integration test of a character's lifecycle, including creation, leveling up, taking damage, healing, updating attributes, inventory modification, and deletion.
+        """
         # Create character
         char_data = {
             'id': 'lifecycle-test',
@@ -921,7 +1329,11 @@ class TestIntegration:
         assert server.get_character(character.id) is None
     
     def test_server_filtering_and_sorting(self, server_with_characters):
-        """Test server filtering and sorting capabilities."""
+        """
+        Test that the server correctly filters characters by class and by multiple attributes.
+        
+        Verifies that filtering by character class returns the expected characters and that combining filters (such as class and level) yields correct results.
+        """
         # Test filtering by class
         warriors = server_with_characters.list_characters(filters={'character_class': 'warrior'})
         assert len(warriors) == 1
@@ -938,7 +1350,11 @@ class TestIntegration:
         assert len(high_level_warriors) == 1
     
     def test_bulk_operations(self, server):
-        """Test bulk operations on multiple characters."""
+        """
+        Test creating, updating, and deleting multiple characters in bulk on the server.
+        
+        This test creates 10 characters, verifies their creation, performs a bulk level-up operation, deletes all even-numbered characters, and confirms that only the odd-numbered characters remain.
+        """
         # Create multiple characters
         characters = []
         for i in range(10):
@@ -987,7 +1403,11 @@ class TestPerformanceAndStress:
     
     @pytest.mark.slow
     def test_large_scale_character_creation(self, server_config):
-        """Test creating a large number of characters."""
+        """
+        Tests the server's ability to create and store 1,000 characters efficiently.
+        
+        Creates 1,000 unique characters on the server and asserts that the operation completes within 30 seconds. Verifies that all characters are successfully stored and retrievable.
+        """
         server_config['max_characters'] = 10000
         server = CharacterServer(server_config)
         
@@ -1023,7 +1443,11 @@ class TestPerformanceAndStress:
     
     @pytest.mark.slow
     def test_concurrent_operations_stress(self, server_config):
-        """Test concurrent operations under stress."""
+        """
+        Stress tests the CharacterServer by performing concurrent get, update, and list operations on 100 characters using multiple threads.
+        
+        Ensures that all operations complete within 10 seconds and that no character data is lost or corrupted during concurrent access.
+        """
         server = CharacterServer(server_config)
         
         # Create initial characters
@@ -1042,6 +1466,11 @@ class TestPerformanceAndStress:
         
         # Define concurrent operations
         def random_operations():
+            """
+            Performs 50 random operations (get, update, or list) on the character server for concurrency testing.
+            
+            Each operation randomly selects a character ID and either retrieves, updates, or lists characters to simulate concurrent access patterns.
+            """
             import random
             for _ in range(50):
                 operation = random.choice(['get', 'update', 'list'])
@@ -1078,7 +1507,9 @@ class TestPerformanceAndStress:
 
 # Configure pytest markers
 def pytest_configure(config):
-    """Configure pytest markers."""
+    """
+    Registers the 'slow' marker with pytest for categorizing slow-running tests.
+    """
     config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
 
 
@@ -1088,7 +1519,18 @@ class TestUtilities:
     
     @staticmethod
     def create_test_character(char_id='test-char', name='Test Character', level=1, char_class='warrior'):
-        """Utility function to create test character data."""
+        """
+        Generate a dictionary representing a test character with default or specified attributes.
+        
+        Parameters:
+            char_id (str): Unique identifier for the character.
+            name (str): Name of the character.
+            level (int): Starting level of the character.
+            char_class (str): Character class (e.g., 'warrior').
+        
+        Returns:
+            dict: Dictionary containing character data suitable for testing.
+        """
         return {
             'id': char_id,
             'name': name,
@@ -1110,7 +1552,9 @@ class TestUtilities:
         }
     
     def test_utility_functions(self):
-        """Test utility functions work correctly."""
+        """
+        Verify that the utility function for creating test character data returns dictionaries with the expected default and custom values.
+        """
         char_data = self.create_test_character()
         assert char_data['id'] == 'test-char'
         assert char_data['name'] == 'Test Character'
