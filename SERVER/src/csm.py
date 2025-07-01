@@ -10,6 +10,9 @@ import os
 
 class CSM:
     def __init__(self):
+        """
+        Initializes the CSM instance and its core components, including database access, narration, character server, client management, hardware control, and chaos engine. Starts periodic health checks for clients upon initialization.
+        """
         self.db = Database(DB_PATH)
         self.narrator = Narrator()
         self.character_server = CharacterServer(self.db)
@@ -22,8 +25,14 @@ class CSM:
 
     async def process_story(self, audio_filepath: str, chaos_level: float):
         """
-        Asynchronously processes narration, gets responses from server character (Actor1)
-        and all 'Online_Responsive' clients, applies chaos, and saves the story turn.
+        Asynchronously processes a story turn by generating narration, collecting character responses from the server and online clients, applying chaos effects, updating hardware, and saving the results to the database.
+        
+        Parameters:
+            audio_filepath (str): Path to the audio file containing the narration.
+            chaos_level (float): The level of chaos to potentially apply to the narration and character responses.
+        
+        Returns:
+            tuple: A tuple containing the final narration text (str) and a dictionary mapping character names to their response texts.
         """
         # Narrator process_narration is now async
         # print("CSM: Processing narration...")
@@ -117,7 +126,15 @@ class CSM:
         return narration_text, character_texts
 
     def update_last_narration_text(self, new_text):
-        """Update the last narrator entry in the story_log table with corrected text."""
+        """
+        Update the most recent narrator entry in the story log with new text.
+        
+        Parameters:
+        	new_text (str): The corrected text to replace the last narrator entry.
+        
+        Returns:
+        	bool: True if the update was successful, False if no narrator entry was found.
+        """
         # Get the last narrator entry
         history = self.db.get_story_history()
         narrator_entries = [entry for entry in history if entry["speaker"] == "Narrator"]
@@ -130,7 +147,9 @@ class CSM:
         return False
 
     async def shutdown_async(self): # Renamed for clarity
-        """Asynchronously shut down CSM resources."""
+        """
+        Asynchronously shuts down CSM resources by stopping client health checks and closing the database connection.
+        """
         print("CSM: Async shutdown initiated...")
         await asyncio.to_thread(self.client_manager.stop_periodic_health_checks)
         await asyncio.to_thread(self.db.close)

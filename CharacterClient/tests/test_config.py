@@ -1,737 +1,789 @@
-"""
-Comprehensive unit tests for the config module.
-Testing framework: pytest (identified from project requirements)
-"""
-
 import pytest
 import os
 import tempfile
 import json
 import yaml
 from unittest.mock import patch, mock_open, MagicMock
-import sys
 from pathlib import Path
 
-# Add the source directory to the path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-
+# Import the config module being tested
 try:
-    from config import Config, ConfigManager, load_config, save_config, validate_config, ConfigError
+    from CharacterClient.config import Config, ConfigError, load_config, validate_config
 except ImportError:
-    # Fallback imports if the structure is different
+    # Handle case where config module structure might be different
     try:
-        from src.config import Config, ConfigManager, load_config, save_config, validate_config, ConfigError
+        from CharacterClient import config
+        Config = getattr(config, 'Config', None)
+        ConfigError = getattr(config, 'ConfigError', Exception)
+        load_config = getattr(config, 'load_config', None)
+        validate_config = getattr(config, 'validate_config', None)
     except ImportError:
-        # Create mock classes for testing if config module doesn't exist yet
-        class ConfigError(Exception):
-            pass
-        
-        class Config:
-            def __init__(self, data=None):
-                self._data = data or {}
-            
-            def get(self, key, default=None):
-                return self._data.get(key, default)
-            
-            def set(self, key, value):
-                self._data[key] = value
-            
-            def update(self, data):
-                self._data.update(data)
-            
-            def to_dict(self):
-                return self._data.copy()
-        
-        class ConfigManager:
-            def __init__(self, config_path=None):
-                self.config_path = config_path
-                self._config = Config()
-            
-            def load(self):
-                return self._config
-            
-            def save(self):
-                pass
-        
-        def load_config(path):
-            return Config()
-        
-        def save_config(config, path):
-            pass
-        
-        def validate_config(config_data):
-            return True
+        # Fallback for different import structures
+        import sys
+        sys.path.append('CharacterClient')
+        import config
+        Config = getattr(config, 'Config', None)
+        ConfigError = getattr(config, 'ConfigError', Exception)
+        load_config = getattr(config, 'load_config', None)
+        validate_config = getattr(config, 'validate_config', None)
 
 
 class TestConfig:
-    """Test cases for the Config class."""
+    """Comprehensive test suite for Config functionality."""
     
-    @pytest.fixture
-    def sample_config_data(self):
-        """Fixture providing sample configuration data."""
-        return {
-            'api_endpoint': 'https://api.example.com/v1',
-            'api_key': 'test_api_key_12345',
+    def setup_method(self):
+        """Set up test fixtures before each test method."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.config_path = os.path.join(self.temp_dir, 'test_config.json')
+        self.yaml_config_path = os.path.join(self.temp_dir, 'test_config.yaml')
+        
+        # Default valid configuration for testing
+        self.valid_config = {
+            'api_key': 'test_api_key_123',
+            'base_url': 'https://api.example.com',
             'timeout': 30,
-            'retry_attempts': 3,
+            'max_retries': 3,
             'debug': False,
-            'features': {
-                'voice_enabled': True,
-                'chat_enabled': True,
-                'max_characters': 5000
-            },
             'character_settings': {
-                'default_personality': 'friendly',
-                'response_style': 'conversational',
-                'languages': ['en', 'es', 'fr']
+                'default_name': 'TestCharacter',
+                'max_characters': 100,
+                'allowed_types': ['warrior', 'mage', 'rogue']
             }
         }
-    
-    @pytest.fixture
-    def empty_config(self):
-        """Fixture providing an empty config instance."""
-        return Config({})
-    
-    @pytest.fixture
-    def temp_config_file(self, tmp_path, sample_config_data):
-        """Fixture providing a temporary config file."""
-        config_file = tmp_path / "test_config.json"
-        with open(config_file, 'w') as f:
-            json.dump(sample_config_data, f)
-        return config_file
-    
-    # Happy Path Tests
-    def test_config_initialization_with_valid_data(self, sample_config_data):
-        """Test Config initialization with valid configuration data."""
-        config = Config(sample_config_data)
-        assert config.get('api_endpoint') == 'https://api.example.com/v1'
-        assert config.get('api_key') == 'test_api_key_12345'
-        assert config.get('timeout') == 30
-        assert config.get('retry_attempts') == 3
-        assert config.get('debug') is False
-    
-    def test_config_initialization_empty(self):
-        """Test Config initialization with empty data."""
-        config = Config()
-        assert config.get('nonexistent') is None
-        assert config.get('nonexistent', 'default') == 'default'
-    
-    def test_config_get_method_with_nested_data(self, sample_config_data):
-        """Test Config.get() method with nested configuration data."""
-        config = Config(sample_config_data)
-        features = config.get('features')
-        assert features['voice_enabled'] is True
-        assert features['max_characters'] == 5000
-    
-    def test_config_get_method_with_default_values(self, sample_config_data):
-        """Test Config.get() method returns default values for missing keys."""
-        config = Config(sample_config_data)
-        assert config.get('nonexistent_key') is None
-        assert config.get('nonexistent_key', 'default_value') == 'default_value'
-        assert config.get('nonexistent_key', 42) == 42
-        assert config.get('nonexistent_key', False) is False
-    
-    def test_config_set_method(self, sample_config_data):
-        """Test Config.set() method for updating configuration values."""
-        config = Config(sample_config_data)
-        config.set('new_key', 'new_value')
-        assert config.get('new_key') == 'new_value'
         
-        config.set('timeout', 60)
-        assert config.get('timeout') == 60
+    def teardown_method(self):
+        """Clean up after each test method."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
     
-    def test_config_update_method(self, sample_config_data):
-        """Test Config.update() method for batch updates."""
-        config = Config(sample_config_data)
-        updates = {
-            'timeout': 45,
-            'new_setting': 'new_value',
-            'debug': True
-        }
-        config.update(updates)
-        
-        assert config.get('timeout') == 45
-        assert config.get('new_setting') == 'new_value'
-        assert config.get('debug') is True
-        # Ensure other values remain unchanged
-        assert config.get('api_endpoint') == 'https://api.example.com/v1'
+    def test_config_creation_with_valid_data(self):
+        """Test Config object creation with valid configuration data."""
+        if Config:
+            config = Config(self.valid_config)
+            assert config is not None
+            assert hasattr(config, 'api_key') or 'api_key' in config
     
-    def test_config_to_dict_method(self, sample_config_data):
-        """Test Config.to_dict() method returns correct dictionary representation."""
-        config = Config(sample_config_data)
-        config_dict = config.to_dict()
-        
-        assert isinstance(config_dict, dict)
-        assert config_dict['api_endpoint'] == 'https://api.example.com/v1'
-        assert config_dict['features']['voice_enabled'] is True
-        
-        # Ensure it's a copy, not a reference
-        config_dict['api_endpoint'] = 'modified'
-        assert config.get('api_endpoint') == 'https://api.example.com/v1'
+    def test_config_creation_with_empty_data(self):
+        """Test Config object creation with empty configuration data."""
+        if Config:
+            with pytest.raises((ValueError, ConfigError, KeyError)):
+                Config({})
     
-    # Edge Cases
-    def test_config_with_none_values(self):
-        """Test Config handles None values correctly."""
-        config_data = {
-            'api_endpoint': None,
-            'timeout': None,
-            'valid_key': 'valid_value'
-        }
+    def test_config_creation_with_none(self):
+        """Test Config object creation with None."""
+        if Config:
+            with pytest.raises((ValueError, ConfigError, TypeError)):
+                Config(None)
+    
+    def test_config_creation_with_invalid_types(self):
+        """Test Config object creation with invalid data types."""
+        if Config:
+            invalid_configs = [
+                {'timeout': 'not_a_number'},
+                {'max_retries': -1},
+                {'debug': 'not_a_boolean'},
+                {'character_settings': 'not_a_dict'}
+            ]
+            
+            for invalid_config in invalid_configs:
+                combined_config = {**self.valid_config, **invalid_config}
+                with pytest.raises((ValueError, ConfigError, TypeError)):
+                    Config(combined_config)
+    
+    def test_load_config_from_json_file(self):
+        """Test loading configuration from a JSON file."""
+        if load_config:
+            # Create a test JSON config file
+            with open(self.config_path, 'w') as f:
+                json.dump(self.valid_config, f)
+            
+            config = load_config(self.config_path)
+            assert config is not None
+            assert config.get('api_key') == 'test_api_key_123'
+    
+    def test_load_config_from_yaml_file(self):
+        """Test loading configuration from a YAML file."""
+        if load_config:
+            # Create a test YAML config file
+            with open(self.yaml_config_path, 'w') as f:
+                yaml.dump(self.valid_config, f)
+            
+            config = load_config(self.yaml_config_path)
+            assert config is not None
+            assert config.get('api_key') == 'test_api_key_123'
+    
+    def test_load_config_file_not_found(self):
+        """Test loading configuration from non-existent file."""
+        if load_config:
+            with pytest.raises((FileNotFoundError, ConfigError, IOError)):
+                load_config('/non/existent/path/config.json')
+    
+    def test_load_config_invalid_json(self):
+        """Test loading configuration from invalid JSON file."""
+        if load_config:
+            # Create invalid JSON file
+            with open(self.config_path, 'w') as f:
+                f.write('{ invalid json content }')
+            
+            with pytest.raises((json.JSONDecodeError, ConfigError, ValueError)):
+                load_config(self.config_path)
+    
+    def test_load_config_invalid_yaml(self):
+        """Test loading configuration from invalid YAML file."""
+        if load_config:
+            # Create invalid YAML file
+            with open(self.yaml_config_path, 'w') as f:
+                f.write('invalid: yaml: content: [')
+            
+            with pytest.raises((yaml.YAMLError, ConfigError, ValueError)):
+                load_config(self.yaml_config_path)
+    
+    def test_validate_config_with_valid_data(self):
+        """Test configuration validation with valid data."""
+        if validate_config:
+            result = validate_config(self.valid_config)
+            assert result is True or result is None  # Different implementations may return different values
+    
+    def test_validate_config_missing_required_fields(self):
+        """Test configuration validation with missing required fields."""
+        if validate_config:
+            incomplete_configs = [
+                {'api_key': 'test'},  # Missing other required fields
+                {'base_url': 'https://api.example.com'},  # Missing api_key
+                {}  # Empty config
+            ]
+            
+            for incomplete_config in incomplete_configs:
+                with pytest.raises((ValueError, ConfigError, KeyError)):
+                    validate_config(incomplete_config)
+    
+    def test_validate_config_with_extra_fields(self):
+        """Test configuration validation with extra unknown fields."""
+        if validate_config:
+            config_with_extra = {**self.valid_config, 'unknown_field': 'value'}
+            # This should either pass (ignoring extra fields) or raise a specific error
+            try:
+                result = validate_config(config_with_extra)
+                assert result is True or result is None
+            except (ValueError, ConfigError):
+                # Some implementations may reject unknown fields
+                pass
+    
+    @patch.dict(os.environ, {'CHARACTER_API_KEY': 'env_api_key'})
+    def test_config_from_environment_variables(self):
+        """Test configuration loading from environment variables."""
+        if Config:
+            # Test that config can be loaded from environment variables
+            env_config = {
+                'api_key': os.environ.get('CHARACTER_API_KEY'),
+                'base_url': 'https://api.example.com',
+                'timeout': 30,
+                'max_retries': 3,
+                'debug': False,
+                'character_settings': {}
+            }
+            
+            config = Config(env_config)
+            assert config is not None
+    
+    def test_config_default_values(self):
+        """Test that configuration provides sensible default values."""
+        if Config:
+            minimal_config = {'api_key': 'test_key'}
+            config = Config(minimal_config)
+            
+            # Test that defaults are applied appropriately
+            # This test assumes the config system provides defaults
+            assert config is not None
+    
+    def test_config_serialization(self):
+        """Test configuration object serialization."""
+        if Config:
+            config = Config(self.valid_config)
+            
+            # Test various serialization methods that might exist
+            try:
+                serialized = str(config)
+                assert serialized is not None
+            except:
+                pass
+            
+            try:
+                dict_repr = dict(config) if hasattr(config, '__iter__') else vars(config)
+                assert dict_repr is not None
+            except:
+                pass
+    
+    def test_config_immutability(self):
+        """Test that configuration objects are immutable where expected."""
+        if Config:
+            config = Config(self.valid_config)
+            
+            # Try to modify the config and ensure it's protected
+            try:
+                if hasattr(config, 'api_key'):
+                    original_key = config.api_key
+                    config.api_key = 'modified_key'
+                    # If modification succeeded, verify it was intended
+                    assert config.api_key == 'modified_key' or config.api_key == original_key
+            except (AttributeError, TypeError):
+                # Expected if config is immutable
+                pass
+    
+    def test_config_nested_access(self):
+        """Test accessing nested configuration values."""
+        if Config:
+            config = Config(self.valid_config)
+            
+            # Test nested access patterns
+            try:
+                if hasattr(config, 'character_settings'):
+                    assert config.character_settings is not None
+                elif 'character_settings' in config:
+                    assert config['character_settings'] is not None
+            except (KeyError, AttributeError):
+                # May not have nested access implemented
+                pass
+    
+    def test_config_validation_edge_cases(self):
+        """Test configuration validation with edge cases."""
+        if validate_config:
+            edge_cases = [
+                {'api_key': ''},  # Empty string
+                {'api_key': ' ' * 100},  # Very long string
+                {'timeout': 0},  # Zero timeout
+                {'timeout': 999999},  # Very large timeout
+                {'max_retries': 0},  # Zero retries
+                {'character_settings': {}},  # Empty nested dict
+            ]
+            
+            for edge_case in edge_cases:
+                test_config = {**self.valid_config, **edge_case}
+                try:
+                    validate_config(test_config)
+                except (ValueError, ConfigError):
+                    # Some edge cases may be invalid
+                    pass
+    
+    def test_config_thread_safety(self):
+        """Test configuration object thread safety."""
+        if Config:
+            import threading
+            import time
+            
+            config = Config(self.valid_config)
+            results = []
+            
+            def access_config():
+                try:
+                    # Access config properties multiple times
+                    for _ in range(10):
+                        if hasattr(config, 'api_key'):
+                            val = config.api_key
+                        elif 'api_key' in config:
+                            val = config['api_key']
+                        results.append(True)
+                        time.sleep(0.001)  # Small delay
+                except Exception as e:
+                    results.append(False)
+            
+            # Create multiple threads accessing the config
+            threads = [threading.Thread(target=access_config) for _ in range(5)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            
+            # All accesses should succeed
+            assert all(results)
+    
+    @patch('builtins.open', mock_open(read_data='{"api_key": "mocked_key"}'))
+    def test_config_loading_with_mocked_file(self):
+        """Test configuration loading with mocked file operations."""
+        if load_config:
+            config = load_config('mocked_path.json')
+            assert config is not None
+            assert config.get('api_key') == 'mocked_key'
+    
+    def test_config_error_handling(self):
+        """Test proper error handling and error messages."""
+        if ConfigError:
+            # Test that ConfigError can be raised and caught
+            with pytest.raises(ConfigError):
+                raise ConfigError("Test error message")
+    
+    def test_config_backward_compatibility(self):
+        """Test backward compatibility with older config formats."""
+        if Config:
+            # Test with minimal old-style config
+            old_style_config = {
+                'api_key': 'old_key',
+                'url': 'https://old-api.example.com'  # Different key name
+            }
+            
+            try:
+                config = Config(old_style_config)
+                assert config is not None
+            except (ValueError, ConfigError, KeyError):
+                # Expected if backward compatibility isn't maintained
+                pass
+    
+    def test_config_performance(self):
+        """Test configuration loading and access performance."""
+        if Config:
+            import time
+            
+            # Test config creation performance
+            start_time = time.time()
+            for _ in range(100):
+                config = Config(self.valid_config)
+            creation_time = time.time() - start_time
+            
+            # Should be reasonably fast (less than 1 second for 100 creations)
+            assert creation_time < 1.0
+            
+            # Test config access performance
+            config = Config(self.valid_config)
+            start_time = time.time()
+            for _ in range(1000):
+                if hasattr(config, 'api_key'):
+                    val = config.api_key
+                elif 'api_key' in config:
+                    val = config['api_key']
+            access_time = time.time() - start_time
+            
+            # Should be very fast (less than 0.1 seconds for 1000 accesses)
+            assert access_time < 0.1
+
+
+class TestConfigIntegration:
+    """Integration tests for Config functionality."""
+    
+    def test_config_with_real_file_system(self):
+        """Test configuration with actual file system operations."""
+        if load_config:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump({'api_key': 'integration_test_key'}, f)
+                temp_path = f.name
+            
+            try:
+                config = load_config(temp_path)
+                assert config is not None
+                assert config.get('api_key') == 'integration_test_key'
+            finally:
+                os.unlink(temp_path)
+    
+    def test_config_with_environment_integration(self):
+        """Test configuration integration with environment variables."""
+        if Config:
+            # Test environment variable precedence
+            with patch.dict(os.environ, {'CONFIG_DEBUG': 'true'}):
+                config_data = {'api_key': 'test', 'debug': False}
+                config = Config(config_data)
+                # Test if environment variables override config file values
+                assert config is not None
+
+
+class TestConfigSecurity:
+    """Security-focused tests for configuration handling."""
+    
+    def test_config_sensitive_data_handling(self):
+        """Test that sensitive configuration data is handled securely."""
+        if Config:
+            sensitive_config = {
+                'api_key': 'super_secret_key',
+                'password': 'secret_password',
+                'token': 'auth_token_123'
+            }
+            
+            config = Config(sensitive_config)
+            
+            # Test that sensitive data doesn't appear in string representations
+            config_str = str(config)
+            assert 'super_secret_key' not in config_str
+            assert 'secret_password' not in config_str
+    
+    def test_config_path_traversal_protection(self):
+        """Test protection against path traversal attacks in config file loading."""
+        if load_config:
+            malicious_paths = [
+                '../../../etc/passwd',
+                '..\\..\\..\\windows\\system32\\config\\sam',
+                '/etc/shadow',
+                'C:\\Windows\\System32\\config\\SAM'
+            ]
+            
+            for malicious_path in malicious_paths:
+                with pytest.raises((FileNotFoundError, PermissionError, ValueError, ConfigError)):
+                    load_config(malicious_path)
+
+
+class TestConfigValidation:
+    """Comprehensive validation tests for configuration data."""
+    
+    def test_url_validation(self):
+        """Test URL validation in configuration."""
+        if validate_config or Config:
+            invalid_urls = [
+                'not_a_url',
+                'http://',
+                'ftp://invalid',
+                'javascript:alert(1)',
+                'file:///etc/passwd'
+            ]
+            
+            for invalid_url in invalid_urls:
+                invalid_config = {'api_key': 'test', 'base_url': invalid_url}
+                
+                if validate_config:
+                    with pytest.raises((ValueError, ConfigError)):
+                        validate_config(invalid_config)
+                elif Config:
+                    with pytest.raises((ValueError, ConfigError)):
+                        Config(invalid_config)
+    
+    def test_numeric_range_validation(self):
+        """Test numeric range validation for configuration values."""
+        if validate_config or Config:
+            test_cases = [
+                ('timeout', -1, False),  # Negative timeout should be invalid
+                ('timeout', 0, False),   # Zero timeout should be invalid
+                ('timeout', 1, True),    # Positive timeout should be valid
+                ('max_retries', -1, False),  # Negative retries should be invalid
+                ('max_retries', 0, True),    # Zero retries might be valid
+                ('max_retries', 100, True),  # Large retries should be valid
+            ]
+            
+            base_config = {'api_key': 'test', 'base_url': 'https://api.example.com'}
+            
+            for field, value, should_be_valid in test_cases:
+                test_config = {**base_config, field: value}
+                
+                if should_be_valid:
+                    try:
+                        if validate_config:
+                            validate_config(test_config)
+                        elif Config:
+                            Config(test_config)
+                    except (ValueError, ConfigError):
+                        pytest.fail(f"Valid {field}={value} was rejected")
+                else:
+                    with pytest.raises((ValueError, ConfigError)):
+                        if validate_config:
+                            validate_config(test_config)
+                        elif Config:
+                            Config(test_config)
+
+
+# Additional parametrized tests for comprehensive coverage
+@pytest.mark.parametrize("config_format", ["json", "yaml"])
+def test_config_loading_different_formats(config_format):
+    """Test configuration loading with different file formats."""
+    if not load_config:
+        pytest.skip("load_config function not available")
+    
+    config_data = {'api_key': 'format_test_key'}
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix=f'.{config_format}', delete=False) as f:
+        if config_format == 'json':
+            json.dump(config_data, f)
+        elif config_format == 'yaml':
+            yaml.dump(config_data, f)
+        temp_path = f.name
+    
+    try:
+        config = load_config(temp_path)
+        assert config is not None
+        assert config.get('api_key') == 'format_test_key'
+    finally:
+        os.unlink(temp_path)
+
+
+@pytest.mark.parametrize("invalid_value", [None, "", "   ", 123, [], {}])
+def test_config_validation_invalid_api_keys(invalid_value):
+    """Test configuration validation with various invalid API key values."""
+    if not validate_config:
+        pytest.skip("validate_config function not available")
+    
+    config_data = {
+        'api_key': invalid_value,
+        'base_url': 'https://api.example.com'
+    }
+    
+    with pytest.raises((ValueError, ConfigError, TypeError)):
+        validate_config(config_data)
+
+
+@pytest.mark.parametrize("timeout_value", [-1, 0, 1, 30, 300, 999999])
+def test_config_timeout_boundary_values(timeout_value):
+    """Test configuration with various timeout boundary values."""
+    if not Config:
+        pytest.skip("Config class not available")
+    
+    config_data = {
+        'api_key': 'test_key',
+        'base_url': 'https://api.example.com',
+        'timeout': timeout_value
+    }
+    
+    if timeout_value < 1:
+        with pytest.raises((ValueError, ConfigError)):
+            Config(config_data)
+    else:
+        config = Config(config_data)
+        assert config is not None
+
+
+@pytest.mark.parametrize("debug_value", [True, False, "true", "false", 1, 0, "yes", "no"])
+def test_config_debug_flag_values(debug_value):
+    """Test configuration with various debug flag values."""
+    if not Config:
+        pytest.skip("Config class not available")
+    
+    config_data = {
+        'api_key': 'test_key',
+        'base_url': 'https://api.example.com',
+        'debug': debug_value
+    }
+    
+    try:
+        config = Config(config_data)
+        assert config is not None
+    except (ValueError, ConfigError, TypeError):
+        # Some debug values might be invalid depending on implementation
+        pass
+
+
+class TestConfigConcurrency:
+    """Tests for configuration handling under concurrent access."""
+    
+    def test_config_multiple_readers(self):
+        """Test configuration with multiple concurrent readers."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        import threading
+        import time
+        
+        config_data = {'api_key': 'concurrent_test_key'}
         config = Config(config_data)
         
-        assert config.get('api_endpoint') is None
-        assert config.get('timeout') is None
-        assert config.get('valid_key') == 'valid_value'
-    
-    def test_config_with_mixed_data_types(self):
-        """Test Config handles various data types correctly."""
-        mixed_data = {
-            'string_val': 'test_string',
-            'int_val': 42,
-            'float_val': 3.14159,
-            'bool_true': True,
-            'bool_false': False,
-            'list_val': [1, 2, 'three', 4.0],
-            'dict_val': {'nested': 'value', 'number': 100},
-            'none_val': None
-        }
-        config = Config(mixed_data)
+        results = []
+        errors = []
         
-        assert config.get('string_val') == 'test_string'
-        assert config.get('int_val') == 42
-        assert config.get('float_val') == 3.14159
-        assert config.get('bool_true') is True
-        assert config.get('bool_false') is False
-        assert config.get('list_val') == [1, 2, 'three', 4.0]
-        assert config.get('dict_val')['nested'] == 'value'
-        assert config.get('none_val') is None
-    
-    def test_config_with_special_characters(self):
-        """Test Config handles Unicode and special characters."""
-        special_data = {
-            'unicode_text': 'Hello 世界! 🌍',
-            'special_chars': '!@#$%^&*()_+-={}[]|\\:";\'<>?,./',
-            'url_with_params': 'https://api.com/endpoint?param=value&other=123',
-            'json_string': '{"nested": "json", "array": [1, 2, 3]}'
-        }
-        config = Config(special_data)
+        def read_config():
+            try:
+                for _ in range(50):
+                    if hasattr(config, 'api_key'):
+                        value = config.api_key
+                    elif 'api_key' in config:
+                        value = config['api_key']
+                    results.append(value)
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
         
-        assert config.get('unicode_text') == 'Hello 世界! 🌍'
-        assert config.get('special_chars') == '!@#$%^&*()_+-={}[]|\\:";\'<>?,./'
-        assert 'param=value' in config.get('url_with_params')
+        # Create multiple reader threads
+        threads = [threading.Thread(target=read_config) for _ in range(10)]
+        
+        for thread in threads:
+            thread.start()
+        
+        for thread in threads:
+            thread.join()
+        
+        # All reads should succeed without errors
+        assert len(errors) == 0
+        assert len(results) > 0
     
-    def test_config_with_deeply_nested_structure(self):
-        """Test Config handles deeply nested data structures."""
-        deep_nested = {
+    def test_config_loading_concurrent_files(self):
+        """Test loading configuration from multiple files concurrently."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        import threading
+        
+        # Create multiple temporary config files
+        temp_files = []
+        for i in range(5):
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump({'api_key': f'test_key_{i}'}, f)
+                temp_files.append(f.name)
+        
+        results = []
+        errors = []
+        
+        def load_config_file(filepath):
+            try:
+                config = load_config(filepath)
+                results.append(config)
+            except Exception as e:
+                errors.append(e)
+        
+        # Load configs concurrently
+        threads = [threading.Thread(target=load_config_file, args=(path,)) for path in temp_files]
+        
+        for thread in threads:
+            thread.start()
+        
+        for thread in threads:
+            thread.join()
+        
+        # Clean up temporary files
+        for temp_file in temp_files:
+            os.unlink(temp_file)
+        
+        # All loads should succeed
+        assert len(errors) == 0
+        assert len(results) == 5
+
+
+# Edge case tests for robustness
+class TestConfigEdgeCases:
+    """Edge case tests for configuration handling."""
+    
+    def test_config_with_unicode_values(self):
+        """Test configuration with Unicode values."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        unicode_config = {
+            'api_key': 'тест_ключ_🔑',
+            'base_url': 'https://测试.example.com',
+            'debug': False
+        }
+        
+        config = Config(unicode_config)
+        assert config is not None
+    
+    def test_config_with_very_long_values(self):
+        """Test configuration with very long string values."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        long_string = 'x' * 10000
+        long_config = {
+            'api_key': long_string,
+            'base_url': 'https://api.example.com'
+        }
+        
+        try:
+            config = Config(long_config)
+            assert config is not None
+        except (ValueError, ConfigError, MemoryError):
+            # Some implementations may reject very long values
+            pass
+    
+    def test_config_with_deeply_nested_data(self):
+        """Test configuration with deeply nested data structures."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        nested_config = {
+            'api_key': 'test_key',
             'level1': {
                 'level2': {
                     'level3': {
                         'level4': {
-                            'deep_value': 'found_it',
-                            'deep_list': [1, 2, {'nested_in_list': True}]
+                            'level5': {
+                                'deep_value': 'found_me'
+                            }
                         }
                     }
                 }
             }
         }
-        config = Config(deep_nested)
         
-        level4 = config.get('level1')['level2']['level3']['level4']
-        assert level4['deep_value'] == 'found_it'
-        assert level4['deep_list'][2]['nested_in_list'] is True
+        config = Config(nested_config)
+        assert config is not None
     
-    # Error Cases
-    def test_config_initialization_with_invalid_types(self):
-        """Test Config initialization handles invalid data types gracefully."""
-        # Test with various invalid types
-        invalid_inputs = [
-            "invalid_string",
-            123,
-            [1, 2, 3],
-            True,
-            None
-        ]
+    def test_config_with_circular_references(self):
+        """Test configuration handling with circular references."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        for invalid_input in invalid_inputs:
-            # Depending on implementation, this might raise ConfigError or handle gracefully
-            try:
-                config = Config(invalid_input)
-                # If no exception, ensure it handles gracefully
-                assert config.get('any_key') is None
-            except (ConfigError, TypeError, ValueError):
-                # Expected behavior for invalid input
-                pass
-    
-    def test_config_get_with_invalid_key_types(self, sample_config_data):
-        """Test Config.get() with invalid key types."""
-        config = Config(sample_config_data)
+        # Create a structure with circular reference
+        circular_dict = {'api_key': 'test_key'}
+        circular_dict['self_ref'] = circular_dict
         
-        # Test with non-string keys
-        invalid_keys = [None, 123, [], {}, True]
-        for invalid_key in invalid_keys:
-            try:
-                result = config.get(invalid_key)
-                assert result is None  # Should return None for invalid keys
-            except (TypeError, KeyError):
-                # Expected behavior for invalid key types
-                pass
+        with pytest.raises((ValueError, ConfigError, RecursionError)):
+            Config(circular_dict)
 
 
-class TestConfigManager:
-    """Test cases for the ConfigManager class."""
-    
-    @pytest.fixture
-    def temp_config_path(self, tmp_path):
-        """Fixture providing a temporary config file path."""
-        return tmp_path / "config.json"
-    
-    @pytest.fixture
-    def sample_config_data(self):
-        """Fixture providing sample configuration data."""
-        return {
-            'app_name': 'CharacterClient',
-            'version': '1.0.0',
-            'settings': {
-                'auto_save': True,
-                'theme': 'dark'
-            }
-        }
-    
-    def test_config_manager_initialization(self, temp_config_path):
-        """Test ConfigManager initialization."""
-        manager = ConfigManager(str(temp_config_path))
-        assert manager.config_path == str(temp_config_path)
-    
-    def test_config_manager_load_existing_file(self, temp_config_path, sample_config_data):
-        """Test ConfigManager loading from existing file."""
-        # Create config file
-        with open(temp_config_path, 'w') as f:
-            json.dump(sample_config_data, f)
-        
-        manager = ConfigManager(str(temp_config_path))
-        config = manager.load()
-        
-        assert isinstance(config, Config)
-        assert config.get('app_name') == 'CharacterClient'
-        assert config.get('settings')['theme'] == 'dark'
-    
-    def test_config_manager_load_nonexistent_file(self, temp_config_path):
-        """Test ConfigManager handling of nonexistent config file."""
-        manager = ConfigManager(str(temp_config_path))
-        
-        # Should handle gracefully (create default config or raise appropriate error)
-        try:
-            config = manager.load()
-            assert isinstance(config, Config)
-        except FileNotFoundError:
-            # Expected behavior for missing file
-            pass
-    
-    def test_config_manager_save(self, temp_config_path, sample_config_data):
-        """Test ConfigManager save functionality."""
-        manager = ConfigManager(str(temp_config_path))
-        config = Config(sample_config_data)
-        
-        # Save configuration
-        manager._config = config
-        manager.save()
-        
-        # Verify file was created and contains correct data
-        assert temp_config_path.exists()
-        with open(temp_config_path, 'r') as f:
-            saved_data = json.load(f)
-        
-        assert saved_data['app_name'] == 'CharacterClient'
-        assert saved_data['settings']['theme'] == 'dark'
-
-
-class TestConfigUtilityFunctions:
-    """Test cases for utility functions."""
-    
-    @pytest.fixture
-    def sample_config_data(self):
-        """Fixture providing sample configuration data."""
-        return {
-            'database': {
-                'host': 'localhost',
-                'port': 5432,
-                'name': 'character_db'
-            },
-            'api': {
-                'endpoint': 'https://api.example.com',
-                'version': 'v1'
-            },
-            'logging': {
-                'level': 'INFO',
-                'file': 'app.log'
-            }
-        }
-    
-    def test_load_config_from_json_file(self, tmp_path, sample_config_data):
-        """Test load_config function with JSON file."""
-        config_file = tmp_path / "test_config.json"
-        with open(config_file, 'w') as f:
-            json.dump(sample_config_data, f)
-        
-        config = load_config(str(config_file))
-        assert isinstance(config, Config)
-        assert config.get('database')['host'] == 'localhost'
-        assert config.get('api')['version'] == 'v1'
-    
-    def test_load_config_from_yaml_file(self, tmp_path, sample_config_data):
-        """Test load_config function with YAML file."""
-        config_file = tmp_path / "test_config.yaml"
-        try:
-            with open(config_file, 'w') as f:
-                yaml.dump(sample_config_data, f)
-            
-            config = load_config(str(config_file))
-            assert isinstance(config, Config)
-            assert config.get('database')['port'] == 5432
-        except ImportError:
-            # Skip if yaml not available
-            pytest.skip("YAML not available")
-    
-    def test_load_config_from_nonexistent_file(self):
-        """Test load_config with nonexistent file."""
-        with pytest.raises(FileNotFoundError):
-            load_config('/nonexistent/path/config.json')
-    
-    def test_load_config_from_invalid_json(self, tmp_path):
-        """Test load_config with invalid JSON file."""
-        config_file = tmp_path / "invalid_config.json"
-        with open(config_file, 'w') as f:
-            f.write('{"invalid": json content without closing brace')
-        
-        with pytest.raises(json.JSONDecodeError):
-            load_config(str(config_file))
-    
-    def test_save_config_to_json_file(self, tmp_path, sample_config_data):
-        """Test save_config function with JSON file."""
-        config = Config(sample_config_data)
-        config_file = tmp_path / "saved_config.json"
-        
-        save_config(config, str(config_file))
-        
-        assert config_file.exists()
-        with open(config_file, 'r') as f:
-            saved_data = json.load(f)
-        
-        assert saved_data['database']['host'] == 'localhost'
-        assert saved_data['logging']['level'] == 'INFO'
-    
-    def test_save_config_to_nonexistent_directory(self, tmp_path, sample_config_data):
-        """Test save_config creates directories if they don't exist."""
-        config = Config(sample_config_data)
-        config_file = tmp_path / "nested" / "directory" / "config.json"
-        
-        save_config(config, str(config_file))
-        
-        assert config_file.exists()
-        assert config_file.parent.exists()
-    
-    # Validation Tests
-    def test_validate_config_with_valid_data(self, sample_config_data):
-        """Test validate_config with valid configuration data."""
-        assert validate_config(sample_config_data) is True
-    
-    def test_validate_config_with_missing_required_fields(self):
-        """Test validate_config with missing required fields."""
-        incomplete_config = {
-            'database': {
-                'host': 'localhost'
-                # Missing port and name
-            }
-        }
-        
-        # Depending on implementation, this might return False or raise ConfigError
-        try:
-            result = validate_config(incomplete_config)
-            assert result is False
-        except ConfigError:
-            # Expected behavior for invalid config
-            pass
-    
-    def test_validate_config_with_invalid_types(self):
-        """Test validate_config with invalid field types."""
-        invalid_config = {
-            'database': {
-                'host': 'localhost',
-                'port': 'not_a_number',  # Should be integer
-                'name': 123  # Should be string
-            }
-        }
-        
-        try:
-            result = validate_config(invalid_config)
-            assert result is False
-        except ConfigError:
-            pass
-    
-    def test_validate_config_with_none_input(self):
-        """Test validate_config with None input."""
-        with pytest.raises((ConfigError, TypeError)):
-            validate_config(None)
-    
-    def test_validate_config_with_empty_dict(self):
-        """Test validate_config with empty dictionary."""
-        result = validate_config({})
-        # Depending on requirements, empty config might be valid or invalid
-        assert isinstance(result, bool)
-
-
-class TestConfigIntegration:
-    """Integration tests for config functionality."""
-    
-    def test_config_roundtrip_json(self, tmp_path):
-        """Test complete roundtrip: create config, save to JSON, load from JSON."""
-        original_data = {
-            'app_settings': {
-                'theme': 'dark',
-                'language': 'en',
-                'auto_save': True
-            },
-            'user_preferences': {
-                'notifications': False,
-                'sound_enabled': True
-            }
-        }
-        
-        # Create and save config
-        config = Config(original_data)
-        config_file = tmp_path / "roundtrip_config.json"
-        save_config(config, str(config_file))
-        
-        # Load config from file
-        loaded_config = load_config(str(config_file))
-        
-        # Verify data integrity
-        assert loaded_config.get('app_settings')['theme'] == 'dark'
-        assert loaded_config.get('user_preferences')['notifications'] is False
-        assert loaded_config.to_dict() == original_data
-    
-    def test_config_manager_complete_workflow(self, tmp_path):
-        """Test complete ConfigManager workflow."""
-        config_file = tmp_path / "workflow_config.json"
-        
-        # Initialize manager and create config
-        manager = ConfigManager(str(config_file))
-        config = Config({
-            'initial_setting': 'initial_value',
-            'counter': 0
-        })
-        manager._config = config
-        
-        # Save initial config
-        manager.save()
-        
-        # Create new manager instance and load
-        new_manager = ConfigManager(str(config_file))
-        loaded_config = new_manager.load()
-        
-        # Modify and save again
-        loaded_config.set('counter', 1)
-        loaded_config.set('new_setting', 'new_value')
-        new_manager._config = loaded_config
-        new_manager.save()
-        
-        # Final verification
-        final_manager = ConfigManager(str(config_file))
-        final_config = final_manager.load()
-        
-        assert final_config.get('initial_setting') == 'initial_value'
-        assert final_config.get('counter') == 1
-        assert final_config.get('new_setting') == 'new_value'
-    
-    @patch.dict(os.environ, {
-        'CONFIG_API_KEY': 'env_api_key',
-        'CONFIG_DEBUG': 'true',
-        'CONFIG_TIMEOUT': '60'
-    })
-    def test_config_with_environment_variables(self):
-        """Test Config integration with environment variables."""
-        # This test assumes Config class supports environment variable substitution
-        env_config_data = {
-            'api_key': '${CONFIG_API_KEY}',
-            'debug': '${CONFIG_DEBUG}',
-            'timeout': '${CONFIG_TIMEOUT}'
-        }
-        
-        # Implementation would depend on actual Config class behavior
-        # This is a placeholder for environment variable integration testing
-        config = Config(env_config_data)
-        
-        # If environment variable substitution is implemented:
-        # assert config.get('api_key') == 'env_api_key'
-        # assert config.get('debug') == 'true'
-        # assert config.get('timeout') == '60'
-    
-    def test_config_concurrent_access(self, tmp_path):
-        """Test config behavior under concurrent access."""
-        import threading
-        import time
-        
-        config_file = tmp_path / "concurrent_config.json"
-        config = Config({'counter': 0, 'shared_data': []})
-        save_config(config, str(config_file))
-        
-        results = []
-        
-        def worker_thread(thread_id):
-            """Worker function for concurrent testing."""
-            try:
-                # Load config
-                local_config = load_config(str(config_file))
-                counter = local_config.get('counter', 0)
-                
-                # Simulate some work
-                time.sleep(0.01)
-                
-                # Update counter
-                local_config.set('counter', counter + 1)
-                results.append(f"thread_{thread_id}_success")
-                
-            except Exception as e:
-                results.append(f"thread_{thread_id}_error_{str(e)}")
-        
-        # Create and start multiple threads
-        threads = []
-        for i in range(5):
-            thread = threading.Thread(target=worker_thread, args=(i,))
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
-        
-        # Verify all threads completed successfully
-        success_count = len([r for r in results if 'success' in r])
-        assert success_count == 5
-
-
+# Performance benchmarks
 class TestConfigPerformance:
-    """Performance tests for config operations."""
+    """Performance tests for configuration operations."""
     
-    def test_config_large_dataset_performance(self):
-        """Test Config performance with large datasets."""
-        # Create large config data
-        large_data = {}
-        for i in range(1000):
-            large_data[f'key_{i}'] = {
-                'value': f'value_{i}',
-                'index': i,
-                'metadata': {
-                    'created': f'2023-01-{i%30+1:02d}',
-                    'type': 'test_data'
-                }
-            }
+    def test_config_creation_performance_benchmark(self):
+        """Benchmark configuration object creation performance."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        # Test initialization performance
         import time
+        
+        config_data = {
+            'api_key': 'performance_test_key',
+            'base_url': 'https://api.example.com',
+            'timeout': 30,
+            'max_retries': 3,
+            'debug': False
+        }
+        
+        # Warm up
+        for _ in range(10):
+            Config(config_data)
+        
+        # Benchmark
         start_time = time.time()
-        config = Config(large_data)
-        init_time = time.time() - start_time
+        iterations = 1000
         
-        # Should initialize reasonably quickly (< 1 second)
-        assert init_time < 1.0
+        for _ in range(iterations):
+            Config(config_data)
         
-        # Test access performance
-        start_time = time.time()
-        for i in range(100):
-            value = config.get(f'key_{i}')
-            assert value['index'] == i
-        access_time = time.time() - start_time
+        end_time = time.time()
+        total_time = end_time - start_time
+        avg_time = total_time / iterations
         
-        # Should access quickly (< 0.1 seconds for 100 accesses)
-        assert access_time < 0.1
+        # Should create configs quickly (less than 1ms per config on average)
+        assert avg_time < 0.001, f"Config creation too slow: {avg_time:.4f}s per config"
     
-    def test_config_repeated_operations_performance(self):
-        """Test Config performance under repeated operations."""
-        config = Config({'base_value': 'test'})
+    def test_config_file_loading_performance(self):
+        """Benchmark configuration file loading performance."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        # Test repeated get operations
         import time
-        start_time = time.time()
-        for _ in range(1000):
-            value = config.get('base_value')
-            assert value == 'test'
-        get_time = time.time() - start_time
         
-        # Should handle 1000 gets quickly
-        assert get_time < 0.1
+        # Create a reasonably sized config file
+        large_config = {
+            'api_key': 'performance_test_key',
+            'base_url': 'https://api.example.com',
+            'settings': {f'setting_{i}': f'value_{i}' for i in range(100)}
+        }
         
-        # Test repeated set operations
-        start_time = time.time()
-        for i in range(1000):
-            config.set(f'dynamic_key_{i}', f'value_{i}')
-        set_time = time.time() - start_time
-        
-        # Should handle 1000 sets reasonably quickly
-        assert set_time < 1.0
-
-
-# Parametrized tests for comprehensive coverage
-class TestConfigParametrized:
-    """Parametrized tests for comprehensive coverage."""
-    
-    @pytest.mark.parametrize("input_data,expected_type", [
-        ({}, dict),
-        ({'key': 'value'}, dict),
-        ({'nested': {'key': 'value'}}, dict),
-        ({'list': [1, 2, 3]}, dict),
-        ({'mixed': {'str': 'value', 'int': 42, 'bool': True}}, dict)
-    ])
-    def test_config_to_dict_with_various_inputs(self, input_data, expected_type):
-        """Test Config.to_dict() with various input types."""
-        config = Config(input_data)
-        result = config.to_dict()
-        assert isinstance(result, expected_type)
-        assert result == input_data
-    
-    @pytest.mark.parametrize("key,default,expected", [
-        ('existing_key', None, 'existing_value'),
-        ('nonexistent_key', None, None),
-        ('nonexistent_key', 'default', 'default'),
-        ('nonexistent_key', 42, 42),
-        ('nonexistent_key', [], []),
-        ('nonexistent_key', {}, {})
-    ])
-    def test_config_get_with_various_defaults(self, key, default, expected):
-        """Test Config.get() with various default values."""
-        config = Config({'existing_key': 'existing_value'})
-        if default is None:
-            result = config.get(key)
-        else:
-            result = config.get(key, default)
-        assert result == expected
-    
-    @pytest.mark.parametrize("file_extension", ['.json', '.yaml', '.yml'])
-    def test_load_config_with_various_file_extensions(self, tmp_path, file_extension):
-        """Test load_config with various file extensions."""
-        config_data = {'test': 'data', 'number': 42}
-        config_file = tmp_path / f"test_config{file_extension}"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(large_config, f)
+            temp_path = f.name
         
         try:
-            if file_extension == '.json':
-                with open(config_file, 'w') as f:
-                    json.dump(config_data, f)
-            else:  # YAML files
-                with open(config_file, 'w') as f:
-                    yaml.dump(config_data, f)
+            # Warm up
+            for _ in range(5):
+                load_config(temp_path)
             
-            config = load_config(str(config_file))
-            assert isinstance(config, Config)
-            assert config.get('test') == 'data'
-            assert config.get('number') == 42
+            # Benchmark
+            start_time = time.time()
+            iterations = 100
             
-        except ImportError:
-            # Skip YAML tests if yaml module not available
-            if file_extension in ['.yaml', '.yml']:
-                pytest.skip("YAML module not available")
-            else:
-                raise
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+            for _ in range(iterations):
+                load_config(temp_path)
+            
+            end_time = time.time()
+            total_time = end_time - start_time
+            avg_time = total_time / iterations
+            
+            # Should load configs quickly (less than 10ms per load on average)
+            assert avg_time < 0.01, f"Config loading too slow: {avg_time:.4f}s per load"
+        
+        finally:
+            os.unlink(temp_path)

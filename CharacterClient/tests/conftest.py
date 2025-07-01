@@ -1,57 +1,57 @@
+"""Test configuration and fixtures for CharacterClient tests."""
+
 import pytest
-import sys
-import os
+from unittest.mock import Mock
+from typing import Dict, List, Any
 
-# Add the src directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-@pytest.fixture(scope="session")
-def test_api_key():
-    """Session-scoped fixture for test API key."""
-    return "test_api_key_12345"
-
-@pytest.fixture(scope="session")
-def test_base_url():
-    """Session-scoped fixture for test base URL."""
-    return "https://api.test-character.com"
-
+# Test data fixtures
 @pytest.fixture
-def mock_character_data():
-    """Fixture providing mock character data for testing."""
+def sample_character():
+    """Sample character data for testing."""
     return {
-        "id": 42,
-        "name": "Mock Character",
-        "level": 25,
-        "class": "Adventurer",
+        "id": 1,
+        "name": "Test Hero",
+        "class": "Paladin",
+        "level": 15,
         "health": 150,
         "mana": 75,
-        "experience": 12500,
-        "equipment": {
-            "weapon": "Magic Sword",
-            "armor": "Plate Mail",
-            "accessory": "Ring of Power"
-        },
-        "stats": {
-            "strength": 16,
-            "dexterity": 14,
+        "attributes": {
+            "strength": 18,
+            "agility": 14,
             "intelligence": 12,
-            "constitution": 15,
-            "wisdom": 13,
-            "charisma": 11
+            "wisdom": 16,
+            "constitution": 17,
+            "charisma": 15
         },
-        "skills": ["Combat", "Magic", "Stealth"],
+        "equipment": {
+            "weapon": "Holy Sword",
+            "armor": "Plate Mail",
+            "accessories": ["Ring of Protection", "Amulet of Health"]
+        },
+        "skills": ["Divine Strike", "Heal", "Turn Undead"],
         "created_at": "2023-01-01T00:00:00Z",
-        "updated_at": "2023-01-15T12:30:00Z"
+        "updated_at": "2023-01-01T00:00:00Z"
     }
 
 @pytest.fixture
-def mock_characters_list(mock_character_data):
-    """Fixture providing a list of mock characters for testing."""
-    characters = []
-    for i in range(5):
-        character = mock_character_data.copy()
-        character["id"] = i + 1
-        character["name"] = f"Mock Character {i + 1}"
-        character["level"] = 10 + (i * 5)
-        characters.append(character)
-    return characters
+def character_client():
+    """CharacterClient instance for testing."""
+    from CharacterClient.character_client import CharacterClient
+    return CharacterClient(base_url="https://test.api.com", api_key="test_key")
+
+@pytest.fixture
+def mock_api_response():
+    """Mock API response helper."""
+    def _mock_response(status_code=200, json_data=None, headers=None):
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.json.return_value = json_data or {}
+        mock_response.headers = headers or {}
+        mock_response.text = str(json_data) if json_data else ""
+        return mock_response
+    return _mock_response
+
+# Test markers
+pytest.mark.unit = pytest.mark.unit
+pytest.mark.integration = pytest.mark.integration
+pytest.mark.performance = pytest.mark.performance
