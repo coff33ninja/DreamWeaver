@@ -1,0 +1,20 @@
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  password: testpass
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  debug: false
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+features:
+  auth_enabled: true
+  rate_limiting: true
+  cors_enabled: false
