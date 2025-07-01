@@ -7846,7 +7846,7 @@
         "kind": 2,
         "importPath": "SERVER.main",
         "description": "SERVER.main",
-        "peekOfCode": "def run_gradio():\n    \"\"\"\n    Starts the Gradio server by launching the Gradio interface in a separate process.\n    \"\"\"\n    launch_interface()\n<<<<<<< HEAD\ndef run_fastapi() -> None:\n    \"\"\"\n    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.\n    \"\"\"",
+        "peekOfCode": "def run_gradio():\n    \"\"\"\n    Starts the Gradio server by launching the Gradio interface in a separate process.\n    \"\"\"\n    launch_interface()\ndef run_fastapi() -> None:\n    \"\"\"\n    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.\n    \"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")",
         "detail": "SERVER.main",
         "documentation": {}
     },
@@ -7864,25 +7864,7 @@
         "kind": 2,
         "importPath": "SERVER.main",
         "description": "SERVER.main",
-        "peekOfCode": "def terminate_process(proc: multiprocessing.Process, name: str) -> None:\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.\n        name (str): A human-readable name for the process, used in status messages.\n    \"\"\"\n=======\ndef run_fastapi():\n    \"\"\"",
-        "detail": "SERVER.main",
-        "documentation": {}
-    },
-    {
-        "label": "run_fastapi",
-        "kind": 2,
-        "importPath": "SERVER.main",
-        "description": "SERVER.main",
-        "peekOfCode": "def run_fastapi():\n    \"\"\"\n    Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.\n    \"\"\"\n    uvicorn.run(server_api_app, host=\"0.0.0.0\", port=8000, log_level=\"info\")\ndef terminate_process(proc, name):\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.",
-        "detail": "SERVER.main",
-        "documentation": {}
-    },
-    {
-        "label": "terminate_process",
-        "kind": 2,
-        "importPath": "SERVER.main",
-        "description": "SERVER.main",
-        "peekOfCode": "def terminate_process(proc, name):\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.\n        name (str): A human-readable name for the process, used in status messages.\n    \"\"\"\n>>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")",
+        "peekOfCode": "def terminate_process(proc: multiprocessing.Process, name: str) -> None:\n    \"\"\"\n    Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.\n    Parameters:\n        proc (multiprocessing.Process): The process to terminate.\n        name (str): A human-readable name for the process, used in status messages.\n    \"\"\"\n    if proc.is_alive():\n        print(f\"Terminating {name} (PID: {proc.pid})...\")\n        proc.terminate()",
         "detail": "SERVER.main",
         "documentation": {}
     },

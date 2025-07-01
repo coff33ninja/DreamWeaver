@@ -106,3 +106,4 @@ models/
 # Ignore narrator audio
 /audio/
 
+/.vscode
