@@ -96,9 +96,15 @@ class Narrator:
                 try:
                     print(f"Narrator: Performing diarization on {audio_filepath}...")
                     diarization_output = await asyncio.to_thread(self.diarization_pipeline, audio_filepath)
-                    first_turn = next(iter(diarization_output.itertracks(yield_label=True)), None)
-                    if first_turn:
-                        speaker = first_turn[2]  # speaker label
+                    # Aggregate speaker durations to find the most prominent speaker
+                    speaker_durations = {}
+                    for turn in diarization_output.itertracks(yield_label=True):
+                        segment, _, label = turn
+                        duration = segment.end - segment.start
+                        speaker_durations[label] = speaker_durations.get(label, 0) + duration
+                    if speaker_durations:
+                        # Select the speaker with the longest total duration
+                        speaker = max(speaker_durations, key=speaker_durations.get)
                     print(f"Narrator: Diarization complete. Determined speaker: {speaker}")
                 except Exception as e:
                     print(f"Narrator: Error during diarization: {e}. Using default speaker.")
