@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in FastAPI dependencies, ensuring it is properly closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,12 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Returns server performance metrics and a list of detailed client statuses for the monitoring dashboard.
+    
+    The response includes current CPU and memory usage statistics, along with a list of clients where each entry contains the actor ID, IP address (with port if available), last seen timestamp in UTC, and the client's status as recorded in the database. Client statuses may include values such as 'Registered', 'Offline', 'Online_Heartbeat', 'Online_Responsive', 'Error_API', 'Error_Unreachable', and 'Deactivated'.
+    
+    Returns:
+        dict: A dictionary with 'server_performance' (CPU and memory usage) and 'client_statuses' (list of client status dictionaries).
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +77,9 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Serves the HTML page for the Hive monitoring dashboard, providing a dynamic interface that displays server performance and client statuses.
+    
+    The page includes embedded JavaScript to periodically fetch and update server and client status data from the `/dashboard/status` endpoint, with enhanced styling and error handling for various client status categories.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.
