@@ -1,7 +1,9 @@
 import os
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from transformers import Trainer, TrainingArguments
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.utils.quantization_config import BitsAndBytesConfig
+from transformers.trainer import Trainer
+from transformers.training_args import TrainingArguments
 import json
 
 try:
@@ -191,8 +193,8 @@ class LLMEngine:
             trainer = Trainer(
                 model=self.model,
                 args=training_args,
-                train_dataset=dataset,
-                tokenizer=self.tokenizer
+                train_dataset=dataset
+                # tokenizer=self.tokenizer  # Removed as Trainer does not accept this argument
             )
             print(f"Client LLMEngine ({current_Actor_id}): Starting training with {len(dataset)} samples...")
             trainer.train()

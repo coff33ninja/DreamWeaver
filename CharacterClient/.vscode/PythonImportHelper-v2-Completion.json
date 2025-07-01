@@ -412,26 +412,26 @@
     },
     {
         "label": "BitsAndBytesConfig",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.utils.quantization_config",
+        "description": "transformers.utils.quantization_config",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.utils.quantization_config",
         "documentation": {}
     },
     {
         "label": "Trainer",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.trainer",
+        "description": "transformers.trainer",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.trainer",
         "documentation": {}
     },
     {
         "label": "TrainingArguments",
-        "importPath": "transformers",
-        "description": "transformers",
+        "importPath": "transformers.training_args",
+        "description": "transformers.training_args",
         "isExtraImport": true,
-        "detail": "transformers",
+        "detail": "transformers.training_args",
         "documentation": {}
     },
     {
