@@ -35,7 +35,12 @@ class TestCSM:
     
     @pytest.fixture
     def mock_dependencies(self):
-        """Set up mocked dependencies for CSM testing."""
+        """
+        Fixture that patches core CSM dependencies with mocks for isolated testing.
+        
+        Yields:
+            dict: A dictionary of the patched mock classes for use within the test.
+        """
         with patch.multiple(
             'src.csm',
             Narrator=MagicMock,
@@ -47,7 +52,12 @@ class TestCSM:
     
     @pytest.fixture
     def csm_instance(self, mock_dependencies):
-        """Create a CSM instance with mocked dependencies."""
+        """
+        Creates a `CSM` instance with all major dependencies replaced by mocks for isolated testing.
+        
+        Returns:
+            CSM: The `CSM` instance with mocked methods for narrator, character server, client manager, and database.
+        """
         csm = CSM()
         
         # Set up async mocks
@@ -61,7 +71,12 @@ class TestCSM:
     
     @pytest.fixture
     def dummy_audio_file(self):
-        """Create a temporary dummy audio file for testing."""
+        """
+        Yields the path to a temporary dummy WAV audio file for use in tests, ensuring cleanup after use.
+        
+        Returns:
+            str: The file path to the created temporary WAV audio file.
+        """
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
             # Create minimal WAV file header
             temp_file.write(b'RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xAC\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00')
@@ -76,7 +91,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_happy_path(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with successful processing."""
+        """
+        Test that CSM's process_story method successfully processes a story with valid narration, character response, client communication, and character retrieval.
+        
+        Verifies that narration and character data are returned, and that all key processing methods are called as expected.
+        """
         # Setup mocks
         csm_instance.narrator.process_narration.return_value = {
             "text": "Once upon a time in a distant land...",
@@ -111,7 +130,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_with_nonexistent_audio_file(self, csm_instance):
-        """Test CSM process_story with nonexistent audio file."""
+        """
+        Test that CSM's process_story raises FileNotFoundError when given a nonexistent audio file.
+        
+        Verifies that the process_story method correctly propagates a FileNotFoundError if the narrator fails to process a missing audio file.
+        """
         nonexistent_file = "nonexistent_audio.wav"
         
         csm_instance.narrator.process_narration.side_effect = FileNotFoundError("Audio file not found")
@@ -123,7 +146,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_narrator_failure(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when narrator processing fails."""
+        """
+        Test that CSM's process_story raises an exception when narrator processing fails.
+        
+        Simulates a failure in the narrator's process_narration method and verifies that the exception is propagated.
+        """
         csm_instance.narrator.process_narration.side_effect = Exception("Narrator processing failed")
         
         with pytest.raises(Exception, match="Narrator processing failed"):
@@ -133,7 +160,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_character_server_failure(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when character server fails."""
+        """
+        Test that CSM's process_story method raises an exception when the character server fails.
+        
+        Simulates a failure in the character server's response generation and verifies that the exception is propagated.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Test narration",
             "audio_path": dummy_audio_file,
@@ -149,7 +180,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_no_clients(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when no clients are available."""
+        """
+        Test that process_story returns narration and character data when no clients are available, and does not attempt to send to any client.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Test narration",
             "audio_path": dummy_audio_file,
@@ -170,7 +203,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_multiple_clients(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with multiple clients."""
+        """
+        Test that CSM's process_story method correctly handles multiple clients by sending responses to each and aggregating character data.
+        
+        Verifies that narration is processed, each client receives a response, and character information is collected for all actors involved.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Epic battle begins!",
             "audio_path": dummy_audio_file,
@@ -192,6 +229,15 @@ class TestCSM:
         ]
         
         def mock_get_character(actor_id):
+            """
+            Return mock character data for a given actor ID.
+            
+            Parameters:
+            	actor_id (str): The identifier of the actor whose character data is requested.
+            
+            Returns:
+            	dict or None: A dictionary containing character information if the actor ID exists, otherwise None.
+            """
             characters = {
                 "Warrior": {"name": "Brave Warrior", "Actor_id": "Warrior"},
                 "Wizard": {"name": "Wise Wizard", "Actor_id": "Wizard"},
@@ -212,7 +258,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_chaos_levels(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with different chaos levels."""
+        """
+        Tests that CSM's process_story method returns valid narration when invoked with minimum, maximum, and mid-level chaos values.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Chaos test narration",
             "audio_path": dummy_audio_file,
@@ -238,7 +286,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_invalid_chaos_level_negative(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with negative chaos level."""
+        """
+        Test that CSM's process_story raises ValueError when given a negative chaos level.
+        
+        Verifies that providing a chaos level below 0.0 results in a ValueError with the expected message.
+        """
         with pytest.raises(ValueError, match="Chaos level must be between 0.0 and 1.0"):
             await csm_instance.process_story(dummy_audio_file, chaos_level=-0.1)
         
@@ -246,7 +298,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_invalid_chaos_level_too_high(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with chaos level > 1.0."""
+        """
+        Test that CSM's process_story raises ValueError when chaos level is greater than 1.0.
+        """
         with pytest.raises(ValueError, match="Chaos level must be between 0.0 and 1.0"):
             await csm_instance.process_story(dummy_audio_file, chaos_level=1.1)
         
@@ -254,7 +308,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_shutdown_async(self, csm_instance):
-        """Test CSM shutdown_async method."""
+        """
+        Test that the CSM's shutdown_async method properly calls the asynchronous shutdown or close methods on all its components.
+        """
         csm_instance.narrator.shutdown_async = AsyncMock()
         csm_instance.character_server.shutdown_async = AsyncMock()
         csm_instance.client_manager.shutdown_async = AsyncMock()
@@ -274,7 +330,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_client_communication_failure(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when client communication fails."""
+        """
+        Test that CSM's process_story method handles client communication failures during story processing.
+        
+        Simulates a scenario where sending data to a client raises a ConnectionError. Verifies that the method either handles the error gracefully or propagates the exception, depending on implementation.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Communication test",
             "audio_path": dummy_audio_file,
@@ -304,7 +364,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_database_failure(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when database operations fail."""
+        """
+        Test that CSM's process_story method handles database failures during character retrieval.
+        
+        Simulates a database exception when retrieving character data and verifies that process_story either handles the error gracefully or propagates the exception.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Database test",
             "audio_path": dummy_audio_file,
@@ -333,7 +397,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_concurrent_processing(self, csm_instance, dummy_audio_file):
-        """Test CSM handling concurrent story processing requests."""
+        """
+        Test that the CSM can handle multiple concurrent story processing requests without errors.
+        
+        Submits several `process_story` calls with different chaos levels concurrently and verifies that all complete, returning valid narration and character data or raising exceptions as appropriate.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Concurrent test",
             "audio_path": dummy_audio_file,
@@ -363,7 +431,9 @@ class TestCSM:
         await csm_instance.shutdown_async()
     
     def test_csm_initialization(self, mock_dependencies):
-        """Test CSM class initialization."""
+        """
+        Verify that the CSM class initializes all required components and that none are None.
+        """
         csm = CSM()
         
         # Verify all components are initialized
@@ -382,7 +452,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_edge_case_empty_narration(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with empty narration text."""
+        """
+        Tests that CSM's process_story method correctly handles the case where the narration text is empty, ensuring valid narration and character responses are returned.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "",
             "audio_path": dummy_audio_file,
@@ -402,7 +474,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_edge_case_very_long_narration(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with very long narration text."""
+        """
+        Test that CSM's process_story method correctly handles narration with a very long text input.
+        
+        Verifies that the method returns valid narration and character data when the narration text is extremely long.
+        """
         long_narration = "A" * 10000  # Very long text
         
         csm_instance.narrator.process_narration.return_value = {
@@ -423,7 +499,11 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_edge_case_special_characters_in_narration(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with special characters and unicode in narration."""
+        """
+        Test that CSM's process_story method correctly handles narration containing special characters and unicode.
+        
+        Verifies that narration with emojis, accented characters, and other unicode symbols is processed without errors and returns valid results.
+        """
         special_narration = "Testing with émojis 🎭, symbols & unicode: café naïve résumé"
         
         csm_instance.narrator.process_narration.return_value = {
@@ -444,7 +524,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_boundary_chaos_levels(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story with exact boundary chaos levels."""
+        """
+        Tests that CSM's process_story method correctly handles chaos_level values at the exact boundaries of 0.0 and 1.0.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Boundary test",
             "audio_path": dummy_audio_file,
@@ -465,7 +547,9 @@ class TestCSM:
     
     @pytest.mark.asyncio
     async def test_csm_process_story_client_timeout(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when client operations timeout."""
+        """
+        Tests that CSM's process_story method handles client communication timeouts, either by handling the timeout gracefully or by propagating the asyncio.TimeoutError exception.
+        """
         csm_instance.narrator.process_narration.return_value = {
             "text": "Timeout test",
             "audio_path": dummy_audio_file,
@@ -493,11 +577,10 @@ class TestCSM:
 
 # Preserve original integration test for backward compatibility
 async def test_csm_process_story():
-    """Basic test for CSM process_story - Original integration test.
+    """
+    Runs an integration test for the CSM's process_story method with mocked dependencies.
     
-    This is the original integration test preserved for backward compatibility.
-    Requires dummy audio, and CharacterServer/ClientManager mocks or instances.
-    This is becoming more of an integration test.
+    This test creates a dummy audio file, mocks key methods of the CSM's components to provide predictable responses, and verifies that process_story executes end-to-end. It prints the resulting narration and character responses, restores original methods, shuts down the CSM, and cleans up the test audio file.
     """
     print("Testing CSM process_story (async)...")
 
@@ -515,30 +598,75 @@ async def test_csm_process_story():
     # For example, mock narrator.process_narration to return fixed text
     original_narrator_process = csm.narrator.process_narration
     async def mock_narrator_process(audio_filepath):
+        """
+        Simulates narrator processing by returning a mock narration result for the given audio file path.
+        
+        Parameters:
+            audio_filepath (str): Path to the audio file to be processed.
+        
+        Returns:
+            dict: A dictionary containing mock narration text, the provided audio file path, and the speaker name.
+        """
         return {"text": "This is a test narration from mock.", "audio_path": audio_filepath, "speaker": "Narrator"}
     csm.narrator.process_narration = mock_narrator_process
 
     # Mock CharacterServer response
     original_cs_gen_response = csm.character_server.generate_response
     async def mock_cs_gen_response(narration, other_texts, chaos_level=0.0):
+        """
+        Asynchronously returns a mock character server response for testing purposes.
+        
+        Parameters:
+            narration (str): The narration text to process.
+            other_texts (Any): Additional texts or context for the response.
+            chaos_level (float, optional): The chaos level influencing the response. Defaults to 0.0.
+        
+        Returns:
+            str: A fixed mock response string simulating an actor's reply.
+        """
         return "Actor1 says hello asynchronously!"
     csm.character_server.generate_response = mock_cs_gen_response
 
     # Mock ClientManager response
     original_cm_send_to_client = csm.client_manager.send_to_client
     async def mock_cm_send_to_client(client_actor_id, client_ip, client_port, narration, character_texts):
+        """
+        Asynchronously simulates sending narration and character texts to a client, returning a mock response string.
+        
+        Parameters:
+            client_actor_id: Identifier for the client actor.
+            client_ip: IP address of the client.
+            client_port: Port number of the client.
+            narration: Narration text to send.
+            character_texts: Character responses to send.
+        
+        Returns:
+            str: A mock response indicating the client actor sent a message.
+        """
         return f"{client_actor_id} says hi via async mock!"
     csm.client_manager.send_to_client = mock_cm_send_to_client
 
     # Mock get_clients_for_story_progression
     original_cm_get_clients = csm.client_manager.get_clients_for_story_progression
     def mock_cm_get_clients(): # This is called via to_thread, so sync mock is fine
+        """
+        Return a list containing a single mock client dictionary for testing purposes.
+        """
         return [{"Actor_id": "Actor_TestClient", "ip_address": "127.0.0.1", "client_port": 8001}]
     csm.client_manager.get_clients_for_story_progression = mock_cm_get_clients
 
     # Mock DB get_character for the test client
     original_db_get_char = csm.db.get_character
     def mock_db_get_char(Actor_id):
+        """
+        Return mock character data for a given actor ID.
+        
+        Parameters:
+            Actor_id (str): The identifier of the actor whose character data is requested.
+        
+        Returns:
+            dict or None: A dictionary containing character information if the actor ID matches a known test value, otherwise None.
+        """
         if Actor_id == "Actor1":
             return {"name": "ServerTestChar", "Actor_id": "Actor1"}
         if Actor_id == "Actor_TestClient":

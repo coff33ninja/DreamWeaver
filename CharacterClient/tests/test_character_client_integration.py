@@ -18,7 +18,12 @@ class TestCharacterClientIntegration:
     
     @pytest.fixture
     def character_client(self):
-        """Create CharacterClient instance for integration testing."""
+        """
+        Creates a CharacterClient instance configured with mocked API URL and key for integration testing.
+        
+        Returns:
+            CharacterClient: An instance of CharacterClient using test configuration values.
+        """
         with patch('character_client.Config') as mock_config_class:
             mock_config_instance = Mock()
             mock_config_instance.get.side_effect = lambda key, default=None: {
@@ -30,7 +35,11 @@ class TestCharacterClientIntegration:
             return CharacterClient()
     
     def test_full_character_lifecycle(self, character_client):
-        """Test complete character lifecycle: create, read, update, delete."""
+        """
+        Tests the full lifecycle of a character using the CharacterClient, including creation, retrieval, update, and deletion.
+        
+        Simulates API interactions by mocking HTTP requests and responses for each operation, and asserts that the client correctly handles and returns expected data throughout the lifecycle.
+        """
         character_data = {"name": "Integration Test Hero", "class": "Paladin"}
         
         with patch('requests.Session') as mock_session_class:
@@ -79,11 +88,20 @@ class TestCharacterClientIntegration:
             assert result is True
     
     def test_concurrent_requests_safety(self, character_client):
-        """Test thread safety with concurrent requests."""
+        """
+        Verifies that the CharacterClient handles concurrent character retrieval requests safely by launching multiple threads and ensuring all requests succeed without errors.
+        
+        This test mocks HTTP GET requests for character retrieval in 10 concurrent threads, collects the results, and asserts that all expected character IDs are returned with no errors.
+        """
         results = []
         errors = []
         
         def make_request(character_id):
+            """
+            Simulates a thread-safe character retrieval by mocking an HTTP GET request for a specific character ID.
+            
+            Appends the retrieved character data to the results list, or records any exceptions in the errors list.
+            """
             try:
                 with patch('requests.Session.get') as mock_get:
                     mock_response = Mock()
@@ -123,7 +141,11 @@ class TestCharacterClientIntegration:
         assert set(character_ids) == set(range(1, 11))
     
     def test_error_recovery_sequence(self, character_client):
-        """Test error recovery in a sequence of operations."""
+        """
+        Verifies that the client can recover from a failed request by succeeding on a subsequent retry.
+        
+        Simulates a network error on the first character retrieval attempt and a successful response on the second, asserting correct error handling and recovery.
+        """
         with patch('requests.Session.get') as mock_get:
             # First call fails, second succeeds
             mock_get.side_effect = [
@@ -144,7 +166,11 @@ class TestCharacterClientIntegration:
             assert result["name"] == "Test Character"
     
     def test_pagination_workflow(self, character_client):
-        """Test paginated character listing workflow."""
+        """
+        Test that the character client correctly handles paginated listing of characters across multiple pages.
+        
+        Simulates three sequential paginated API responses and verifies that all characters are retrieved with correct pagination metadata and ordering.
+        """
         with patch('requests.Session.get') as mock_get:
             # Mock first page
             page1_response = Mock()
@@ -199,7 +225,11 @@ class TestCharacterClientIntegration:
             assert character_ids == list(range(1, 13))
     
     def test_search_and_retrieve_workflow(self, character_client):
-        """Test search followed by character retrieval workflow."""
+        """
+        Test the workflow of searching for characters and retrieving detailed information for a selected result.
+        
+        Simulates a search query returning multiple characters, then retrieves and verifies detailed data for one of the found characters using mocked HTTP responses.
+        """
         search_results = [
             {"id": 1, "name": "Fire Warrior", "class": "Warrior"},
             {"id": 5, "name": "Ice Warrior", "class": "Warrior"}
@@ -240,7 +270,9 @@ class TestCharacterClientIntegration:
             assert "equipment" in detailed
     
     def test_bulk_operations_performance(self, character_client):
-        """Test performance characteristics of bulk operations."""
+        """
+        Tests that the character client can efficiently handle bulk listing operations by retrieving 100 characters in a single request and completing the operation in under one second.
+        """
         # Create test data for 100 characters
         bulk_characters = [
             {"id": i, "name": f"Bulk Character {i}", "class": "Test"}
@@ -271,7 +303,11 @@ class TestCharacterClientIntegration:
             assert response_time < 1.0
     
     def test_error_handling_chain(self, character_client):
-        """Test handling of various errors in a chain of operations."""
+        """
+        Test that CharacterClient methods raise the correct exceptions when HTTP errors occur during create, read, update, and delete operations.
+        
+        Simulates a sequence of HTTP errors for each CRUD operation and asserts that the corresponding exception is raised by the client method.
+        """
         with patch('requests.Session') as mock_session_class:
             mock_session = Mock()
             mock_session_class.return_value = mock_session

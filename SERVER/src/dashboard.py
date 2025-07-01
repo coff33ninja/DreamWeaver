@@ -9,6 +9,9 @@ router = APIRouter()
 
 # Dependency to get a database instance
 def get_db():
+    """
+    Yields a database connection for use in request handlers, ensuring it is properly closed after use.
+    """
     db = Database(DB_PATH)
     try:
         yield db
@@ -18,9 +21,12 @@ def get_db():
 @router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
 async def get_system_status(db: Database = Depends(get_db)):
     """
-    API endpoint to provide server performance and detailed client status data.
-    Client statuses now include: 'Registered', 'Offline', 'Online_Heartbeat',
-    'Online_Responsive', 'Error_API', 'Error_Unreachable', 'Deactivated'.
+    Returns server performance metrics and a list of detailed client statuses for the monitoring dashboard.
+    
+    The response includes current CPU and memory usage statistics, as well as a list of clients with their actor ID, IP address and port, last seen time (formatted in UTC), and status. Client statuses may include values such as 'Registered', 'Offline', 'Online_Heartbeat', 'Online_Responsive', 'Error_API', 'Error_Unreachable', and 'Deactivated'.
+    
+    Returns:
+        dict: A dictionary with 'server_performance' (CPU and memory usage) and 'client_statuses' (list of client information).
     """
     # Server Performance
     cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
@@ -71,8 +77,9 @@ async def get_system_status(db: Database = Depends(get_db)):
 @router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
 async def get_dashboard_page():
     """
-    Serves the main HTML page for the monitoring dashboard.
-    The page will dynamically fetch status data using JavaScript.
+    Returns the main HTML page for the Hive monitoring dashboard, which includes embedded JavaScript and styling to dynamically display server performance and client statuses.
+    
+    The page fetches real-time status data from the backend and updates the dashboard interface, providing visual feedback for various client states and handling loading or error conditions.
     """
     # Status CSS classes will map to the new DB statuses
     # e.g., status-online-responsive, status-online-heartbeat, status-error-api, etc.

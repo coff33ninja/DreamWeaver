@@ -9,6 +9,11 @@ from .config import DB_PATH, ADAPTERS_PATH, BASE_CHECKPOINT_PATH, BASE_DATA_PATH
 
 class CheckpointManager:
     def __init__(self, server_model_name="TinyLLaMA", server_Actor_id="Actor1"):
+        """
+        Initialize a CheckpointManager instance with configurable server model and actor identifiers.
+        
+        Creates necessary directories for checkpoint storage and the server's actor-specific adapter path if they do not already exist.
+        """
         self.server_model_name = server_model_name
         self.server_Actor_id = server_Actor_id
         self.server_adapter_specific_path = os.path.join(ADAPTERS_PATH, self.server_model_name, self.server_Actor_id)
@@ -18,14 +23,27 @@ class CheckpointManager:
 
 
     def list_checkpoints(self):
-        """Returns a list of available checkpoint names, sorted by most recent first."""
+        """
+        Return a list of available checkpoint directory names, sorted from most recent to oldest.
+        
+        Returns:
+            list: Sorted list of checkpoint directory names, or an empty list if the checkpoint path does not exist.
+        """
         try:
             return sorted([d for d in os.listdir(BASE_CHECKPOINT_PATH) if os.path.isdir(os.path.join(BASE_CHECKPOINT_PATH, d))], reverse=True)
         except FileNotFoundError:
             return []
 
     def save_checkpoint(self, name_prefix=""):
-        """Saves the current state (DB and model adapters) to a new checkpoint."""
+        """
+        Create a new checkpoint by saving the current database and model adapters to a timestamped directory.
+        
+        Parameters:
+            name_prefix (str, optional): Optional prefix for the checkpoint directory name.
+        
+        Returns:
+            tuple: A message indicating success or error, and the updated list of available checkpoints.
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         checkpoint_name = f"{name_prefix}_{timestamp}" if name_prefix else timestamp
         checkpoint_dir = os.path.join(BASE_CHECKPOINT_PATH, checkpoint_name)
@@ -48,7 +66,15 @@ class CheckpointManager:
             return f"Error saving checkpoint: {e}", self.list_checkpoints()
 
     def load_checkpoint(self, checkpoint_name):
-        """Restores the state from a given checkpoint."""
+        """
+        Restore the database and actor-specific adapters from a specified checkpoint.
+        
+        Parameters:
+            checkpoint_name (str): The name of the checkpoint directory to load.
+        
+        Returns:
+            str: A message indicating success and instructing to restart the application, or an error message if loading fails.
+        """
         checkpoint_dir = os.path.join(BASE_CHECKPOINT_PATH, checkpoint_name)
         if not os.path.isdir(checkpoint_dir):
             return f"Error: Checkpoint '{checkpoint_name}' not found."
@@ -76,7 +102,15 @@ class CheckpointManager:
             return f"Error loading checkpoint: {e}"
 
     def export_story(self, export_format="text"):
-        """Exports the story history to a file (text or JSON)."""
+        """
+        Export the story history from the database to a file in either text or JSON format.
+        
+        Parameters:
+            export_format (str): The format to export the story history in. Must be either "text" or "json".
+        
+        Returns:
+            tuple: A tuple containing a status message and the export filename if successful, or an error message and None if unsuccessful.
+        """
         from .database import Database # Local import to avoid circular dependency
         db = Database(DB_PATH) # Use DB_PATH from config
         history = db.get_story_history()

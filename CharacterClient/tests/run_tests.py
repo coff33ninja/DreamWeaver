@@ -1,36 +1,38 @@
 #!/usr/bin/env python3
 """
-Test runner script for CharacterClient tests.
-Usage: python run_tests.py [options]
+Test runner script for LLM Engine tests.
+Run with: python run_tests.py
 """
 
 import sys
-import pytest
+import subprocess
 import os
 
-def main():
-    """Run the test suite with appropriate configuration."""
-    # Change to the test directory
+def run_tests():
+    """
+    Runs the LLM Engine test suite using pytest with coverage and reporting options.
+    
+    Returns:
+        int: The exit code from the pytest process, or 1 if an error occurs during execution.
+    """
     test_dir = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(test_dir)
     
-    # Default pytest arguments
-    args = [
-        '-v',  # Verbose output
-        '--tb=short',  # Short traceback format
-        '--strict-markers',  # Strict marker checking
-        '--disable-warnings',  # Disable warnings
-        'test_character_client.py'  # Specific test file
-    ]
-    
-    # Add any command line arguments
-    args.extend(sys.argv[1:])
-    
-    # Run pytest
-    exit_code = pytest.main(args)
-    
-    print(f"\nTests completed with exit code: {exit_code}")
-    sys.exit(exit_code)
+    try:
+        result = subprocess.run([
+            sys.executable, "-m", "pytest", 
+            os.path.join(test_dir, "test_llm_engine.py"),
+            "-v", 
+            "--tb=short",
+            "--durations=10",
+            "--cov=CharacterClient.src.llm_engine",
+            "--cov-report=term-missing"
+        ], cwd=os.path.dirname(test_dir))
+        return result.returncode
+    except Exception as e:
+        print(f"Error running tests: {e}")
+        return 1
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    exit_code = run_tests()
+    print(f"\nTest run completed with exit code: {exit_code}")
+    sys.exit(exit_code)

@@ -1,57 +1,53 @@
 import pytest
-import sys
-import os
-
-# Add the src directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import asyncio
+from unittest.mock import Mock, patch, AsyncMock
 
 @pytest.fixture(scope="session")
-def test_api_key():
-    """Session-scoped fixture for test API key."""
-    return "test_api_key_12345"
-
-@pytest.fixture(scope="session")
-def test_base_url():
-    """Session-scoped fixture for test base URL."""
-    return "https://api.test-character.com"
+def event_loop():
+    """
+    Creates and yields a default asyncio event loop for the entire pytest session.
+    
+    Ensures that an event loop is available for asynchronous tests and properly closes it after the session ends.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
 
 @pytest.fixture
-def mock_character_data():
-    """Fixture providing mock character data for testing."""
+def mock_api_response():
+    """
+    Return a mock API response dictionary simulating a typical generation result.
+    
+    Returns:
+        dict: A dictionary containing mock choices and usage statistics for API response testing.
+    """
     return {
-        "id": 42,
-        "name": "Mock Character",
-        "level": 25,
-        "class": "Adventurer",
-        "health": 150,
-        "mana": 75,
-        "experience": 12500,
-        "equipment": {
-            "weapon": "Magic Sword",
-            "armor": "Plate Mail",
-            "accessory": "Ring of Power"
-        },
-        "stats": {
-            "strength": 16,
-            "dexterity": 14,
-            "intelligence": 12,
-            "constitution": 15,
-            "wisdom": 13,
-            "charisma": 11
-        },
-        "skills": ["Combat", "Magic", "Stealth"],
-        "created_at": "2023-01-01T00:00:00Z",
-        "updated_at": "2023-01-15T12:30:00Z"
+        'choices': [{'text': 'Mock response', 'finish_reason': 'stop'}],
+        'usage': {'total_tokens': 10, 'prompt_tokens': 5, 'completion_tokens': 5}
     }
 
 @pytest.fixture
-def mock_characters_list(mock_character_data):
-    """Fixture providing a list of mock characters for testing."""
-    characters = []
-    for i in range(5):
-        character = mock_character_data.copy()
-        character["id"] = i + 1
-        character["name"] = f"Mock Character {i + 1}"
-        character["level"] = 10 + (i * 5)
-        characters.append(character)
-    return characters
+def mock_chat_response():
+    """
+    Return a mock dictionary simulating a typical chat API response, including message content, finish reason, and token usage statistics.
+    """
+    return {
+        'choices': [{'message': {'content': 'Mock chat response'}, 'finish_reason': 'stop'}],
+        'usage': {'total_tokens': 12, 'prompt_tokens': 6, 'completion_tokens': 6}
+    }
+
+@pytest.fixture
+def mock_aiohttp_session():
+    """
+    Yields an asynchronous mock of `aiohttp.ClientSession` for use in tests.
+    
+    This fixture allows simulation of HTTP client behavior without making real network requests.
+    """
+    with patch('aiohttp.ClientSession') as mock_session:
+        mock_instance = AsyncMock()
+        mock_session.return_value = mock_instance
+        yield mock_instance

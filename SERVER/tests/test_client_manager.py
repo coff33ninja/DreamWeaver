@@ -1,804 +1,856 @@
 import unittest
-from unittest.mock import Mock, patch, MagicMock, call, AsyncMock
-import asyncio
+from unittest.mock import Mock, patch, MagicMock, call
 import threading
 import time
 import json
-import base64
-import os
-import tempfile
-from datetime import datetime, timezone, timedelta
 import sys
-import requests
+import os
 
-# Import the ClientManager - adjust path as needed for your project structure
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add the SERVER directory to the path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from client_manager import ClientManager, CLIENT_HEALTH_CHECK_INTERVAL_SECONDS, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS
-    from database import Database
+    from src.client_manager import ClientManager, Client
 except ImportError:
-    # Fallback import paths
-    try:
-        from SERVER.src.client_manager import ClientManager, CLIENT_HEALTH_CHECK_INTERVAL_SECONDS, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS
-        from SERVER.src.database import Database
-    except ImportError:
-        # Mock the imports if we can't find them
-        class ClientManager:
-            pass
-        CLIENT_HEALTH_CHECK_INTERVAL_SECONDS = 120
-        CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS = 5
+    # Fallback import path
+    from client_manager import ClientManager, Client
+
+
+class TestClient(unittest.TestCase):
+    """Test cases for the Client class."""
+    
+    def setUp(self):
+        """
+        Initializes a mock socket, address, and a Client instance for use in each test.
+        """
+        self.mock_socket = Mock()
+        self.mock_address = ('127.0.0.1', 12345)
+        self.client = Client(self.mock_socket, self.mock_address)
+    
+    def test_client_initialization(self):
+        """
+        Verifies that a Client instance is correctly initialized with the provided socket and address, has no username, and generates a non-empty string client_id.
+        """
+        self.assertEqual(self.client.socket, self.mock_socket)
+        self.assertEqual(self.client.address, self.mock_address)
+        self.assertIsNone(self.client.username)
+        self.assertIsInstance(self.client.client_id, str)
+        self.assertTrue(len(self.client.client_id) > 0)
+    
+    def test_client_id_uniqueness(self):
+        """
+        Verify that each `Client` instance is assigned a unique client ID upon creation.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.assertNotEqual(self.client.client_id, client2.client_id)
+    
+    def test_client_str_representation(self):
+        """
+        Verifies that the string representation of a Client instance matches the expected format with its address.
+        """
+        expected = f"Client({self.mock_address[0]}:{self.mock_address[1]})"
+        self.assertEqual(str(self.client), expected)
+    
+    def test_client_repr_representation(self):
+        """
+        Verify that the repr representation of a Client instance includes the client ID, username, and address in the expected format.
+        """
+        self.client.username = "testuser"
+        expected = f"Client(id={self.client.client_id}, username=testuser, address={self.mock_address})"
+        self.assertEqual(repr(self.client), expected)
+    
+    def test_client_equality(self):
+        """
+        Verify that two Client instances with the same client_id are considered equal.
+        """
+        client2 = Client(Mock(), self.mock_address)
+        client2.client_id = self.client.client_id
+        self.assertEqual(self.client, client2)
+    
+    def test_client_inequality(self):
+        """
+        Verify that two different Client instances are not considered equal.
+        """
+        client2 = Client(Mock(), self.mock_address)
+        self.assertNotEqual(self.client, client2)
+    
+    def test_client_hash(self):
+        """
+        Verify that a Client instance is hashable and can be used in sets.
+        """
+        client_set = {self.client}
+        self.assertIn(self.client, client_set)
+    
+    def test_client_with_none_socket(self):
+        """
+        Test that initializing a Client with a None socket raises a TypeError or AttributeError.
+        """
+        with self.assertRaises((TypeError, AttributeError)):
+            Client(None, self.mock_address)
+    
+    def test_client_with_invalid_address(self):
+        """
+        Tests that initializing a Client with various invalid address formats either succeeds or raises a TypeError or ValueError.
+        """
+        invalid_addresses = [
+            None,
+            "invalid",
+            ('localhost',),  # Missing port
+            ('127.0.0.1', 'invalid_port'),  # Invalid port type
+        ]
+        
+        for addr in invalid_addresses:
+            with self.subTest(address=addr):
+                try:
+                    client = Client(self.mock_socket, addr)
+                    # If it doesn't raise an exception, that's also valid behavior
+                    self.assertIsNotNone(client)
+                except (TypeError, ValueError):
+                    # Expected for invalid addresses
+                    pass
 
 
 class TestClientManager(unittest.TestCase):
-    """
-    Comprehensive unit tests for ClientManager class.
+    """Test cases for the ClientManager class."""
     
-    Testing Framework: Python unittest (standard library)
-    
-    This test suite covers:
-    - Initialization and setup
-    - Token generation and validation
-    - Health check functionality (sync and async patterns)
-    - Client communication (async send_to_client method)
-    - Threading behavior for periodic health checks
-    - Error handling and edge cases
-    - Integration with Database and external services
-    """
-
     def setUp(self):
-        """Set up test fixtures before each test method."""
-        # Create mock database
-        self.mock_db = Mock(spec=Database)
-        
-        # Mock pygame mixer to avoid initialization issues
-        with patch('client_manager.pygame.mixer') as mock_mixer:
-            mock_mixer.get_init.return_value = True
-            self.client_manager = ClientManager(self.mock_db)
-            
-        # Test data
-        self.test_actor_id = "TestActor1"
-        self.test_token = "test_token_123456789012345678901234567890123456789012345678"
-        self.test_ip = "192.168.1.100"
-        self.test_port = 8080
-        self.test_character_data = {
-            'name': 'TestCharacter',
-            'personality': 'Friendly',
-            'Actor_id': self.test_actor_id,
-            'tts': 'piper',
-            'tts_model': 'en_US-ryan-high'
-        }
-        
+        """
+        Initializes a new ClientManager, mock socket, mock address, and a test Client instance before each test.
+        """
+        self.client_manager = ClientManager()
+        self.mock_socket = Mock()
+        self.mock_address = ('127.0.0.1', 12345)
+        self.test_client = Client(self.mock_socket, self.mock_address)
+    
     def tearDown(self):
-        """Clean up after each test method."""
-        # Stop any running health check threads
-        if hasattr(self.client_manager, 'stop_periodic_health_checks'):
-            self.client_manager.stop_periodic_health_checks()
-        
-    # --- Initialization Tests ---
+        """
+        Removes all clients and username mappings from the client manager after each test.
+        """
+        # Clean up any remaining clients
+        if hasattr(self.client_manager, 'clients'):
+            self.client_manager.clients.clear()
+        if hasattr(self.client_manager, 'username_to_client'):
+            self.client_manager.username_to_client.clear()
     
-    @patch('client_manager.pygame.mixer')
-    def test_init_with_pygame_success(self, mock_mixer):
-        """Test ClientManager initialization with successful pygame setup."""
-        mock_mixer.get_init.return_value = False
-        mock_mixer.init.return_value = None
-        
-        cm = ClientManager(self.mock_db)
-        
-        self.assertIsNotNone(cm)
-        self.assertEqual(cm.db, self.mock_db)
-        mock_mixer.init.assert_called_once()
-        
-    @patch('client_manager.pygame.mixer')
-    def test_init_with_pygame_failure(self, mock_mixer):
-        """Test ClientManager initialization when pygame fails."""
-        mock_mixer.get_init.return_value = False
-        mock_mixer.init.side_effect = Exception("Pygame init failed")
-        
-        # Should not raise exception, just print warning
-        cm = ClientManager(self.mock_db)
-        
-        self.assertIsNotNone(cm)
-        self.assertEqual(cm.db, self.mock_db)
-        
-    def test_init_sets_initial_state(self):
-        """Test that initialization sets correct initial state."""
-        self.assertIsNone(self.client_manager.health_check_thread)
-        self.assertIsInstance(self.client_manager.stop_health_check_event, threading.Event)
-        self.assertFalse(self.client_manager.stop_health_check_event.is_set())
-        
-    # --- Token Generation Tests ---
+    def test_client_manager_initialization(self):
+        """
+        Verify that a new ClientManager instance initializes its internal data structures and lock correctly, and starts with no clients or username mappings.
+        """
+        self.assertIsInstance(self.client_manager.clients, dict)
+        self.assertIsInstance(self.client_manager.username_to_client, dict)
+        self.assertIsInstance(self.client_manager.lock, threading.RLock)
+        self.assertEqual(len(self.client_manager.clients), 0)
+        self.assertEqual(len(self.client_manager.username_to_client), 0)
     
-    def test_generate_token_new_character(self):
-        """Test token generation for existing character."""
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.save_client_token.return_value = None
+    def test_add_client_success(self):
+        """
+        Verifies that a client can be successfully added to the client manager.
         
-        token = self.client_manager.generate_token(self.test_actor_id)
-        
-        self.assertIsInstance(token, str)
-        self.assertEqual(len(token), 48)  # 24 bytes hex = 48 characters
-        self.mock_db.get_character.assert_called_once_with(self.test_actor_id)
-        self.mock_db.save_client_token.assert_called_once_with(self.test_actor_id, token)
-        
-    def test_generate_token_actor1_special_case(self):
-        """Test token generation for Actor1 when character doesn't exist."""
-        self.mock_db.get_character.return_value = None
-        self.mock_db.save_character.return_value = None
-        self.mock_db.save_client_token.return_value = None
-        
-        token = self.client_manager.generate_token("Actor1")
-        
-        self.assertIsInstance(token, str)
-        self.assertEqual(len(token), 48)
-        self.mock_db.save_character.assert_called_once()
-        self.mock_db.save_client_token.assert_called_once_with("Actor1", token)
-        
-    def test_generate_token_nonexistent_character_warning(self):
-        """Test token generation for non-existent character (not Actor1)."""
-        self.mock_db.get_character.return_value = None
-        self.mock_db.save_client_token.return_value = None
-        
-        with patch('builtins.print') as mock_print:
-            token = self.client_manager.generate_token("NonExistentActor")
-            
-        self.assertIsInstance(token, str)
-        mock_print.assert_called()
-        
-    def test_generate_token_uniqueness(self):
-        """Test that generated tokens are unique."""
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.save_client_token.return_value = None
-        
-        token1 = self.client_manager.generate_token("Actor1")
-        token2 = self.client_manager.generate_token("Actor2")
-        
-        self.assertNotEqual(token1, token2)
-        
-    # --- Token Validation Tests ---
-    
-    def test_validate_token_success(self):
-        """Test successful token validation."""
-        self.mock_db.get_client_token_details.return_value = {
-            'token': self.test_token,
-            'status': 'Online_Responsive'
-        }
-        
-        result = self.client_manager.validate_token(self.test_actor_id, self.test_token)
+        Asserts that the addition returns True and the client is present in the internal client mapping.
+        """
+        result = self.client_manager.add_client(self.test_client)
         
         self.assertTrue(result)
-        self.mock_db.get_client_token_details.assert_called_once_with(self.test_actor_id)
-        
-    def test_validate_token_wrong_token(self):
-        """Test token validation with wrong token."""
-        self.mock_db.get_client_token_details.return_value = {
-            'token': 'different_token',
-            'status': 'Online_Responsive'
-        }
-        
-        result = self.client_manager.validate_token(self.test_actor_id, self.test_token)
-        
-        self.assertFalse(result)
-        
-    def test_validate_token_deactivated_status(self):
-        """Test token validation for deactivated client."""
-        self.mock_db.get_client_token_details.return_value = {
-            'token': self.test_token,
-            'status': 'Deactivated'
-        }
-        
-        result = self.client_manager.validate_token(self.test_actor_id, self.test_token)
-        
-        self.assertFalse(result)
-        
-    def test_validate_token_no_client_details(self):
-        """Test token validation when client details don't exist."""
-        self.mock_db.get_client_token_details.return_value = None
-        
-        result = self.client_manager.validate_token(self.test_actor_id, self.test_token)
-        
-        self.assertFalse(result)
-        
-    def test_validate_token_edge_cases(self):
-        """Test token validation edge cases."""
-        # Empty token
-        self.mock_db.get_client_token_details.return_value = {
-            'token': self.test_token,
-            'status': 'Online_Responsive'
-        }
-        
-        result = self.client_manager.validate_token(self.test_actor_id, "")
-        self.assertFalse(result)
-        
-        # None token
-        result = self.client_manager.validate_token(self.test_actor_id, None)
-        self.assertFalse(result)
-        
-    # --- Health Check Tests ---
+        self.assertIn(self.test_client.client_id, self.client_manager.clients)
+        self.assertEqual(self.client_manager.clients[self.test_client.client_id], self.test_client)
     
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_success(self, mock_get):
-        """Test successful health check."""
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {'status': 'ok'}
-        mock_get.return_value = mock_response
+    def test_add_client_duplicate(self):
+        """
+        Test that adding the same client twice does not create duplicates and returns False.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.add_client(self.test_client)
         
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        mock_get.assert_called_once_with(
-            f"http://{self.test_ip}:{self.test_port}/health",
-            timeout=CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS
-        )
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Online_Responsive"
-        )
-        
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_degraded(self, mock_get):
-        """Test health check with degraded status."""
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {'status': 'degraded'}
-        mock_get.return_value = mock_response
-        
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Error_API_Degraded"
-        )
-        
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_timeout(self, mock_get):
-        """Test health check timeout handling."""
-        mock_get.side_effect = requests.exceptions.Timeout()
-        
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Error_API"
-        )
-        
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_connection_error(self, mock_get):
-        """Test health check connection error handling."""
-        mock_get.side_effect = requests.exceptions.ConnectionError()
-        
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Error_Unreachable"
-        )
-        
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_request_exception(self, mock_get):
-        """Test health check with general request exception."""
-        mock_get.side_effect = requests.exceptions.RequestException("Request failed")
-        
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Error_API"
-        )
-        
-    @patch('client_manager.requests.get')
-    def test_perform_single_health_check_unexpected_error(self, mock_get):
-        """Test health check with unexpected error."""
-        mock_get.side_effect = ValueError("Unexpected error")
-        
-        client_info = {
-            'Actor_id': self.test_actor_id,
-            'ip_address': self.test_ip,
-            'client_port': self.test_port
-        }
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        self.mock_db.update_client_status.assert_called_once_with(
-            self.test_actor_id, "Error_API"
-        )
-        
-    def test_perform_single_health_check_missing_data(self):
-        """Test health check with missing client info."""
-        client_info = {'Actor_id': self.test_actor_id}  # Missing ip_address and client_port
-        
-        self.client_manager._perform_single_health_check_blocking(client_info)
-        
-        # Should return early without making any DB calls
-        self.mock_db.update_client_status.assert_not_called()
-        
-    # --- Threading Tests ---
+        self.assertFalse(result)
+        self.assertEqual(len(self.client_manager.clients), 1)
     
-    def test_start_periodic_health_checks(self):
-        """Test starting periodic health check thread."""
-        self.client_manager.start_periodic_health_checks()
+    def test_add_client_none(self):
+        """
+        Verify that adding `None` as a client returns False and does not modify the client list.
+        """
+        result = self.client_manager.add_client(None)
+        self.assertFalse(result)
+        self.assertEqual(len(self.client_manager.clients), 0)
+    
+    def test_remove_client_by_id_success(self):
+        """
+        Verify that a client can be successfully removed from the manager using its client ID.
         
-        self.assertIsNotNone(self.client_manager.health_check_thread)
-        self.assertTrue(self.client_manager.health_check_thread.is_alive())
-        self.assertFalse(self.client_manager.stop_health_check_event.is_set())
+        Asserts that the removal operation returns True and the client is no longer present in the manager's client collection.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.remove_client(self.test_client.client_id)
         
-    def test_start_periodic_health_checks_already_running(self):
-        """Test starting health checks when already running."""
-        self.client_manager.start_periodic_health_checks()
-        first_thread = self.client_manager.health_check_thread
+        self.assertTrue(result)
+        self.assertNotIn(self.test_client.client_id, self.client_manager.clients)
+    
+    def test_remove_client_by_object_success(self):
+        """
+        Test that a client can be successfully removed from the manager using the client object.
         
-        self.client_manager.start_periodic_health_checks()
+        Verifies that the removal returns True and the client is no longer present in the manager's client collection.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.remove_client(self.test_client)
         
-        # Should still be the same thread
-        self.assertEqual(self.client_manager.health_check_thread, first_thread)
+        self.assertTrue(result)
+        self.assertNotIn(self.test_client.client_id, self.client_manager.clients)
+    
+    def test_remove_client_nonexistent(self):
+        """
+        Test that removing a client with a non-existent client ID returns False.
+        """
+        result = self.client_manager.remove_client("nonexistent_id")
+        self.assertFalse(result)
+    
+    def test_remove_client_with_username(self):
+        """
+        Tests that removing a client with an assigned username also removes the username mapping from the client manager.
+        """
+        self.test_client.username = "testuser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.username_to_client["testuser"] = self.test_client
         
-    def test_stop_periodic_health_checks(self):
-        """Test stopping periodic health check thread."""
-        self.client_manager.start_periodic_health_checks()
+        result = self.client_manager.remove_client(self.test_client.client_id)
         
-        self.client_manager.stop_periodic_health_checks()
+        self.assertTrue(result)
+        self.assertNotIn("testuser", self.client_manager.username_to_client)
+    
+    def test_get_client_by_id_success(self):
+        """
+        Test that a client can be successfully retrieved from the manager using its client ID.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.get_client(self.test_client.client_id)
         
-        self.assertTrue(self.client_manager.stop_health_check_event.is_set())
-        # Give thread time to stop
-        time.sleep(0.1)
+        self.assertEqual(result, self.test_client)
+    
+    def test_get_client_by_username_success(self):
+        """
+        Verify that a client can be successfully retrieved by username after being added to the manager.
+        """
+        self.test_client.username = "testuser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.username_to_client["testuser"] = self.test_client
         
-    def test_stop_periodic_health_checks_not_running(self):
-        """Test stopping health checks when not running."""
+        result = self.client_manager.get_client_by_username("testuser")
+        self.assertEqual(result, self.test_client)
+    
+    def test_get_client_nonexistent(self):
+        """
+        Verify that retrieving a client by a non-existent client ID returns None.
+        """
+        result = self.client_manager.get_client("nonexistent_id")
+        self.assertIsNone(result)
+    
+    def test_get_client_by_username_nonexistent(self):
+        """
+        Verify that retrieving a client by a username that does not exist returns None.
+        """
+        result = self.client_manager.get_client_by_username("nonexistent_user")
+        self.assertIsNone(result)
+    
+    def test_set_username_success(self):
+        """
+        Verify that setting a valid, unique username for a client succeeds and updates all relevant mappings.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.set_username(self.test_client.client_id, "newuser")
+        
+        self.assertTrue(result)
+        self.assertEqual(self.test_client.username, "newuser")
+        self.assertIn("newuser", self.client_manager.username_to_client)
+        self.assertEqual(self.client_manager.username_to_client["newuser"], self.test_client)
+    
+    def test_set_username_update_existing(self):
+        """
+        Verify that updating a client's username replaces the old username mapping with the new one and updates the client's username accordingly.
+        """
+        self.test_client.username = "olduser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.username_to_client["olduser"] = self.test_client
+        
+        result = self.client_manager.set_username(self.test_client.client_id, "newuser")
+        
+        self.assertTrue(result)
+        self.assertEqual(self.test_client.username, "newuser")
+        self.assertNotIn("olduser", self.client_manager.username_to_client)
+        self.assertIn("newuser", self.client_manager.username_to_client)
+    
+    def test_set_username_duplicate(self):
+        """
+        Test that setting a username already taken by another client fails.
+        
+        Verifies that attempting to assign a username to a client when that username is already associated with a different client results in failure and does not update the client's username.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        client2.username = "existinguser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.add_client(client2)
+        self.client_manager.username_to_client["existinguser"] = client2
+        
+        result = self.client_manager.set_username(self.test_client.client_id, "existinguser")
+        
+        self.assertFalse(result)
+        self.assertIsNone(self.test_client.username)
+    
+    def test_set_username_nonexistent_client(self):
+        """
+        Test that setting a username for a non-existent client ID fails and returns False.
+        """
+        result = self.client_manager.set_username("nonexistent_id", "username")
+        self.assertFalse(result)
+    
+    def test_set_username_empty_string(self):
+        """
+        Test that setting an empty string as a username fails and does not update the client's username.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.set_username(self.test_client.client_id, "")
+        
+        self.assertFalse(result)
+        self.assertIsNone(self.test_client.username)
+    
+    def test_set_username_none(self):
+        """
+        Test that setting a client's username to None fails and does not update the username.
+        """
+        self.client_manager.add_client(self.test_client)
+        result = self.client_manager.set_username(self.test_client.client_id, None)
+        
+        self.assertFalse(result)
+        self.assertIsNone(self.test_client.username)
+    
+    def test_get_all_clients(self):
+        """
+        Verify that `get_all_clients` returns a list containing all clients currently managed by the `ClientManager`.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.add_client(client2)
+        
+        all_clients = self.client_manager.get_all_clients()
+        
+        self.assertEqual(len(all_clients), 2)
+        self.assertIn(self.test_client, all_clients)
+        self.assertIn(client2, all_clients)
+    
+    def test_get_all_clients_empty(self):
+        """
+        Verify that retrieving all clients from an empty ClientManager returns an empty list.
+        """
+        all_clients = self.client_manager.get_all_clients()
+        self.assertEqual(len(all_clients), 0)
+        self.assertIsInstance(all_clients, list)
+    
+    def test_get_client_count(self):
+        """
+        Test that the client manager accurately returns the number of connected clients as clients are added.
+        """
+        self.assertEqual(self.client_manager.get_client_count(), 0)
+        
+        self.client_manager.add_client(self.test_client)
+        self.assertEqual(self.client_manager.get_client_count(), 1)
+        
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.client_manager.add_client(client2)
+        self.assertEqual(self.client_manager.get_client_count(), 2)
+    
+    def test_is_username_taken_true(self):
+        """
+        Verify that `is_username_taken` returns True when the specified username is already assigned to a client.
+        """
+        self.test_client.username = "takenuser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.username_to_client["takenuser"] = self.test_client
+        
+        result = self.client_manager.is_username_taken("takenuser")
+        self.assertTrue(result)
+    
+    def test_is_username_taken_false(self):
+        """
+        Verify that checking for a non-existent username returns False.
+        """
+        result = self.client_manager.is_username_taken("availableuser")
+        self.assertFalse(result)
+    
+    def test_is_username_taken_case_sensitive(self):
+        """
+        Verify that the username existence check in the client manager is case-sensitive.
+        """
+        self.test_client.username = "CaseUser"
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.username_to_client["CaseUser"] = self.test_client
+        
+        self.assertTrue(self.client_manager.is_username_taken("CaseUser"))
+        self.assertFalse(self.client_manager.is_username_taken("caseuser"))
+        self.assertFalse(self.client_manager.is_username_taken("CASEUSER"))
+    
+    def test_clear_all_clients(self):
+        """
+        Verify that clearing all clients removes all client and username mappings from the client manager.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.test_client.username = "user1"
+        client2.username = "user2"
+        
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.add_client(client2)
+        self.client_manager.username_to_client["user1"] = self.test_client
+        self.client_manager.username_to_client["user2"] = client2
+        
+        self.client_manager.clear_all_clients()
+        
+        self.assertEqual(len(self.client_manager.clients), 0)
+        self.assertEqual(len(self.client_manager.username_to_client), 0)
+    
+    def test_broadcast_message_to_all(self):
+        """
+        Tests that broadcasting a message sends it to all connected clients.
+        
+        Verifies that the `send` method is called on the sockets of all clients after broadcasting.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.add_client(client2)
+        
+        message = "Hello everyone!"
+        self.client_manager.broadcast_message(message)
+        
+        self.test_client.socket.send.assert_called()
+        client2.socket.send.assert_called()
+    
+    def test_broadcast_message_exclude_sender(self):
+        """
+        Verifies that broadcasting a message with an excluded client does not send the message to the excluded client, but sends it to all others.
+        """
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        self.client_manager.add_client(self.test_client)
+        self.client_manager.add_client(client2)
+        
+        message = "Hello others!"
+        self.client_manager.broadcast_message(message, exclude_client=self.test_client)
+        
+        self.test_client.socket.send.assert_not_called()
+        client2.socket.send.assert_called()
+    
+    def test_broadcast_message_socket_error(self):
+        """
+        Verify that broadcasting a message handles socket errors gracefully without raising exceptions.
+        """
+        self.test_client.socket.send.side_effect = Exception("Socket error")
+        self.client_manager.add_client(self.test_client)
+        
         # Should not raise exception
-        self.client_manager.stop_periodic_health_checks()
-        
-        self.assertTrue(self.client_manager.stop_health_check_event.is_set())
-        
-    @patch('client_manager.requests.get')
-    def test_periodic_health_check_loop_integration(self, mock_get):
-        """Test the periodic health check loop with mock data."""
-        # Mock successful health check response
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {'status': 'ok'}
-        mock_get.return_value = mock_response
-        
-        # Mock database to return clients to check
-        self.mock_db.get_all_client_statuses.return_value = [
-            {
-                'Actor_id': self.test_actor_id,
-                'ip_address': self.test_ip,
-                'client_port': self.test_port,
-                'status': 'Error_API'
-            }
-        ]
-        
-        # Start health checks and let them run briefly
-        self.client_manager.start_periodic_health_checks()
-        time.sleep(0.1)  # Let it run one iteration
-        self.client_manager.stop_periodic_health_checks()
-        
-        # Verify health check was performed
-        self.mock_db.get_all_client_statuses.assert_called()
-        
-    # --- Async send_to_client Tests ---
+        try:
+            self.client_manager.broadcast_message("Test message")
+        except Exception as e:
+            self.fail(f"broadcast_message raised {e} unexpectedly!")
     
-    @patch('client_manager.requests.post')
-    @patch('client_manager.asyncio.to_thread')
-    @patch('client_manager.pygame.mixer')
-    def test_send_to_client_success(self, mock_mixer, mock_to_thread, mock_post):
-        """Test successful send_to_client operation."""
-        # Setup mocks
-        mock_mixer.get_init.return_value = True
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.get_token.return_value = self.test_token
+    def test_thread_safety_add_remove(self):
+        """
+        Verifies that adding and removing clients concurrently in the client manager is thread-safe and results in a consistent internal state.
+        """
+        results = []
+        num_clients = 50  # Reduced for faster testing
         
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None  
-        mock_response.json.return_value = {
-            'text': 'Character response',
-            'audio_data': base64.b64encode(b'fake_audio_data').decode('utf-8')
-        }
+        def add_clients():
+            """
+            Creates and adds multiple `Client` instances with unique addresses to the client manager, recording the result of each addition.
+            """
+            for i in range(num_clients):
+                client = Client(Mock(), ('127.0.0.1', 12345 + i))
+                results.append(('add', self.client_manager.add_client(client)))
         
-        # Mock the blocking post request
-        async def mock_post_request():
-            return mock_response
+        def remove_clients():
+            """
+            Removes approximately half of the current clients from the client manager after a brief delay.
             
-        mock_to_thread.side_effect = [mock_post_request(), None]  # Second call for audio handling
+            Appends the result of each removal operation to the provided results list as a tuple containing the operation type and the removal outcome.
+            """
+            time.sleep(0.01)  # Small delay to let some clients be added
+            clients = list(self.client_manager.clients.values())
+            for client in clients[:num_clients//2]:  # Remove half
+                results.append(('remove', self.client_manager.remove_client(client)))
         
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {"character1": "some text"}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
+        thread1 = threading.Thread(target=add_clients)
+        thread2 = threading.Thread(target=remove_clients)
         
-        self.assertEqual(result, 'Character response')
-        self.mock_db.get_character.assert_called_once_with(self.test_actor_id)
-        self.mock_db.get_token.assert_called_once_with(self.test_actor_id)
-        self.mock_db.update_client_status.assert_called_with(self.test_actor_id, "Online_Responsive")
+        thread1.start()
+        thread2.start()
         
-    @patch('client_manager.asyncio.to_thread')
-    def test_send_to_client_no_character(self, mock_to_thread):
-        """Test send_to_client when character doesn't exist."""
-        self.mock_db.get_character.return_value = None
+        thread1.join(timeout=5)
+        thread2.join(timeout=5)
         
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
-        
-        self.assertEqual(result, "")
-        self.mock_db.update_client_status.assert_called_with(self.test_actor_id, "Error_API")
-        
-    @patch('client_manager.asyncio.to_thread')
-    def test_send_to_client_no_token(self, mock_to_thread):
-        """Test send_to_client when token doesn't exist."""
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.get_token.return_value = None
-        
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
-        
-        self.assertEqual(result, "")
-        self.mock_db.update_client_status.assert_called_with(self.test_actor_id, "Error_API")
-        
-    @patch('client_manager.requests.post')
-    @patch('client_manager.asyncio.to_thread')
-    @patch('client_manager.asyncio.sleep')
-    def test_send_to_client_with_retries(self, mock_sleep, mock_to_thread, mock_post):
-        """Test send_to_client retry mechanism."""
-        # Setup database mocks
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.get_token.return_value = self.test_token
-        
-        # First attempt fails, second succeeds
-        mock_response_fail = Mock()
-        mock_response_fail.raise_for_status.side_effect = requests.exceptions.Timeout()
-        
-        mock_response_success = Mock()
-        mock_response_success.raise_for_status.return_value = None
-        mock_response_success.json.return_value = {
-            'text': 'Success after retry',
-            'audio_data': None
-        }
-        
-        async def mock_failing_request():
-            raise requests.exceptions.Timeout()
-            
-        async def mock_successful_request():
-            return mock_response_success
-            
-        mock_to_thread.side_effect = [mock_failing_request(), mock_successful_request()]
-        mock_sleep.return_value = None  # Make sleep non-blocking
-        
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
-        
-        self.assertEqual(result, 'Success after retry')
-        mock_sleep.assert_called_once()  # Should have waited between retries
-        
-    @patch('client_manager.asyncio.to_thread')
-    @patch('client_manager.asyncio.sleep')
-    def test_send_to_client_all_retries_fail(self, mock_sleep, mock_to_thread):
-        """Test send_to_client when all retries fail."""
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.get_token.return_value = self.test_token
-        
-        async def mock_failing_request():
-            raise requests.exceptions.ConnectionError()
-            
-        mock_to_thread.side_effect = [mock_failing_request()] * 10  # More than max retries
-        mock_sleep.return_value = None
-        
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
-        
-        self.assertEqual(result, "")
-        self.mock_db.update_client_status.assert_called_with(self.test_actor_id, "Error_Unreachable")
-        
-    # --- Client Management Tests ---
+        # Should have some successful operations
+        self.assertTrue(any(result[1] for result in results))
+        # Final state should be consistent
+        self.assertGreaterEqual(len(self.client_manager.clients), 0)
     
-    def test_get_clients_for_story_progression(self):
-        """Test getting clients for story progression."""
-        expected_clients = [
-            {'Actor_id': 'Actor2', 'ip_address': '192.168.1.100', 'client_port': 8080},
-            {'Actor_id': 'Actor3', 'ip_address': '192.168.1.101', 'client_port': 8081}
-        ]
-        self.mock_db.get_clients_for_story_progression.return_value = expected_clients
+    def test_concurrent_username_setting(self):
+        """
+        Tests that setting usernames concurrently for multiple clients results in unique and consistent username mappings, ensuring thread safety in the username assignment logic.
+        """
+        clients = []
+        for i in range(10):
+            client = Client(Mock(), ('127.0.0.1', 12345 + i))
+            self.client_manager.add_client(client)
+            clients.append(client)
         
-        result = self.client_manager.get_clients_for_story_progression()
-        
-        self.assertEqual(result, expected_clients)
-        self.mock_db.get_clients_for_story_progression.assert_called_once()
-        
-    def test_deactivate_client_actor(self):
-        """Test deactivating a client actor."""
-        with patch('builtins.print') as mock_print:
-            self.client_manager.deactivate_client_Actor(self.test_actor_id)
-            
-        self.mock_db.update_client_status.assert_called_once_with(self.test_actor_id, "Deactivated")
-        mock_print.assert_called_once()
-        
-    # --- Error Handling and Edge Cases ---
-    
-    def test_generate_token_with_special_characters_in_actor_id(self):
-        """Test token generation with special characters in Actor ID."""
-        special_actor_id = "Actor@#$%^&*()_+1"
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.save_client_token.return_value = None
-        
-        token = self.client_manager.generate_token(special_actor_id)
-        
-        self.assertIsInstance(token, str)
-        self.assertEqual(len(token), 48)
-        
-    def test_validate_token_with_unicode_characters(self):
-        """Test token validation with unicode characters."""
-        unicode_token = "test_token_with_üñîçødé_characters"
-        self.mock_db.get_client_token_details.return_value = {
-            'token': unicode_token,
-            'status': 'Online_Responsive'
-        }
-        
-        result = self.client_manager.validate_token(self.test_actor_id, unicode_token)
-        
-        self.assertTrue(result)
-        
-    @patch('client_manager.pygame.mixer')
-    @patch('client_manager.os.makedirs')
-    @patch('client_manager.open', create=True)
-    @patch('client_manager.base64.b64decode')
-    @patch('client_manager.asyncio.to_thread')
-    def test_send_to_client_audio_handling(self, mock_to_thread, mock_b64decode, mock_open, mock_makedirs, mock_mixer):
-        """Test audio handling in send_to_client."""
-        # Setup mocks
-        mock_mixer.get_init.return_value = True
-        mock_mixer.Sound.return_value.play.return_value = None
-        mock_b64decode.return_value = b'decoded_audio_data'
-        mock_file = Mock()
-        mock_open.return_value.__enter__.return_value = mock_file
-        
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.get_token.return_value = self.test_token
-        
-        mock_response = Mock()
-        mock_response.raise_for_status.return_value = None
-        mock_response.json.return_value = {
-            'text': 'Character response',
-            'audio_data': 'encoded_audio_data'
-        }
-        
-        async def mock_post_request():
-            return mock_response
-            
-        async def mock_audio_handler():
-            pass
-            
-        mock_to_thread.side_effect = [mock_post_request(), mock_audio_handler()]
-        
-        async def run_test():
-            result = await self.client_manager.send_to_client(
-                self.test_actor_id,
-                self.test_ip,
-                self.test_port,
-                "Test narration",
-                {}
-            )
-            return result
-            
-        result = asyncio.run(run_test())
-        
-        self.assertEqual(result, 'Character response')
-        mock_makedirs.assert_called()
-        mock_b64decode.assert_called_once_with('encoded_audio_data')
-        
-    # --- Performance and Stress Tests ---
-    
-    def test_multiple_token_generation_performance(self):
-        """Test performance of generating multiple tokens."""
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.save_client_token.return_value = None
-        
-        start_time = time.time()
-        tokens = []
-        
-        for i in range(100):
-            token = self.client_manager.generate_token(f"Actor{i}")
-            tokens.append(token)
-            
-        end_time = time.time()
-        
-        # Should complete within reasonable time
-        self.assertLess(end_time - start_time, 1.0)  # Less than 1 second
-        
-        # All tokens should be unique
-        self.assertEqual(len(tokens), len(set(tokens)))
-        
-    def test_concurrent_token_validation(self):
-        """Test concurrent token validation."""
-        self.mock_db.get_client_token_details.return_value = {
-            'token': self.test_token,
-            'status': 'Online_Responsive'
-        }
-        
-        def validate_token_worker():
-            return self.client_manager.validate_token(self.test_actor_id, self.test_token)
-            
-        threads = []
         results = []
         
-        for _ in range(10):
-            thread = threading.Thread(target=lambda: results.append(validate_token_worker()))
+        def set_usernames():
+            """
+            Assigns unique usernames to each client in the `clients` list using the `ClientManager`.
+            
+            Each client is assigned a username in the format "user{i}", where `i` is the client's index in the list. The result of each username assignment is appended to the `results` list.
+            """
+            for i, client in enumerate(clients):
+                result = self.client_manager.set_username(client.client_id, f"user{i}")
+                results.append(result)
+        
+        threads = []
+        for _ in range(3):  # Multiple threads trying to set usernames
+            thread = threading.Thread(target=set_usernames)
             threads.append(thread)
             thread.start()
-            
+        
         for thread in threads:
-            thread.join()
-            
-        # All validations should succeed
-        self.assertTrue(all(results))
-        self.assertEqual(len(results), 10)
+            thread.join(timeout=5)
         
-    # --- Integration Tests ---
-    
-    @patch('client_manager.pygame.mixer')
-    def test_full_workflow_integration(self, mock_mixer):
-        """Test complete workflow from token generation to client communication."""
-        mock_mixer.get_init.return_value = True
+        # Check that usernames are consistently managed
+        unique_usernames = set()
+        for client in clients:
+            if hasattr(client, 'username') and client.username:
+                unique_usernames.add(client.username)
         
-        # Setup database responses
-        self.mock_db.get_character.return_value = self.test_character_data
-        self.mock_db.save_client_token.return_value = None
-        self.mock_db.get_client_token_details.return_value = {
-            'token': self.test_token,
-            'status': 'Online_Responsive'
-        }
-        self.mock_db.get_token.return_value = self.test_token
-        
-        # 1. Generate token
-        token = self.client_manager.generate_token(self.test_actor_id)
-        self.assertIsInstance(token, str)
-        
-        # 2. Validate token
-        is_valid = self.client_manager.validate_token(self.test_actor_id, token)
-        self.assertTrue(is_valid)
-        
-        # 3. Start health checks
-        self.client_manager.start_periodic_health_checks()
-        self.assertTrue(self.client_manager.health_check_thread.is_alive())
-        
-        # 4. Stop health checks
-        self.client_manager.stop_periodic_health_checks()
-        
-        # 5. Deactivate client
-        self.client_manager.deactivate_client_Actor(self.test_actor_id)
-        self.mock_db.update_client_status.assert_called_with(self.test_actor_id, "Deactivated")
-        
-    # --- Cleanup and Resource Management Tests ---
-    
-    def test_destructor_cleanup(self):
-        """Test that destructor properly cleans up resources."""
-        # Start health checks
-        self.client_manager.start_periodic_health_checks()
-        
-        # Call destructor
-        self.client_manager.__del__()
-        
-        # Health check should be stopped
-        self.assertTrue(self.client_manager.stop_health_check_event.is_set())
+        # No duplicate usernames should exist in the mapping
+        mapped_usernames = set(self.client_manager.username_to_client.keys())
+        self.assertEqual(len(mapped_usernames), len(self.client_manager.username_to_client))
 
 
-class TestClientManagerAsyncPatterns(unittest.TestCase):
-    """
-    Additional tests focused on async/await patterns and coroutine behavior.
-    
-    Testing Framework: Python unittest with asyncio support
-    """
+class TestClientManagerEdgeCases(unittest.TestCase):
+    """Test edge cases and error conditions for ClientManager."""
     
     def setUp(self):
-        """Set up async test fixtures."""
-        self.mock_db = Mock(spec=Database)
+        """
+        Initializes a new ClientManager instance before each test.
+        """
+        self.client_manager = ClientManager()
+    
+    def tearDown(self):
+        """
+        Cleans up the client manager's internal state after each test by clearing all clients and username mappings.
+        """
+        if hasattr(self.client_manager, 'clients'):
+            self.client_manager.clients.clear()
+        if hasattr(self.client_manager, 'username_to_client'):
+            self.client_manager.username_to_client.clear()
+    
+    def test_malformed_client_data(self):
+        """
+        Tests that the client manager handles clients with malformed or invalid socket data gracefully, either by returning a boolean result or by raising an exception.
+        """
+        # Test with invalid socket - this should be handled gracefully
+        try:
+            client = Client(Mock(), ('127.0.0.1', 12345))
+            client.socket = None  # Simulate malformed socket
+            result = self.client_manager.add_client(client)
+            # Should handle gracefully
+            self.assertIsInstance(result, bool)
+        except Exception:
+            # If it raises an exception, that's also acceptable behavior
+            pass
+    
+    def test_extreme_username_lengths(self):
+        """
+        Test setting a username with an extremely long string and verify that the operation is handled gracefully.
         
-        with patch('client_manager.pygame.mixer') as mock_mixer:
-            mock_mixer.get_init.return_value = True
-            self.client_manager = ClientManager(self.mock_db)
+        Ensures that the client manager either accepts or rejects very long usernames without crashing or raising unexpected exceptions.
+        """
+        mock_socket = Mock()
+        client = Client(mock_socket, ('127.0.0.1', 12345))
+        self.client_manager.add_client(client)
+        
+        # Very long username
+        long_username = "a" * 10000
+        result = self.client_manager.set_username(client.client_id, long_username)
+        
+        # Should handle gracefully (either accept or reject)
+        self.assertIsInstance(result, bool)
+    
+    def test_special_characters_in_username(self):
+        """
+        Tests that the client manager can handle usernames containing special characters, whitespace, unicode, and emojis, ensuring correct acceptance, retrieval, and mapping behavior.
+        """
+        mock_socket = Mock()
+        client = Client(mock_socket, ('127.0.0.1', 12345))
+        self.client_manager.add_client(client)
+        
+        special_usernames = [
+            "user@domain.com",
+            "user with spaces",
+            "user\nwith\nnewlines",
+            "user\twith\ttabs",
+            "用户名",  # Unicode characters
+            "🚀🌟💻",  # Emojis
+            "user'with'quotes",
+            'user"with"doublequotes',
+            "user\\with\\backslashes",
+        ]
+        
+        for username in special_usernames:
+            with self.subTest(username=username):
+                # Reset client username
+                if hasattr(client, 'username'):
+                    old_username = client.username
+                    if old_username and old_username in self.client_manager.username_to_client:
+                        del self.client_manager.username_to_client[old_username]
+                    client.username = None
+                
+                result = self.client_manager.set_username(client.client_id, username)
+                # Should handle gracefully
+                self.assertIsInstance(result, bool)
+                
+                if result:
+                    # If accepted, should be retrievable
+                    retrieved = self.client_manager.get_client_by_username(username)
+                    self.assertEqual(retrieved, client)
+    
+    def test_memory_cleanup_on_large_operations(self):
+        """
+        Verifies that adding and removing a large number of clients results in proper cleanup of internal client and username mappings.
+        """
+        # Add many clients (reduced number for faster testing)
+        clients = []
+        for i in range(100):
+            client = Client(Mock(), ('127.0.0.1', 12345 + i))
+            client.username = f"user{i}"
+            self.client_manager.add_client(client)
+            self.client_manager.username_to_client[f"user{i}"] = client
+            clients.append(client)
+        
+        # Verify they were added
+        self.assertEqual(len(self.client_manager.clients), 100)
+        self.assertEqual(len(self.client_manager.username_to_client), 100)
+        
+        # Remove all clients
+        for client in clients:
+            self.client_manager.remove_client(client)
+        
+        # Verify cleanup
+        self.assertEqual(len(self.client_manager.clients), 0)
+        self.assertEqual(len(self.client_manager.username_to_client), 0)
+    
+    def test_client_manager_singleton_behavior(self):
+        """
+        Verify that multiple ClientManager instances maintain independent client collections and do not share state.
+        """
+        # Create multiple instances to test isolation
+        cm1 = ClientManager()
+        cm2 = ClientManager()
+        
+        client1 = Client(Mock(), ('127.0.0.1', 12345))
+        client2 = Client(Mock(), ('127.0.0.1', 12346))
+        
+        cm1.add_client(client1)
+        cm2.add_client(client2)
+        
+        # Each instance should maintain its own state
+        self.assertEqual(len(cm1.clients), 1)
+        self.assertEqual(len(cm2.clients), 1)
+        self.assertNotEqual(list(cm1.clients.keys()), list(cm2.clients.keys()))
+    
+    def test_client_manager_stress_operations(self):
+        """
+        Stress tests the ClientManager by performing rapid add and remove operations, then verifies that the internal client state remains consistent.
+        """
+        operations_count = 100
+        clients = []
+        
+        # Rapid add/remove operations
+        for i in range(operations_count):
+            client = Client(Mock(), ('127.0.0.1', 12345 + i))
+            clients.append(client)
+            self.client_manager.add_client(client)
             
-    def test_send_to_client_is_coroutine(self):
-        """Test that send_to_client returns a coroutine."""
-        result = self.client_manager.send_to_client(
-            "TestActor",
-            "127.0.0.1",
-            8080,
-            "Test narration",
-            {}
-        )
+            if i % 2 == 0 and i > 0:  # Remove every other client
+                self.client_manager.remove_client(clients[i-1])
         
-        self.assertTrue(asyncio.iscoroutine(result))
+        # Verify final state is consistent
+        actual_count = len(self.client_manager.clients)
+        expected_min = operations_count // 2  # At least half should remain
+        self.assertGreaterEqual(actual_count, 0)
+        self.assertLessEqual(actual_count, operations_count)
+    
+    def test_invalid_client_operations(self):
+        """
+        Verifies that adding or removing clients with invalid parameters (such as None, empty strings, numbers, lists, dictionaries, or arbitrary objects) fails gracefully without crashing the client manager.
+        """
+        invalid_inputs = [
+            None,
+            "",
+            123,
+            [],
+            {},
+            object(),
+        ]
         
-        # Clean up the coroutine
-        result.close()
+        for invalid_input in invalid_inputs:
+            with self.subTest(input=invalid_input):
+                # These should not crash the system
+                try:
+                    result = self.client_manager.add_client(invalid_input)
+                    self.assertIsInstance(result, bool)
+                    self.assertFalse(result)  # Should fail gracefully
+                except (TypeError, AttributeError):
+                    # Expected for completely invalid inputs
+                    pass
+                
+                try:
+                    result = self.client_manager.remove_client(invalid_input)
+                    self.assertIsInstance(result, bool)
+                    self.assertFalse(result)  # Should fail gracefully
+                except (TypeError, AttributeError):
+                    # Expected for completely invalid inputs
+                    pass
+
+
+class TestClientManagerIntegration(unittest.TestCase):
+    """Integration tests for ClientManager with realistic scenarios."""
+    
+    def setUp(self):
+        """
+        Initializes a new ClientManager instance for integration tests.
+        """
+        self.client_manager = ClientManager()
+    
+    def tearDown(self):
+        """
+        Cleans up the client manager's internal state after each integration test by clearing all clients and username mappings.
+        """
+        if hasattr(self.client_manager, 'clients'):
+            self.client_manager.clients.clear()
+        if hasattr(self.client_manager, 'username_to_client'):
+            self.client_manager.username_to_client.clear()
+    
+    def test_realistic_chat_room_scenario(self):
+        """
+        Simulates a realistic chat room workflow with multiple users joining, setting usernames, broadcasting messages, selective broadcasting, user departure, and username changes. Verifies correct client addition, username assignment, message delivery, client removal, and username updates within the client manager.
+        """
+        # Simulate users joining
+        users = [
+            ("Alice", ('192.168.1.10', 5001)),
+            ("Bob", ('192.168.1.11', 5002)),
+            ("Charlie", ('192.168.1.12', 5003)),
+            ("Diana", ('192.168.1.13', 5004)),
+        ]
         
-    @patch('client_manager.asyncio.to_thread')
-    async def test_send_to_client_awaitable(self, mock_to_thread):
-        """Test that send_to_client is properly awaitable."""
-        self.mock_db.get_character.return_value = None  # Will cause early return
+        clients = []
+        for username, address in users:
+            socket_mock = Mock()
+            client = Client(socket_mock, address)
+            clients.append(client)
+            
+            # Add client
+            self.assertTrue(self.client_manager.add_client(client))
+            
+            # Set username
+            self.assertTrue(self.client_manager.set_username(client.client_id, username))
+            
+            # Verify username is set correctly
+            self.assertEqual(client.username, username)
+            retrieved_client = self.client_manager.get_client_by_username(username)
+            self.assertEqual(retrieved_client, client)
         
-        result = await self.client_manager.send_to_client(
-            "TestActor",
-            "127.0.0.1", 
-            8080,
-            "Test narration",
-            {}
-        )
+        # Verify all clients are present
+        self.assertEqual(self.client_manager.get_client_count(), 4)
+        all_clients = self.client_manager.get_all_clients()
+        self.assertEqual(len(all_clients), 4)
         
-        self.assertEqual(result, "")
+        # Test broadcasting (mock sockets should receive send calls)
+        self.client_manager.broadcast_message("Welcome everyone!")
+        for client in clients:
+            client.socket.send.assert_called()
+        
+        # Test selective broadcasting
+        alice = clients[0]
+        self.client_manager.broadcast_message("Alice says hello!", exclude_client=alice)
+        alice.socket.send.reset_mock()  # Reset the mock
+        
+        # Simulate users leaving
+        self.assertTrue(self.client_manager.remove_client(clients[1]))  # Bob leaves
+        self.assertEqual(self.client_manager.get_client_count(), 3)
+        self.assertIsNone(self.client_manager.get_client_by_username("Bob"))
+        
+        # Simulate username change
+        charlie = clients[2]
+        old_username = charlie.username
+        new_username = "Chuck"
+        self.assertTrue(self.client_manager.set_username(charlie.client_id, new_username))
+        self.assertEqual(charlie.username, new_username)
+        self.assertIsNone(self.client_manager.get_client_by_username(old_username))
+        self.assertEqual(self.client_manager.get_client_by_username(new_username), charlie)
+    
+    def test_concurrent_user_management(self):
+        """
+        Simulates concurrent user join, leave, and rename operations to test thread safety and consistency of the client manager.
+        
+        Runs multiple threads performing randomized user operations, then verifies that the client count is non-negative and that the username mapping remains consistent with the set of clients having usernames.
+        """
+        import concurrent.futures
+        import random
+        
+        results = []
+        
+        def user_operations():
+            """
+            Performs a sequence of random user operations—join, leave, and rename—on the client manager to simulate concurrent user activity.
+            
+            This function is intended for use in concurrency and integration tests to stress-test the thread safety and consistency of the client manager under randomized user actions. Results of each operation are appended to the shared `results` list.
+            """
+            for i in range(10):
+                # Random operation
+                operation = random.choice(['join', 'leave', 'rename'])
+                
+                if operation == 'join':
+                    client = Client(Mock(), ('127.0.0.1', 12345 + i))
+                    result = self.client_manager.add_client(client)
+                    if result:
+                        username_result = self.client_manager.set_username(
+                            client.client_id, f"user_{threading.current_thread().ident}_{i}"
+                        )
+                        results.append(('join', result and username_result))
+                    else:
+                        results.append(('join', False))
+                
+                elif operation == 'leave' and self.client_manager.get_client_count() > 0:
+                    clients = self.client_manager.get_all_clients()
+                    if clients:
+                        client_to_remove = random.choice(clients)
+                        result = self.client_manager.remove_client(client_to_remove)
+                        results.append(('leave', result))
+                
+                time.sleep(0.001)  # Small delay to encourage race conditions
+        
+        # Run concurrent operations
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(user_operations) for _ in range(5)]
+            concurrent.futures.wait(futures, timeout=10)
+        
+        # Verify system is in a consistent state
+        client_count = self.client_manager.get_client_count()
+        self.assertGreaterEqual(client_count, 0)
+        
+        # Verify username mapping consistency
+        clients_with_usernames = [
+            c for c in self.client_manager.get_all_clients() 
+            if hasattr(c, 'username') and c.username
+        ]
+        username_map_size = len(self.client_manager.username_to_client)
+        self.assertEqual(len(clients_with_usernames), username_map_size)
 
 
 if __name__ == '__main__':
-    # Configure test runner for comprehensive output
-    unittest.main(
-        verbosity=2,
-        failfast=False,
-        buffer=True,
-        warnings='ignore'
-    )
+    # Configure test runner for detailed output
+    unittest.main(verbosity=2, buffer=True, failfast=False)

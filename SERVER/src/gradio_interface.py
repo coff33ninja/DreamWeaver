@@ -21,13 +21,26 @@ env_manager_instance = None # Not really an instance, but follows the pattern
 
 # --- Helper Functions (mostly synchronous as they are simple UI updates or fast DB calls) ---
 def update_model_dropdown(service_name: str):
-    """Dynamically updates the TTS model dropdown based on the selected service."""
+    """
+    Return available TTS models and default selection for the specified service.
+    
+    Parameters:
+        service_name (str): The name of the TTS service for which to fetch available models.
+    
+    Returns:
+        dict: A dictionary with 'choices' as the list of model names and 'value' as the default selected model.
+    """
     models = TTSManager.get_available_models(service_name)
     default_value = models[0] if models else None
     return {"choices": models, "value": default_value}
 
 async def get_story_playback_data_async():
-    """Fetches story history from DB and formats it for Gradio Chatbot asynchronously."""
+    """
+    Asynchronously retrieves and formats the story history from the database for display in a Gradio Chatbot.
+    
+    Returns:
+        list: A list of message dictionaries, each containing a role ("user" for narrator, "assistant" otherwise) and formatted content with timestamp and speaker. If no history is found, returns a system message indicating this.
+    """
     # This DB read is usually fast. For very long stories, running in a thread avoids blocking the event loop.
     if db_instance is None:
         raise RuntimeError(
@@ -49,6 +62,14 @@ async def get_story_playback_data_async():
 # --- Asynchronous Gradio Event Handlers ---
 
 async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, Actor_id, progress=gr.Progress(track_tqdm=True)):
+    """
+    Asynchronously creates or updates a character with the specified attributes, handling reference audio upload and token generation as needed.
+    
+    If the TTS service is "xttsv2" and a reference audio file is provided, the audio is saved to the configured directory. Character details are then saved to the database. For non-default Actor IDs, a token is generated and included in the result. Progress is updated throughout the process.
+    
+    Returns:
+        str: Status message indicating the result of character creation, including token information if applicable.
+    """
     if db_instance is None:
         raise RuntimeError("Database instance not initialized. Call launch_interface() first.")
     if client_manager_instance is None:
@@ -99,6 +120,17 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
 
 
 async def story_interface_async(audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)):
+    """
+    Processes a narration audio input and chaos level to generate story narration and character dialogues asynchronously.
+    
+    Parameters:
+        audio_input_path: Path to the narration audio file.
+        chaos_level_value: Value controlling the randomness or unpredictability in story generation.
+    
+    Returns:
+        narration: The generated narration text.
+        character_texts: A dictionary containing character dialogue texts. If an error occurs, returns error messages and empty dictionaries.
+    """
     if csm_instance is None:
         raise RuntimeError("CSM instance not initialized. Call launch_interface() first.")
     if audio_input_path is None:
@@ -119,6 +151,16 @@ async def story_interface_async(audio_input_path, chaos_level_value, progress=gr
         return f"Error: {e}", {}, {}
 
 async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=True)):
+    """
+    Asynchronously saves a story checkpoint with the given name prefix.
+    
+    Parameters:
+        name_prefix (str): Prefix to use for the checkpoint name.
+    
+    Returns:
+        status (str): Status message indicating the result of the save operation.
+        dict: Dictionary containing updated checkpoint dropdown choices and the default selected value.
+    """
     if checkpoint_manager is None:
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
@@ -129,6 +171,16 @@ async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=Tru
     return status, {"choices": new_choices, "value": new_choices[0] if new_choices else None}
 
 async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm=True)):
+    """
+    Asynchronously loads a specified checkpoint and refreshes story playback data if successful.
+    
+    Parameters:
+    	checkpoint_name (str): The name of the checkpoint to load.
+    
+    Returns:
+    	status (str): The result of the checkpoint load operation.
+    	new_story_data (list): Updated story playback data if the checkpoint was loaded successfully; otherwise, an empty list.
+    """
     if checkpoint_manager is None:
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if not checkpoint_name:
@@ -146,6 +198,16 @@ async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm
     return status, new_story_data
 
 async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True)):
+    """
+    Asynchronously exports the current story in the specified format.
+    
+    Parameters:
+        export_format (str): The format to export the story in ("text" or "json").
+    
+    Returns:
+        status (str): The result of the export operation.
+        dict: Contains the exported filename under "value" and its visibility under "visible".
+    """
     if checkpoint_manager is None:
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
@@ -156,7 +218,13 @@ async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True
     return status, {"value": filename if filename else "", "visible": bool(filename)}
 
 async def get_env_vars_async():
-    """Async wrapper to load and display .env variables."""
+    """
+    Asynchronously retrieves the status and masked contents of environment variables from the .env file.
+    
+    Returns:
+        status (str): Status message indicating the .env file state.
+        vars_display_str (str): Formatted string of environment variables with sensitive values masked.
+    """
     status = await asyncio.to_thread(env_manager.get_env_file_status)
     masked_vars = await asyncio.to_thread(env_manager.load_env_vars, mask_sensitive=True)
 
@@ -167,7 +235,17 @@ async def get_env_vars_async():
     return status, vars_display_str
 
 async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
-    """Async wrapper to save .env variables."""
+    """
+    Asynchronously saves new or updated environment variables to the `.env` file and refreshes the displayed variables.
+    
+    Parameters:
+        new_vars_str (str): String containing the new or updated environment variables.
+    
+    Returns:
+        status_msg (str): Status message indicating the result of the save operation.
+        new_status (str): Updated status after refreshing environment variables.
+        new_vars_display (str): Formatted string of the current environment variables for display.
+    """
     progress(0, desc="Saving .env file...")
     status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_vars_str)
     progress(1, desc="Save complete.")
@@ -178,7 +256,18 @@ async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
     return status_msg, new_status, new_vars_display
 
 async def set_api_provider_async(selected_provider, progress=gr.Progress()):
-    """Async handler to update API_PROVIDER in .env file."""
+    """
+    Asynchronously updates the API provider in the environment configuration and refreshes the displayed environment variables.
+    
+    Parameters:
+        selected_provider (str): The new API provider to set.
+    
+    Returns:
+        status_msg (str): Status message indicating the result of the update.
+        new_status (str): Updated status of environment variables.
+        new_vars_display (str): Masked display of current environment variables.
+        selected_provider (str): The provider that was set.
+    """
     progress(0, desc="Updating API provider...")
     new_var = f"API_PROVIDER={selected_provider}"
     status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
@@ -188,6 +277,11 @@ async def set_api_provider_async(selected_provider, progress=gr.Progress()):
     return status_msg, new_status, new_vars_display, selected_provider
 
 async def restart_server_async(progress=gr.Progress()):
+    """
+    Asynchronously restarts the server process by re-executing the current Python script.
+    
+    Progress is updated before the restart is triggered. This function does not return to the caller, as the process is replaced.
+    """
     progress(0, desc="Restarting server...")
     await asyncio.sleep(1)
     progress(1, desc="Server restarting now.")
@@ -197,6 +291,13 @@ async def restart_server_async(progress=gr.Progress()):
 
 # --- Gradio UI Launch ---
 def launch_interface():
+    """
+    Launches the Dream Weaver Gradio web interface, initializing all core managers and defining a multi-tab asynchronous UI for character management, story progression, playback, checkpointing, environment variable editing, and configuration.
+    
+    The interface supports real-time progress tracking, dynamic UI updates, and asynchronous backend operations for responsive user experience. It provides dedicated tabs for managing characters, narrating and correcting stories, reviewing story history, handling checkpoints and exports, editing API keys and environment variables (with masking for sensitive data), and modifying configuration options. The server can be restarted from the UI to apply environment changes.
+    
+    All global instances are initialized within the function for process safety, and the app is launched on all interfaces at port 7860.
+    """
     global db_instance, client_manager_instance, csm_instance, checkpoint_manager, env_manager_instance
     db_instance = Database(DB_PATH)
     client_manager_instance = ClientManager(db_instance)
@@ -259,6 +360,15 @@ def launch_interface():
 
                 # --- Correction Handler ---
                 async def save_correction_async(correction_text, progress=gr.Progress(track_tqdm=True)):
+                    """
+                    Asynchronously saves a correction to the last narration text in the story manager.
+                    
+                    Parameters:
+                    	correction_text (str): The corrected narration text to be saved.
+                    
+                    Returns:
+                    	str: Status message indicating whether the correction was saved, no narrator entry was found, or the story manager is not initialized.
+                    """
                     progress(0, desc="Saving correction...")
                     # Persist correction to DB
                     if csm_instance is not None:
@@ -286,6 +396,12 @@ def launch_interface():
 
                 # Making this async too for consistency, though DB reads are usually fast.
                 async def refresh_story_async_wrapper(progress=gr.Progress()):
+                    """
+                    Asynchronously refreshes and returns the story playback history data with progress updates.
+                    
+                    Returns:
+                        data (list): A list of formatted story message dictionaries for playback display.
+                    """
                     progress(0, desc="Fetching history...")
                     data = await get_story_playback_data_async()
                     progress(1, desc="History loaded.")
@@ -351,6 +467,9 @@ def launch_interface():
                     "custom": ("CUSTOM_API_TOKEN", "Custom API Token", "token...")
                 }
                 def get_current_provider():
+                    """
+                    Return the current API provider from environment variables, or the default provider if not set.
+                    """
                     env_vars = env_manager.load_env_vars(mask_sensitive=False)
                     return env_vars.get("API_PROVIDER", api_providers[0])
                 api_provider_dropdown = gr.Dropdown(api_providers, label="API Provider", value=get_current_provider())
@@ -358,14 +477,34 @@ def launch_interface():
 
                 # Dynamic token input
                 def get_token_field(provider):
+                    """
+                    Return configuration for the token input field based on the selected API provider.
+                    
+                    Parameters:
+                    	provider (str): The name of the API provider.
+                    
+                    Returns:
+                    	dict: A dictionary specifying the visibility, label, placeholder, and initial value for the token input field.
+                    """
                     var, label, placeholder = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
                     return {"visible": True, "label": label, "placeholder": placeholder, "value": ""}
                 def hide_token_field():
+                    """
+                    Hide the token input field in the UI by setting its visibility to False.
+                    
+                    Returns:
+                        dict: A dictionary indicating the token field should be hidden.
+                    """
                     return {"visible": False}
                 token_input = gr.Textbox(label="API Token", visible=True, placeholder="token...")
 
                 # Show/hide and relabel token input on provider change
                 def update_token_field(provider):
+                    """
+                    Update the token input field properties based on the selected API provider.
+                    
+                    Returns a dictionary specifying the field's visibility, label, placeholder, and value. If the provider is not recognized, the field is hidden.
+                    """
                     if provider in provider_token_vars:
                         var, label, placeholder = provider_token_vars[provider]
                         return {"visible": True, "label": label, "placeholder": placeholder, "value": ""}
@@ -374,6 +513,19 @@ def launch_interface():
 
                 # Save token handler
                 async def save_token_async(provider, token, progress=gr.Progress()):
+                    """
+                    Asynchronously saves an API token for the selected provider to the environment variables.
+                    
+                    Parameters:
+                        provider (str): The name of the API provider.
+                        token (str): The API token to save.
+                    
+                    Returns:
+                        status_msg (str): Status message indicating the result of the save operation.
+                        new_status (str): Updated status after saving the token.
+                        new_vars_display (str): Masked display of current environment variables.
+                        (str): An empty string placeholder for UI compatibility.
+                    """
                     progress(0, desc="Saving token...")
                     var, _, _ = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
                     new_var = f"{var}={token}"
@@ -408,6 +560,12 @@ def launch_interface():
 
                 # Event Handlers for this tab
                 def show_restart():
+                    """
+                    Show the server restart message and button by setting their visibility to True.
+                    
+                    Returns:
+                        tuple: Two dictionaries indicating visibility for the restart message and button.
+                    """
                     return {"visible": True}, {"visible": True}
                 demo.load(get_env_vars_async, inputs=[], outputs=[env_status_text, current_env_vars_display])
                 save_env_btn.click(save_env_vars_async, inputs=[new_env_vars_input], outputs=[save_status_text, env_status_text, current_env_vars_display])
@@ -428,6 +586,15 @@ def launch_interface():
 
                 async def save_config_async(*new_values):
                     # Save new config values to .env or another persistent store
+                    """
+                    Asynchronously saves updated configuration values to the environment file for persistence.
+                    
+                    Parameters:
+                    	new_values: New configuration values corresponding to the editable config keys.
+                    
+                    Returns:
+                    	status_msg (str): Status message indicating the result of the save operation.
+                    """
                     lines = []
                     for k, v in zip(config_keys, new_values):
                         lines.append(f"{k}={v}")

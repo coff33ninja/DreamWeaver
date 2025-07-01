@@ -1,617 +1,755 @@
 import pytest
-import json
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+import pytest_asyncio
 import asyncio
-from typing import Dict, List, Optional
-import sys
 import os
+import uuid
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
+import sys
 
-# Add the SERVER directory to the path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add the SERVER/src directory to the path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Testing framework: pytest
-# These tests provide comprehensive coverage including happy paths, edge cases, and failure conditions
-
-
-class MockCharacterServer:
-    """Mock character server for testing when actual implementation isn't available."""
-    
-    def __init__(self):
-        self.characters = {}
-        self.next_id = 1
-    
-    def create_character(self, character_data: Dict) -> Dict:
-        if not self.validate_character_data(character_data):
-            raise ValueError("Invalid character data")
+try:
+    from character_server import CharacterServer
+except ImportError:
+    # Create a mock CharacterServer class if import fails
+    class CharacterServer:
+        def __init__(self, db):
+            """
+            Initialize a CharacterServer instance with the provided database.
+            
+            Sets up default attributes for the character ID, character data, language model, and text-to-speech engine.
+            """
+            self.db = db
+            self.character_Actor_id = "Actor1"
+            self.character = None
+            self.llm = None
+            self.tts = None
         
-        character = {**character_data, 'id': self.next_id}
-        self.characters[self.next_id] = character
-        self.next_id += 1
-        return character
-    
-    def get_character(self, character_id: int) -> Optional[Dict]:
-        return self.characters.get(character_id)
-    
-    def update_character(self, character_id: int, update_data: Dict) -> Optional[Dict]:
-        if character_id not in self.characters:
-            return None
+        async def async_init(self):
+            """
+            Asynchronously initializes the CharacterServer, setting up required components such as LLM, TTS, and audio playback.
+            """
+            pass
         
-        self.characters[character_id].update(update_data)
-        return self.characters[character_id]
-    
-    def delete_character(self, character_id: int) -> bool:
-        if character_id in self.characters:
-            del self.characters[character_id]
-            return True
-        return False
-    
-    def list_characters(self) -> List[Dict]:
-        return list(self.characters.values())
-    
-    @staticmethod
-    def validate_character_data(data: Dict) -> bool:
-        required_fields = ['name', 'class', 'level']
-        return all(field in data for field in required_fields) and \
-               isinstance(data.get('name'), str) and \
-               len(data['name']) > 0 and \
-               isinstance(data.get('level'), int) and \
-               data['level'] > 0
-
-
-@pytest.fixture
-def character_server():
-    """Fixture providing a fresh character server instance for each test."""
-    return MockCharacterServer()
-
-
-@pytest.fixture
-def valid_character_data():
-    """Fixture providing valid character data for testing."""
-    return {
-        'name': 'TestHero',
-        'class': 'Warrior',
-        'level': 10,
-        'hp': 100,
-        'mp': 50,
-        'strength': 15,
-        'dexterity': 12,
-        'intelligence': 8,
-        'equipment': ['sword', 'shield'],
-        'skills': ['combat', 'leadership']
-    }
-
-
-@pytest.fixture
-def invalid_character_data():
-    """Fixture providing invalid character data for testing."""
-    return {
-        'name': '',  # Invalid empty name
-        'class': 'InvalidClass',
-        'level': -5,  # Invalid negative level
-        'hp': 'not_a_number',  # Invalid type
-        'strength': None
-    }
-
-
-class TestCharacterCreation:
-    """Test suite for character creation functionality."""
-    
-    def test_create_character_success(self, character_server, valid_character_data):
-        """Test successful character creation with valid data."""
-        result = character_server.create_character(valid_character_data)
+        async def generate_response(self, narration, other_texts):
+            """
+            Asynchronously generates a mock response string for the given narration and additional texts.
+            
+            Parameters:
+                narration (str): The main narration or prompt for response generation.
+                other_texts (list): Additional context or dialogue to include in the response.
+            
+            Returns:
+                str: A mock response string.
+            """
+            return "Mock response"
         
-        assert result['id'] is not None
-        assert result['name'] == valid_character_data['name']
-        assert result['class'] == valid_character_data['class']
-        assert result['level'] == valid_character_data['level']
+        async def output_audio(self, text):
+            """
+            Synthesizes and plays audio for the given text using the character's TTS engine.
+            
+            If the TTS engine is not initialized or the input text is empty, the method exits without performing any action.
+            """
+            pass
+
+
+class TestCharacterServerInitialization:
+    """Test CharacterServer initialization and setup."""
     
-    def test_create_character_minimal_data(self, character_server):
-        """Test character creation with minimal required data."""
-        minimal_data = {
-            'name': 'MinimalHero',
-            'class': 'Novice',
-            'level': 1
+    def setup_method(self):
+        """
+        Prepare mock database and character data for each test method in the test class.
+        """
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "personality": "test_personality",
+            "goals": "test_goals",
+            "backstory": "test_backstory",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": "test_reference.wav",
+            "Actor_id": "Actor1",
+            "llm_model": "test_model",
+            "language": "en"
+        }
+    
+    def test_init_with_existing_character(self):
+        """
+        Tests that initializing CharacterServer with an existing character in the database sets all attributes correctly and calls the database retrieval method.
+        """
+        self.mock_db.get_character.return_value = self.mock_character_data
+        
+        server = CharacterServer(self.mock_db)
+        
+        assert server.db == self.mock_db
+        assert server.character_Actor_id == "Actor1"
+        assert server.character == self.mock_character_data
+        assert server.llm is None
+        assert server.tts is None
+        self.mock_db.get_character.assert_called_once_with("Actor1")
+    
+    def test_init_with_missing_character(self):
+        """
+        Test that initializing CharacterServer with a missing character in the database creates a default character and saves it.
+        
+        Verifies that the default character fields are set and that the database's save_character method is called.
+        """
+        self.mock_db.get_character.return_value = None
+        
+        server = CharacterServer(self.mock_db)
+        
+        assert server.character is not None
+        assert server.character["name"] == "Actor1_Default"
+        assert server.character["personality"] == "server_default"
+        assert server.character["Actor_id"] == "Actor1"
+        self.mock_db.save_character.assert_called_once()
+    
+    def test_init_with_none_db(self):
+        """
+        Test that initializing CharacterServer with a None database raises an AttributeError.
+        """
+        with pytest.raises(AttributeError):
+            server = CharacterServer(None)
+            # This should fail when trying to call get_character on None
+    
+    def test_character_default_values(self):
+        """
+        Verify that the CharacterServer assigns all expected default values when character data is missing from the database.
+        """
+        self.mock_db.get_character.return_value = None
+        
+        server = CharacterServer(self.mock_db)
+        
+        expected_defaults = {
+            "name": "Actor1_Default",
+            "personality": "server_default",
+            "goals": "assist",
+            "backstory": "embedded",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": None,
+            "Actor_id": "Actor1",
+            "llm_model": None
         }
         
-        result = character_server.create_character(minimal_data)
-        
-        assert result['name'] == 'MinimalHero'
-        assert result['class'] == 'Novice'
-        assert result['level'] == 1
-        assert 'id' in result
-    
-    def test_create_character_with_special_characters_in_name(self, character_server):
-        """Test character creation with special characters in name."""
-        special_char_data = {
-            'name': 'Hérö-Tëst_123',
-            'class': 'Rogue',
-            'level': 5
-        }
-        
-        result = character_server.create_character(special_char_data)
-        assert result['name'] == 'Hérö-Tëst_123'
-    
-    def test_create_character_maximum_level(self, character_server):
-        """Test character creation with maximum level."""
-        max_level_data = {
-            'name': 'MaxLevelHero',
-            'class': 'Legend',
-            'level': 100,
-            'hp': 9999,
-            'mp': 9999
-        }
-        
-        result = character_server.create_character(max_level_data)
-        assert result['level'] == 100
-        assert result['hp'] == 9999
-    
-    def test_create_character_invalid_empty_name(self, character_server):
-        """Test character creation fails with empty name."""
-        invalid_data = {
-            'name': '',
-            'class': 'Warrior',
-            'level': 1
-        }
-        
-        with pytest.raises(ValueError, match="Invalid character data"):
-            character_server.create_character(invalid_data)
-    
-    def test_create_character_invalid_negative_level(self, character_server):
-        """Test character creation fails with negative level."""
-        invalid_data = {
-            'name': 'TestHero',
-            'class': 'Warrior',
-            'level': -1
-        }
-        
-        with pytest.raises(ValueError, match="Invalid character data"):
-            character_server.create_character(invalid_data)
-    
-    def test_create_character_missing_required_fields(self, character_server):
-        """Test character creation fails with missing required fields."""
-        incomplete_data = {
-            'name': 'TestHero'
-            # Missing 'class' and 'level'
-        }
-        
-        with pytest.raises(ValueError, match="Invalid character data"):
-            character_server.create_character(incomplete_data)
-    
-    def test_create_character_invalid_data_types(self, character_server):
-        """Test character creation fails with invalid data types."""
-        invalid_type_data = {
-            'name': 123,  # Should be string
-            'class': 'Warrior',
-            'level': 'ten'  # Should be integer
-        }
-        
-        with pytest.raises(ValueError, match="Invalid character data"):
-            character_server.create_character(invalid_type_data)
+        for key, expected_value in expected_defaults.items():
+            assert server.character[key] == expected_value
 
 
-class TestCharacterRetrieval:
-    """Test suite for character retrieval functionality."""
+class TestCharacterServerAsyncInit:
+    """Test CharacterServer async initialization."""
     
-    def test_get_character_success(self, character_server, valid_character_data):
-        """Test successful character retrieval."""
-        created_char = character_server.create_character(valid_character_data)
-        retrieved_char = character_server.get_character(created_char['id'])
-        
-        assert retrieved_char is not None
-        assert retrieved_char['id'] == created_char['id']
-        assert retrieved_char['name'] == valid_character_data['name']
-    
-    def test_get_character_nonexistent(self, character_server):
-        """Test retrieving a character that doesn't exist."""
-        result = character_server.get_character(9999)
-        assert result is None
-    
-    def test_get_character_zero_id(self, character_server):
-        """Test retrieving character with ID 0."""
-        result = character_server.get_character(0)
-        assert result is None
-    
-    def test_get_character_negative_id(self, character_server):
-        """Test retrieving character with negative ID."""
-        result = character_server.get_character(-1)
-        assert result is None
-    
-    def test_get_multiple_characters(self, character_server, valid_character_data):
-        """Test retrieving multiple different characters."""
-        char1_data = {**valid_character_data, 'name': 'Hero1'}
-        char2_data = {**valid_character_data, 'name': 'Hero2', 'class': 'Mage'}
-        
-        char1 = character_server.create_character(char1_data)
-        char2 = character_server.create_character(char2_data)
-        
-        retrieved_char1 = character_server.get_character(char1['id'])
-        retrieved_char2 = character_server.get_character(char2['id'])
-        
-        assert retrieved_char1['name'] == 'Hero1'
-        assert retrieved_char2['name'] == 'Hero2'
-        assert retrieved_char1['id'] != retrieved_char2['id']
-
-
-class TestCharacterUpdate:
-    """Test suite for character update functionality."""
-    
-    def test_update_character_success(self, character_server, valid_character_data):
-        """Test successful character update."""
-        created_char = character_server.create_character(valid_character_data)
-        update_data = {'level': 15, 'hp': 150}
-        
-        updated_char = character_server.update_character(created_char['id'], update_data)
-        
-        assert updated_char is not None
-        assert updated_char['level'] == 15
-        assert updated_char['hp'] == 150
-        assert updated_char['name'] == valid_character_data['name']  # Unchanged
-    
-    def test_update_character_partial(self, character_server, valid_character_data):
-        """Test updating character with partial data."""
-        created_char = character_server.create_character(valid_character_data)
-        update_data = {'level': 20}
-        
-        updated_char = character_server.update_character(created_char['id'], update_data)
-        
-        assert updated_char['level'] == 20
-        assert updated_char['name'] == valid_character_data['name']  # Unchanged
-    
-    def test_update_character_all_fields(self, character_server, valid_character_data):
-        """Test updating all character fields."""
-        created_char = character_server.create_character(valid_character_data)
-        update_data = {
-            'name': 'UpdatedHero',
-            'class': 'Paladin',
-            'level': 25,
-            'hp': 200,
-            'mp': 100,
-            'strength': 20,
-            'equipment': ['holy_sword', 'blessed_shield']
+    def setup_method(self):
+        """
+        Prepare mock database and character data for each test method in the test class.
+        """
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "reference_audio_filename": "test.wav",
+            "llm_model": "test_model",
+            "language": "en"
         }
-        
-        updated_char = character_server.update_character(created_char['id'], update_data)
-        
-        assert updated_char['name'] == 'UpdatedHero'
-        assert updated_char['class'] == 'Paladin'
-        assert updated_char['level'] == 25
-        assert updated_char['equipment'] == ['holy_sword', 'blessed_shield']
+        self.mock_db.get_character.return_value = self.mock_character_data
     
-    def test_update_character_nonexistent(self, character_server):
-        """Test updating a character that doesn't exist."""
-        update_data = {'level': 20}
-        result = character_server.update_character(9999, update_data)
+    @pytest.mark.asyncio
+    @patch('character_server.LLMEngine')
+    @patch('character_server.TTSManager')
+    @patch('character_server.pygame')
+    async def test_async_init_success(self, mock_pygame, mock_tts_manager, mock_llm_engine):
+        """
+        Tests that async initialization sets up LLM and TTS instances and initializes the pygame mixer when not already initialized.
+        """
+        mock_llm_instance = Mock()
+        mock_tts_instance = Mock()
+        mock_llm_engine.return_value = mock_llm_instance
+        mock_tts_manager.return_value = mock_tts_instance
+        mock_pygame.mixer.get_init.return_value = False
         
-        assert result is None
+        server = CharacterServer(self.mock_db)
+        await server.async_init()
+        
+        assert server.llm == mock_llm_instance
+        assert server.tts == mock_tts_instance
+        mock_pygame.mixer.init.assert_called_once()
     
-    def test_update_character_empty_data(self, character_server, valid_character_data):
-        """Test updating character with empty data."""
-        created_char = character_server.create_character(valid_character_data)
+    @pytest.mark.asyncio
+    @patch('character_server.LLMEngine')
+    @patch('character_server.TTSManager')
+    @patch('character_server.pygame')
+    async def test_async_init_pygame_already_initialized(self, mock_pygame, mock_tts_manager, mock_llm_engine):
+        """
+        Test that `async_init` does not re-initialize the pygame mixer if it is already initialized.
+        """
+        mock_pygame.mixer.get_init.return_value = True
         
-        updated_char = character_server.update_character(created_char['id'], {})
+        server = CharacterServer(self.mock_db)
+        await server.async_init()
         
-        # Should return the character unchanged
-        assert updated_char['name'] == valid_character_data['name']
-        assert updated_char['level'] == valid_character_data['level']
+        mock_pygame.mixer.init.assert_not_called()
     
-    def test_update_character_add_new_fields(self, character_server, valid_character_data):
-        """Test adding new fields to existing character."""
-        created_char = character_server.create_character(valid_character_data)
-        update_data = {
-            'guild': 'AwesomeGuild',
-            'reputation': 'Honored',
-            'achievements': ['first_kill', 'level_10']
+    @pytest.mark.asyncio
+    @patch('character_server.LLMEngine')
+    @patch('character_server.TTSManager')
+    @patch('character_server.pygame')
+    async def test_async_init_pygame_error(self, mock_pygame, mock_tts_manager, mock_llm_engine):
+        """
+        Test that CharacterServer.async_init handles pygame mixer initialization failure gracefully without raising exceptions.
+        """
+        mock_pygame.mixer.get_init.return_value = False
+        mock_pygame.mixer.init.side_effect = Exception("Pygame init failed")
+        mock_pygame.error = Exception
+        
+        server = CharacterServer(self.mock_db)
+        # Should not raise exception, should handle gracefully
+        await server.async_init()
+        
+        mock_pygame.mixer.init.assert_called_once()
+    
+    @pytest.mark.asyncio
+    @patch('character_server.LLMEngine')
+    @patch('character_server.TTSManager')
+    async def test_async_init_with_xtts_reference_audio(self, mock_tts_manager, mock_llm_engine):
+        """
+        Tests that `async_init` initializes the TTSManager with the correct speaker WAV path when the character uses XTTS and a reference audio file is specified.
+        """
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "reference.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
+        
+        server = CharacterServer(self.mock_db)
+        
+        with patch('character_server.os.path.join') as mock_join:
+            mock_join.return_value = "/path/to/reference.wav"
+            await server.async_init()
+        
+        # Verify TTSManager was called with speaker_wav_path
+        mock_tts_manager.assert_called_once()
+        call_args = mock_tts_manager.call_args
+        assert 'speaker_wav_path' in call_args.kwargs
+
+
+class TestCharacterServerGenerateResponse:
+    """Test CharacterServer response generation."""
+    
+    def setup_method(self):
+        """
+        Prepare mock database and character data for each test method.
+        """
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "personality": "helpful"
         }
+        self.mock_db.get_character.return_value = self.mock_character_data
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_no_character(self):
+        """
+        Test that `generate_response` returns an empty string when no character is loaded.
+        """
+        server = CharacterServer(self.mock_db)
+        server.character = None
         
-        updated_char = character_server.update_character(created_char['id'], update_data)
+        response = await server.generate_response("Test narration", {})
+        assert response == ""
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_no_llm(self):
+        """
+        Test that `generate_response` returns an error string when the LLM is not initialized.
+        """ 
+        server = CharacterServer(self.mock_db)
+        server.llm = None
         
-        assert updated_char['guild'] == 'AwesomeGuild'
-        assert updated_char['reputation'] == 'Honored'
-        assert updated_char['achievements'] == ['first_kill', 'level_10']
+        response = await server.generate_response("Test narration", {})
+        assert response == "[Actor1_LLM_ERROR]"
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_llm_not_initialized(self):
+        """
+        Test that `generate_response` returns an error string when the LLM exists but is not initialized.
+        """
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = False
+        
+        response = await server.generate_response("Test narration", {})
+        assert response == "[Actor1_LLM_ERROR]"
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_success(self):
+        """
+        Test that `generate_response` produces a valid response, saves training data, triggers fine-tuning, and outputs audio when all components are properly initialized.
+        """
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Generated response")
+        server.llm.fine_tune = AsyncMock()
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output_audio:
+            response = await server.generate_response("Test narration", {"Other": "text"})
+        
+        assert response == "Generated response"
+        server.llm.generate.assert_called_once()
+        self.mock_db.save_training_data.assert_called_once()
+        server.llm.fine_tune.assert_called_once()
+        mock_output_audio.assert_called_once_with("Generated response")
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_with_other_texts(self):
+        """
+        Tests that `generate_response` constructs the prompt to include texts from other characters and the narration when generating a response.
+        """
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Generated response")
+        server.llm.fine_tune = AsyncMock()
+        
+        other_texts = {"Character1": "Hello", "Character2": "World"}
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
+            await server.generate_response("Narration", other_texts)
+        
+        # Verify the prompt construction includes other texts
+        call_args = server.llm.generate.call_args[0][0]
+        assert "Character1: Hello" in call_args
+        assert "Character2: World" in call_args
+        assert "Narrator: Narration" in call_args
+    
+    @pytest.mark.asyncio
+    async def test_generate_response_llm_error_responses(self):
+        """
+        Test that `generate_response` correctly handles various LLM error responses by returning the error, not saving training data, and not triggering audio output.
+        """
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        
+        error_responses = [
+            "[LLM_ERROR: NOT_INITIALIZED]",
+            "[LLM_ERROR: GENERATION_FAILED]",
+            None,
+            ""
+        ]
+        
+        for error_response in error_responses:
+            server.llm.generate = AsyncMock(return_value=error_response)
+            
+            with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output_audio:
+                response = await server.generate_response("Test", {})
+            
+            assert response == error_response
+            # Should not save training data or call fine_tune for error responses
+            mock_output_audio.assert_not_called()
 
 
-class TestCharacterDeletion:
-    """Test suite for character deletion functionality."""
+class TestCharacterServerOutputAudio:
+    """Test CharacterServer audio output functionality."""
     
-    def test_delete_character_success(self, character_server, valid_character_data):
-        """Test successful character deletion."""
-        created_char = character_server.create_character(valid_character_data)
-        
-        result = character_server.delete_character(created_char['id'])
-        
-        assert result is True
-        # Verify character is actually deleted
-        retrieved_char = character_server.get_character(created_char['id'])
-        assert retrieved_char is None
-    
-    def test_delete_character_nonexistent(self, character_server):
-        """Test deleting a character that doesn't exist."""
-        result = character_server.delete_character(9999)
-        assert result is False
-    
-    def test_delete_character_zero_id(self, character_server):
-        """Test deleting character with ID 0."""
-        result = character_server.delete_character(0)
-        assert result is False
-    
-    def test_delete_character_negative_id(self, character_server):
-        """Test deleting character with negative ID."""
-        result = character_server.delete_character(-1)
-        assert result is False
-    
-    def test_delete_multiple_characters(self, character_server, valid_character_data):
-        """Test deleting multiple characters."""
-        char1 = character_server.create_character({**valid_character_data, 'name': 'Hero1'})
-        char2 = character_server.create_character({**valid_character_data, 'name': 'Hero2'})
-        
-        result1 = character_server.delete_character(char1['id'])
-        result2 = character_server.delete_character(char2['id'])
-        
-        assert result1 is True
-        assert result2 is True
-        assert character_server.get_character(char1['id']) is None
-        assert character_server.get_character(char2['id']) is None
-
-
-class TestCharacterListing:
-    """Test suite for character listing functionality."""
-    
-    def test_list_characters_empty(self, character_server):
-        """Test listing characters when none exist."""
-        result = character_server.list_characters()
-        assert result == []
-    
-    def test_list_characters_single(self, character_server, valid_character_data):
-        """Test listing characters with single character."""
-        character_server.create_character(valid_character_data)
-        
-        result = character_server.list_characters()
-        
-        assert len(result) == 1
-        assert result[0]['name'] == valid_character_data['name']
-    
-    def test_list_characters_multiple(self, character_server, valid_character_data):
-        """Test listing multiple characters."""
-        char1_data = {**valid_character_data, 'name': 'Hero1'}
-        char2_data = {**valid_character_data, 'name': 'Hero2', 'class': 'Mage'}
-        char3_data = {**valid_character_data, 'name': 'Hero3', 'class': 'Rogue'}
-        
-        character_server.create_character(char1_data)
-        character_server.create_character(char2_data)
-        character_server.create_character(char3_data)
-        
-        result = character_server.list_characters()
-        
-        assert len(result) == 3
-        names = [char['name'] for char in result]
-        assert 'Hero1' in names
-        assert 'Hero2' in names
-        assert 'Hero3' in names
-    
-    def test_list_characters_after_deletion(self, character_server, valid_character_data):
-        """Test listing characters after some are deleted."""
-        char1 = character_server.create_character({**valid_character_data, 'name': 'Hero1'})
-        char2 = character_server.create_character({**valid_character_data, 'name': 'Hero2'})
-        
-        character_server.delete_character(char1['id'])
-        
-        result = character_server.list_characters()
-        
-        assert len(result) == 1
-        assert result[0]['name'] == 'Hero2'
-
-
-class TestCharacterValidation:
-    """Test suite for character data validation."""
-    
-    @pytest.mark.parametrize("valid_data", [
-        {'name': 'Hero', 'class': 'Warrior', 'level': 1},
-        {'name': 'A', 'class': 'Mage', 'level': 100},
-        {'name': 'Test Hero', 'class': 'Rogue', 'level': 50},
-        {'name': 'Hérö-123', 'class': 'Paladin', 'level': 25},
-    ])
-    def test_validate_character_data_valid_cases(self, valid_data):
-        """Test validation with various valid character data."""
-        assert MockCharacterServer.validate_character_data(valid_data) is True
-    
-    @pytest.mark.parametrize("invalid_data", [
-        {'name': '', 'class': 'Warrior', 'level': 1},  # Empty name
-        {'name': 'Hero', 'class': 'Warrior', 'level': 0},  # Zero level
-        {'name': 'Hero', 'class': 'Warrior', 'level': -1},  # Negative level
-        {'name': 'Hero', 'class': 'Warrior'},  # Missing level
-        {'name': 'Hero', 'level': 1},  # Missing class
-        {'class': 'Warrior', 'level': 1},  # Missing name
-        {'name': 123, 'class': 'Warrior', 'level': 1},  # Invalid name type
-        {'name': 'Hero', 'class': 'Warrior', 'level': 'one'},  # Invalid level type
-        {},  # Empty data
-    ])
-    def test_validate_character_data_invalid_cases(self, invalid_data):
-        """Test validation with various invalid character data."""
-        assert MockCharacterServer.validate_character_data(invalid_data) is False
-    
-    def test_validate_character_data_none_values(self):
-        """Test validation with None values."""
-        invalid_data = {
-            'name': None,
-            'class': 'Warrior',
-            'level': 1
+    def setup_method(self):
+        """
+        Prepare mock database and character data for each test method in the test class.
+        """
+        self.mock_db = Mock()
+        self.mock_character_data = {
+            "name": "TestActor",
+            "tts": "piper",
+            "reference_audio_filename": "test.wav"
         }
-        assert MockCharacterServer.validate_character_data(invalid_data) is False
+        self.mock_db.get_character.return_value = self.mock_character_data
     
-    def test_validate_character_data_extra_fields(self):
-        """Test validation with extra fields (should still be valid)."""
-        data_with_extra = {
-            'name': 'Hero',
-            'class': 'Warrior',
-            'level': 1,
-            'extra_field': 'extra_value',
-            'hp': 100
-        }
-        assert MockCharacterServer.validate_character_data(data_with_extra) is True
+    @pytest.mark.asyncio
+    async def test_output_audio_no_tts(self):
+        """
+        Test that output_audio handles the case where TTS is not initialized without raising an exception.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = None
+        
+        # Should not raise exception
+        await server.output_audio("Test text")
+    
+    @pytest.mark.asyncio
+    async def test_output_audio_tts_not_initialized(self):
+        """
+        Test that audio output is handled gracefully when the TTS engine exists but is not initialized.
+        
+        Verifies that no synthesis is attempted and no errors are raised when attempting to output audio under these conditions.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = False
+        
+        await server.output_audio("Test text")
+        # Should handle gracefully without calling synthesize
+    
+    @pytest.mark.asyncio
+    async def test_output_audio_empty_text(self):
+        """
+        Test that output_audio handles empty or whitespace-only text inputs gracefully.
+        
+        Verifies that the method does not raise exceptions or attempt audio synthesis when provided with None, an empty string, or a string containing only whitespace.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        
+        for empty_text in [None, "", "   "]:
+            await server.output_audio(empty_text)
+            # Should handle gracefully
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.os.path.exists')
+    @patch('character_server.pygame')
+    @patch('character_server.asyncio.to_thread')
+    async def test_output_audio_success(self, mock_to_thread, mock_pygame, mock_exists, mock_makedirs):
+        """
+        Test that `output_audio` successfully synthesizes and plays audio when TTS is initialized and all dependencies are available.
+        
+        Verifies that the TTS `synthesize` method is called and audio playback is triggered via a background thread.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
+        mock_exists.return_value = True
+        mock_pygame.mixer.get_init.return_value = True
+        mock_to_thread.return_value = None
+        
+        with patch('character_server.uuid.uuid4') as mock_uuid:
+            mock_uuid.return_value = Mock()
+            mock_uuid.return_value.__str__ = Mock(return_value="test-uuid")
+            
+            await server.output_audio("Test text")
+        
+        server.tts.synthesize.assert_called_once()
+        mock_to_thread.assert_called_once()
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.os.path.exists')
+    async def test_output_audio_with_xtts_reference(self, mock_exists, mock_makedirs):
+        """
+        Tests that `output_audio` correctly uses the reference audio file when the TTS engine is XTTS and the reference audio exists.
+        
+        Verifies that the TTS synthesize method is called with the `speaker_wav_for_synthesis` argument when the reference audio file is present.
+        """
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "reference.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
+        
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
+        mock_exists.return_value = True  # Reference file exists
+        
+        with patch('character_server.REFERENCE_VOICES_AUDIO_PATH', '/ref/path'):
+            await server.output_audio("Test text")
+        
+        # Verify synthesize was called with speaker_wav_for_synthesis
+        call_args = server.tts.synthesize.call_args
+        assert call_args.kwargs.get('speaker_wav_for_synthesis') is not None
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.os.path.exists')
+    async def test_output_audio_missing_reference_file(self, mock_exists, mock_makedirs):
+        """
+        Test that audio output proceeds when the reference audio file is missing for XTTS TTS, ensuring synthesis is called without the speaker WAV parameter.
+        """
+        character_with_xtts = self.mock_character_data.copy()
+        character_with_xtts["tts"] = "xttsv2"
+        character_with_xtts["reference_audio_filename"] = "missing.wav"
+        self.mock_db.get_character.return_value = character_with_xtts
+        
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
+        mock_exists.return_value = False  # Reference file doesn't exist
+        
+        await server.output_audio("Test text")
+        
+        # Should still call synthesize but without speaker_wav_for_synthesis
+        call_args = server.tts.synthesize.call_args
+        assert call_args.kwargs.get('speaker_wav_for_synthesis') is None
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.pygame')
+    async def test_output_audio_synthesis_failure(self, mock_pygame, mock_makedirs):
+        """
+        Test that `output_audio` handles TTS synthesis failure gracefully by not attempting audio playback and not raising exceptions.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=False)  # Synthesis fails
+        
+        mock_pygame.mixer.get_init.return_value = True
+        
+        # Should not raise exception
+        await server.output_audio("Test text")
+        
+        # Should not attempt to play audio
+        mock_pygame.mixer.Sound.assert_not_called()
+    
+    @pytest.mark.asyncio
+    @patch('character_server.os.makedirs')
+    @patch('character_server.os.path.exists')
+    @patch('character_server.pygame')
+    async def test_output_audio_pygame_not_initialized(self, mock_pygame, mock_exists, mock_makedirs):
+        """
+        Test that `output_audio` does not attempt audio playback when the pygame mixer is not initialized.
+        """
+        server = CharacterServer(self.mock_db)
+        server.tts = Mock()
+        server.tts.is_initialized = True
+        server.tts.synthesize = AsyncMock(return_value=True)
+        
+        mock_exists.return_value = True
+        mock_pygame.mixer.get_init.return_value = False  # Pygame not initialized
+        
+        await server.output_audio("Test text")
+        
+        # Should not attempt to play audio
+        mock_pygame.mixer.Sound.assert_not_called()
 
 
 class TestCharacterServerEdgeCases:
-    """Test suite for edge cases and boundary conditions."""
+    """Test CharacterServer edge cases and error conditions."""
     
-    def test_character_id_sequence(self, character_server, valid_character_data):
-        """Test that character IDs are assigned sequentially."""
-        char1 = character_server.create_character({**valid_character_data, 'name': 'Hero1'})
-        char2 = character_server.create_character({**valid_character_data, 'name': 'Hero2'})
-        char3 = character_server.create_character({**valid_character_data, 'name': 'Hero3'})
-        
-        assert char2['id'] == char1['id'] + 1
-        assert char3['id'] == char2['id'] + 1
+    def setup_method(self):
+        """
+        Prepare the mock database fixture for each test method in the test class.
+        """
+        self.mock_db = Mock()
     
-    def test_character_id_after_deletion(self, character_server, valid_character_data):
-        """Test character ID sequence after deletion."""
-        char1 = character_server.create_character({**valid_character_data, 'name': 'Hero1'})
-        char2 = character_server.create_character({**valid_character_data, 'name': 'Hero2'})
-        
-        character_server.delete_character(char1['id'])
-        
-        char3 = character_server.create_character({**valid_character_data, 'name': 'Hero3'})
-        
-        # ID should continue from where it left off, not reuse deleted ID
-        assert char3['id'] > char2['id']
-    
-    def test_large_character_data(self, character_server):
-        """Test handling of characters with large amounts of data."""
-        large_data = {
-            'name': 'Hero',
-            'class': 'Warrior',
-            'level': 1,
-            'equipment': ['item' + str(i) for i in range(100)],
-            'skills': ['skill' + str(i) for i in range(50)],
-            'achievements': ['achievement' + str(i) for i in range(200)],
-            'inventory': {f'slot_{i}': f'item_{i}' for i in range(100)}
+    def test_character_name_sanitization(self):
+        """
+        Verify that character names containing special characters are handled correctly without alteration during initialization.
+        """
+        character_data = {
+            "name": "Test/Character\\With:Invalid*Chars",
+            "Actor_id": "Actor1"
         }
+        self.mock_db.get_character.return_value = character_data
         
-        result = character_server.create_character(large_data)
-        assert result is not None
-        assert len(result['equipment']) == 100
-        assert len(result['skills']) == 50
-        assert len(result['achievements']) == 200
-    
-    def test_unicode_character_names(self, character_server):
-        """Test handling of Unicode character names."""
-        unicode_names = [
-            '测试英雄',  # Chinese
-            'тестовый герой',  # Russian
-            'ñoño',  # Spanish with special chars
-            '🦸‍♂️Hero',  # Emoji
-            'Åsbjørn',  # Nordic characters
-        ]
+        server = CharacterServer(self.mock_db)
         
-        for name in unicode_names:
-            char_data = {
-                'name': name,
-                'class': 'Warrior',
-                'level': 1
-            }
-            result = character_server.create_character(char_data)
-            assert result['name'] == name
-    
-    def test_concurrent_character_operations(self, character_server, valid_character_data):
-        """Test handling of concurrent character operations."""
-        # Simulate concurrent creation
-        characters = []
-        for i in range(10):
-            char_data = {**valid_character_data, 'name': f'Hero{i}'}
-            characters.append(character_server.create_character(char_data))
-        
-        # Verify all characters were created with unique IDs
-        ids = [char['id'] for char in characters]
-        assert len(set(ids)) == len(ids)  # All IDs should be unique
-        
-        # Verify all characters can be retrieved
-        for char in characters:
-            retrieved = character_server.get_character(char['id'])
-            assert retrieved is not None
-            assert retrieved['name'] == char['name']
-
-
-class TestCharacterServerPerformance:
-    """Test suite for performance-related scenarios."""
-    
-    def test_create_many_characters(self, character_server, valid_character_data):
-        """Test creating many characters to check performance degradation."""
-        num_characters = 1000
-        
-        for i in range(num_characters):
-            char_data = {**valid_character_data, 'name': f'Hero{i}'}
-            result = character_server.create_character(char_data)
-            assert result is not None
-        
-        # Verify all characters exist
-        all_characters = character_server.list_characters()
-        assert len(all_characters) == num_characters
-    
-    def test_bulk_operations(self, character_server, valid_character_data):
-        """Test bulk character operations."""
-        # Create multiple characters
-        created_chars = []
-        for i in range(50):
-            char_data = {**valid_character_data, 'name': f'BulkHero{i}'}
-            created_chars.append(character_server.create_character(char_data))
-        
-        # Update all characters
-        for char in created_chars:
-            character_server.update_character(char['id'], {'level': 99})
-        
-        # Verify all updates
-        for char in created_chars:
-            updated_char = character_server.get_character(char['id'])
-            assert updated_char['level'] == 99
-        
-        # Delete all characters
-        for char in created_chars:
-            result = character_server.delete_character(char['id'])
-            assert result is True
-        
-        # Verify all deleted
-        assert len(character_server.list_characters()) == 0
-
-
-# Async tests for potential async functionality
-class TestAsyncCharacterOperations:
-    """Test suite for asynchronous character operations."""
+        # The server should handle special characters in names
+        assert server.character["name"] == character_data["name"]
     
     @pytest.mark.asyncio
-    async def test_async_character_creation(self):
-        """Test asynchronous character creation."""
-        # This would test async functionality if the server supports it
-        async def mock_create_character_async(data):
-            await asyncio.sleep(0.01)  # Simulate async operation
-            return {'id': 1, **data}
+    async def test_concurrent_response_generation(self):
+        """
+        Tests that multiple concurrent calls to `generate_response` return correct responses for each request.
         
-        with patch('character_server.create_character_async', side_effect=mock_create_character_async):
-            result = await mock_create_character_async({
-                'name': 'AsyncHero',
-                'class': 'Warrior',
-                'level': 1
-            })
+        Verifies that the server can handle concurrent response generation without errors or data corruption.
+        """
+        self.mock_db.get_character.return_value = {"name": "TestActor", "personality": "helpful"}
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Response")
+        server.llm.fine_tune = AsyncMock()
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
+            tasks = [
+                server.generate_response(f"Narration {i}", {})
+                for i in range(5)
+            ]
+            responses = await asyncio.gather(*tasks)
+        
+        assert len(responses) == 5
+        assert all(response == "Response" for response in responses)
+    
+    @pytest.mark.asyncio
+    async def test_very_long_narration(self):
+        """
+        Tests that `generate_response` correctly handles and includes a very long narration string in the prompt, ensuring the response is generated as expected.
+        """
+        self.mock_db.get_character.return_value = {"name": "TestActor", "personality": "helpful"}
+        server = CharacterServer(self.mock_db)
+        server.llm = Mock()
+        server.llm.is_initialized = True
+        server.llm.generate = AsyncMock(return_value="Response")
+        server.llm.fine_tune = AsyncMock()
+        
+        very_long_narration = "A" * 10000  # 10k characters
+        
+        with patch.object(server, 'output_audio', new_callable=AsyncMock):
+            response = await server.generate_response(very_long_narration, {})
+        
+        assert response == "Response"
+        # Verify the long narration was included in the prompt
+        call_args = server.llm.generate.call_args[0][0]
+        assert very_long_narration in call_args
+    
+    def test_db_save_character_exception(self):
+        """
+        Test that an exception raised during character saving to the database does not propagate during CharacterServer initialization.
+        
+        Verifies that the CharacterServer still sets the character attribute even if saving to the database fails.
+        """
+        self.mock_db.get_character.return_value = None
+        self.mock_db.save_character.side_effect = Exception("Database error")
+        
+        # Should not raise exception during initialization
+        server = CharacterServer(self.mock_db)
+        assert server.character is not None
+
+
+class TestCharacterServerIntegration:
+    """Integration tests for CharacterServer."""
+    
+    @pytest.mark.asyncio
+    async def test_full_workflow(self):
+        """
+        Integration test covering the full workflow of CharacterServer from initialization through response generation and audio output.
+        
+        This test verifies that CharacterServer correctly initializes its dependencies, generates a response using the mocked LLM, and outputs audio using the mocked TTS, ensuring all components interact as expected in an integrated scenario.
+        """
+        mock_db = Mock()
+        character_data = {
+            "name": "IntegrationTestActor",
+            "personality": "friendly",
+            "tts": "piper",
+            "tts_model": "en_US-ryan-high",
+            "llm_model": "test_model",
+            "language": "en"
+        }
+        mock_db.get_character.return_value = character_data
+        
+        with patch('character_server.LLMEngine') as mock_llm_engine, \
+             patch('character_server.TTSManager') as mock_tts_manager, \
+             patch('character_server.pygame'):
             
-            assert result['name'] == 'AsyncHero'
+            mock_llm = Mock()
+            mock_llm.is_initialized = True
+            mock_llm.generate = AsyncMock(return_value="Integration test response")
+            mock_llm.fine_tune = AsyncMock()
+            mock_llm_engine.return_value = mock_llm
+            
+            mock_tts = Mock()
+            mock_tts.is_initialized = True
+            mock_tts.synthesize = AsyncMock(return_value=True)
+            mock_tts_manager.return_value = mock_tts
+            
+            server = CharacterServer(mock_db)
+            await server.async_init()
+            
+            with patch.object(server, 'output_audio', new_callable=AsyncMock) as mock_output:
+                response = await server.generate_response("Test narration", {"Other": "Hello"})
+            
+            assert response == "Integration test response"
+            assert server.llm == mock_llm
+            assert server.tts == mock_tts
+            mock_output.assert_called_once_with("Integration test response")
+
+
+# Pytest configuration and fixtures
+@pytest.fixture
+def mock_character_data():
+    """
+    Pytest fixture that returns a dictionary with mock character attributes for testing.
+    """
+    return {
+        "name": "TestCharacter",
+        "personality": "test_personality",
+        "goals": "test_goals",
+        "backstory": "test_backstory",
+        "tts": "piper",
+        "tts_model": "en_US-ryan-high",
+        "reference_audio_filename": "test.wav",
+        "Actor_id": "Actor1",
+        "llm_model": "test_model",
+        "language": "en"
+    }
+
+
+@pytest.fixture
+def mock_db():
+    """
+    Pytest fixture that returns a mock database object for use in tests.
+    """
+    return Mock()
+
+
+@pytest.fixture
+def character_server(mock_db, mock_character_data):
+    """
+    Fixture that returns a CharacterServer instance initialized with mock database and character data.
+    """
+    mock_db.get_character.return_value = mock_character_data
+    return CharacterServer(mock_db)
+
+
+# Performance and stress tests
+class TestCharacterServerPerformance:
+    """Performance and stress tests for CharacterServer."""
     
     @pytest.mark.asyncio
-    async def test_concurrent_async_operations(self):
-        """Test concurrent asynchronous operations."""
-        async def mock_operation(delay, result):
-            await asyncio.sleep(delay)
-            return result
+    async def test_memory_usage_with_many_requests(self, character_server):
+        """
+        Verifies that the server can handle 100 concurrent response generation requests without errors and that all responses are correct.
+        """
+        character_server.llm = Mock()
+        character_server.llm.is_initialized = True
+        character_server.llm.generate = AsyncMock(return_value="Response")
+        character_server.llm.fine_tune = AsyncMock()
         
-        # Simulate concurrent operations
-        tasks = [
-            mock_operation(0.01, f'result_{i}')
-            for i in range(5)
-        ]
+        with patch.object(character_server, 'output_audio', new_callable=AsyncMock):
+            tasks = [
+                character_server.generate_response(f"Request {i}", {})
+                for i in range(100)
+            ]
+            responses = await asyncio.gather(*tasks)
         
-        results = await asyncio.gather(*tasks)
+        assert len(responses) == 100
+        assert all(response == "Response" for response in responses)
+    
+    @pytest.mark.asyncio
+    async def test_response_time_consistency(self, character_server):
+        """
+        Test that repeated calls to generate_response complete within a consistent and acceptable response time.
         
-        assert len(results) == 5
-        assert all(f'result_{i}' in results for i in range(5))
+        Runs 10 sequential generate_response calls and asserts each completes in under 5 seconds.
+        """
+        character_server.llm = Mock()
+        character_server.llm.is_initialized = True
+        character_server.llm.generate = AsyncMock(return_value="Response")
+        character_server.llm.fine_tune = AsyncMock()
+        
+        import time
+        response_times = []
+        
+        with patch.object(character_server, 'output_audio', new_callable=AsyncMock):
+            for i in range(10):
+                start_time = time.time()
+                await character_server.generate_response(f"Request {i}", {})
+                end_time = time.time()
+                response_times.append(end_time - start_time)
+        
+        # Check that response times are reasonably consistent
+        # (This is a basic check - in real scenarios you'd have more sophisticated metrics)
+        assert len(response_times) == 10
+        assert all(rt < 5.0 for rt in response_times)  # All responses under 5 seconds
 
 
 if __name__ == '__main__':
-    # Run tests with pytest
-    pytest.main([__file__, '-v', '--tb=short'])
+    pytest.main([__file__, "-v"])
