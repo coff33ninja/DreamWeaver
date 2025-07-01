@@ -71,7 +71,7 @@ class TTSManager:
             print("gTTS is not available. Cannot synthesize.")
 
     def _xttsv2_synthesize_blocking(self, text: str, output_file_path: str, speaker_wav: Optional[str] = None, lang: str = "en"):
-        if not self.tts_instance or not hasattr(self.tts_instance, 'tts_to_file'):
+        if self.tts_instance is None or not hasattr(self.tts_instance, 'tts_to_file') or not callable(getattr(self.tts_instance, 'tts_to_file')):
             print("XTTSv2 instance is not available or invalid. Cannot synthesize.")
             return
         lang_to_use = lang or "en"
@@ -82,17 +82,11 @@ class TTSManager:
                 lang_to_use = languages[0]
         speaker_to_use = speaker_wav or self.speaker_wav_path
         if speaker_to_use and isinstance(speaker_to_use, str) and os.path.exists(speaker_to_use):
-            if hasattr(self.tts_instance, "tts_to_file") and callable(getattr(self.tts_instance, "tts_to_file")):
-                self.tts_instance.tts_to_file(text=text, speaker_wav=speaker_to_use, language=lang_to_use, file_path=output_file_path)
-            else:
-                print("XTTSv2 instance does not have a callable 'tts_to_file' method.")
+            self.tts_instance.tts_to_file(text=text, speaker_wav=speaker_to_use, language=lang_to_use, file_path=output_file_path)
         else:
             if speaker_to_use:
                 print(f"Client TTSManager (XTTS): Warning - speaker_wav '{speaker_to_use}' not found. Using default voice.")
-            if hasattr(self.tts_instance, "tts_to_file") and callable(getattr(self.tts_instance, "tts_to_file")):
-                self.tts_instance.tts_to_file(text=text, language=lang_to_use, file_path=output_file_path)
-            else:
-                print("XTTSv2 instance does not have a callable 'tts_to_file' method.")
+            self.tts_instance.tts_to_file(text=text, language=lang_to_use, file_path=output_file_path)
 
     async def synthesize(self, text: str, output_filename_no_path: str, speaker_wav_for_synthesis: Optional[str] = None) -> str | None:
         if not self.is_initialized or not self.tts_instance:
