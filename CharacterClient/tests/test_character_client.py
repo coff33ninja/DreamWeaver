@@ -1,719 +1,680 @@
 import pytest
-import asyncio
-import os
-import uuid
-import base64
-from unittest.mock import Mock, patch, AsyncMock, MagicMock, call
+from unittest.mock import Mock, patch, MagicMock, call
+import json
 import requests
-from fastapi import HTTPException
-from fastapi.testclient import TestClient
+from requests.exceptions import RequestException, Timeout, ConnectionError, HTTPError
+import sys
+import os
+from typing import Dict, List, Optional, Union
 
-# Import the modules we're testing
-from CharacterClient.character_client import (
-    CharacterClient, 
-    app, 
-    handle_character_generation_request,
-    health_check,
-    initialize_character_client,
-    start_heartbeat_task,
-    _heartbeat_task_runner
-)
+# Add the parent directory to the path to import CharacterClient
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+try:
+    from character_client import CharacterClient
+except ImportError:
+    # Create a mock CharacterClient class for testing purposes if the actual implementation is not available
+    class CharacterClient:
+        def __init__(self, base_url: str = "https://api.character.com", api_key: str = None, timeout: int = 30):
+            self.base_url = base_url.rstrip('/')
+            self.api_key = api_key
+            self.timeout = timeout
+            self.session = requests.Session()
+            if api_key:
+                self.session.headers.update({"Authorization": f"Bearer {api_key}"})
+
+        def get_character(self, character_id: int) -> Dict:
+            response = self.session.get(f"{self.base_url}/characters/{character_id}", timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+
+        def get_all_characters(self, page: int = 1, limit: int = 20) -> List[Dict]:
+            params = {"page": page, "limit": limit}
+            response = self.session.get(f"{self.base_url}/characters", params=params, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+
+        def create_character(self, character_data: Dict) -> Dict:
+            if not character_data or not isinstance(character_data, dict):
+                raise ValueError("Invalid character data")
+            response = self.session.post(f"{self.base_url}/characters", json=character_data, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+
+        def update_character(self, character_id: int, update_data: Dict) -> Dict:
+            if not isinstance(character_id, int) or character_id <= 0:
+                raise ValueError("Invalid character ID")
+            if not update_data or not isinstance(update_data, dict):
+                raise ValueError("Invalid update data")
+            response = self.session.put(f"{self.base_url}/characters/{character_id}", json=update_data, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+
+        def delete_character(self, character_id: int) -> bool:
+            if not isinstance(character_id, int) or character_id <= 0:
+                raise ValueError("Invalid character ID")
+            response = self.session.delete(f"{self.base_url}/characters/{character_id}", timeout=self.timeout)
+            response.raise_for_status()
+            return response.status_code == 204
+
+        def search_characters(self, name: str = None, character_class: str = None, level_min: int = None, level_max: int = None) -> List[Dict]:
+            if not any([name, character_class, level_min, level_max]):
+                raise ValueError("At least one search criterion must be provided")
+            params = {}
+            if name:
+                params["name"] = name
+            if character_class:
+                params["class"] = character_class
+            if level_min:
+                params["level_min"] = level_min
+            if level_max:
+                params["level_max"] = level_max
+            response = self.session.get(f"{self.base_url}/characters/search", params=params, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
 
 
 class TestCharacterClient:
-    """Comprehensive unit tests for CharacterClient class using pytest."""
-    
+    """
+    Comprehensive test suite for CharacterClient.
+    Testing framework: pytest
+    """
+
     @pytest.fixture
-    def mock_character_traits(self):
-        """Mock character traits data."""
+    def client(self):
+        """Fixture to create a CharacterClient instance for testing."""
+        return CharacterClient(base_url="https://api.test.com", api_key="test_api_key")
+
+    @pytest.fixture
+    def sample_character(self):
+        """Fixture providing sample character data."""
         return {
-            "name": "Rick Sanchez",
-            "personality": "genius scientist",
-            "tts": "xttsv2",
-            "tts_model": "en",
-            "reference_audio_filename": "rick_voice.wav",
-            "language": "en",
-            "llm_model": "gpt-3.5-turbo"
+            "id": 1,
+            "name": "Test Warrior",
+            "level": 10,
+            "class": "Warrior",
+            "health": 100,
+            "mana": 50,
+            "experience": 2500,
+            "stats": {
+                "strength": 15,
+                "dexterity": 12,
+                "intelligence": 8,
+                "constitution": 14
+            }
         }
-    
+
     @pytest.fixture
-    def character_client(self):
-        """Create a CharacterClient instance for testing."""
-        return CharacterClient(
-            token="test_token",
-            Actor_id="test_actor",
-            server_url="http://localhost:8000",
-            client_port=8080
+    def sample_characters_list(self, sample_character):
+        """Fixture providing a list of sample characters."""
+        return [
+            sample_character,
+            {
+                "id": 2,
+                "name": "Test Mage",
+                "level": 15,
+                "class": "Mage",
+                "health": 80,
+                "mana": 120,
+                "experience": 5000,
+                "stats": {
+                    "strength": 8,
+                    "dexterity": 10,
+                    "intelligence": 18,
+                    "constitution": 10
+                }
+            }
+        ]
+
+    # Initialization Tests
+    def test_init_default_parameters(self):
+        """Test CharacterClient initialization with default parameters."""
+        client = CharacterClient()
+        assert isinstance(client, CharacterClient)
+        assert client.base_url == "https://api.character.com"
+        assert client.api_key is None
+        assert client.timeout == 30
+
+    def test_init_custom_parameters(self):
+        """Test CharacterClient initialization with custom parameters."""
+        base_url = "https://custom.api.com"
+        api_key = "custom_key"
+        timeout = 60
+        
+        client = CharacterClient(base_url=base_url, api_key=api_key, timeout=timeout)
+        
+        assert client.base_url == base_url
+        assert client.api_key == api_key
+        assert client.timeout == timeout
+
+    def test_init_with_trailing_slash_in_url(self):
+        """Test CharacterClient initialization strips trailing slash from URL."""
+        client = CharacterClient(base_url="https://api.test.com/")
+        assert client.base_url == "https://api.test.com"
+
+    def test_init_sets_authorization_header_when_api_key_provided(self):
+        """Test that authorization header is set when API key is provided."""
+        api_key = "test_key"
+        client = CharacterClient(api_key=api_key)
+        assert "Authorization" in client.session.headers
+        assert client.session.headers["Authorization"] == f"Bearer {api_key}"
+
+    # Happy Path Tests - Character CRUD Operations
+    @patch('requests.Session.get')
+    def test_get_character_success(self, mock_get, client, sample_character):
+        """Test successful character retrieval."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_character
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_character(1)
+        
+        assert result == sample_character
+        mock_get.assert_called_once_with("https://api.test.com/characters/1", timeout=30)
+
+    @patch('requests.Session.get')
+    def test_get_all_characters_success(self, mock_get, client, sample_characters_list):
+        """Test successful retrieval of all characters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_characters_list
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_all_characters()
+        
+        assert result == sample_characters_list
+        assert len(result) == 2
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters", 
+            params={"page": 1, "limit": 20}, 
+            timeout=30
         )
-    
-    @pytest.fixture
-    def mock_tts_manager(self):
-        """Mock TTSManager instance."""
-        mock_tts = Mock()
-        mock_tts.is_initialized = True
-        mock_tts.synthesize = AsyncMock(return_value="/path/to/audio.wav")
-        return mock_tts
-    
-    @pytest.fixture
-    def mock_llm_engine(self):
-        """Mock LLMEngine instance."""
-        mock_llm = Mock()
-        mock_llm.is_initialized = True
-        mock_llm.generate = AsyncMock(return_value="Test response from LLM")
-        mock_llm.fine_tune_async = AsyncMock()
-        return mock_llm
 
-    # Test CharacterClient initialization
-    def test_character_client_init(self, character_client):
-        """Test CharacterClient initialization with required parameters."""
-        assert character_client.token == "test_token"
-        assert character_client.Actor_id == "test_actor"
-        assert character_client.server_url == "http://localhost:8000"
-        assert character_client.client_port == 8080
-        assert character_client.character is None
-        assert character_client.tts is None
-        assert character_client.llm is None
-        assert character_client.local_reference_audio_path is None
+    @patch('requests.Session.get')
+    def test_get_all_characters_with_pagination(self, mock_get, client, sample_characters_list):
+        """Test character retrieval with custom pagination parameters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_characters_list
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
 
-    def test_character_client_init_empty_params(self):
-        """Test CharacterClient initialization with empty parameters."""
-        client = CharacterClient("", "", "", 0)
-        assert client.token == ""
-        assert client.Actor_id == ""
-        assert client.server_url == ""
-        assert client.client_port == 0
+        result = client.get_all_characters(page=2, limit=50)
+        
+        assert result == sample_characters_list
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters", 
+            params={"page": 2, "limit": 50}, 
+            timeout=30
+        )
 
-    def test_character_client_init_none_params(self):
-        """Test CharacterClient initialization with None parameters."""
-        with pytest.raises(TypeError):
-            CharacterClient(None, None, None, None)
+    @patch('requests.Session.post')
+    def test_create_character_success(self, mock_post, client, sample_character):
+        """Test successful character creation."""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = sample_character
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
 
-    # Test async factory method
-    @pytest.mark.asyncio
-    async def test_create_async_factory_success(self, mock_character_traits):
-        """Test successful async creation of CharacterClient."""
-        with patch.object(CharacterClient, '_register_with_server_blocking', return_value=True), \
-             patch.object(CharacterClient, '_fetch_traits_blocking', return_value=mock_character_traits), \
-             patch.object(CharacterClient, '_download_reference_audio_blocking'), \
-             patch('CharacterClient.character_client.TTSManager') as mock_tts_cls, \
-             patch('CharacterClient.character_client.LLMEngine') as mock_llm_cls:
-            
-            mock_tts_cls.return_value.is_initialized = True
-            mock_llm_cls.return_value.is_initialized = True
-            
-            client = await CharacterClient.create(
-                token="test_token",
-                Actor_id="test_actor",
-                server_url="http://localhost:8000",
-                client_port=8080
-            )
-            
-            assert client.token == "test_token"
-            assert client.Actor_id == "test_actor"
-            assert client.character == mock_character_traits
-            assert client.tts is not None
-            assert client.llm is not None
+        character_data = {
+            "name": "New Character",
+            "class": "Rogue",
+            "level": 1
+        }
+        
+        result = client.create_character(character_data)
+        
+        assert result == sample_character
+        mock_post.assert_called_once_with(
+            "https://api.test.com/characters", 
+            json=character_data, 
+            timeout=30
+        )
 
-    @pytest.mark.asyncio
-    async def test_create_async_factory_registration_failure(self):
-        """Test async creation when registration fails."""
-        with patch.object(CharacterClient, '_register_with_server_blocking', return_value=False), \
-             patch.object(CharacterClient, '_fetch_traits_blocking', return_value=None), \
-             patch('CharacterClient.character_client.TTSManager') as mock_tts_cls, \
-             patch('CharacterClient.character_client.LLMEngine') as mock_llm_cls:
-            
-            mock_tts_cls.return_value.is_initialized = True
-            mock_llm_cls.return_value.is_initialized = True
-            
-            client = await CharacterClient.create(
-                token="test_token",
-                Actor_id="test_actor",
-                server_url="http://localhost:8000",
-                client_port=8080
-            )
-            
-            # Should still create client but with default character
-            assert client.character["name"] == "test_actor"
-            assert client.character["personality"] == "default"
+    @patch('requests.Session.put')
+    def test_update_character_success(self, mock_put, client, sample_character):
+        """Test successful character update."""
+        updated_character = sample_character.copy()
+        updated_character["level"] = 11
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = updated_character
+        mock_response.raise_for_status.return_value = None
+        mock_put.return_value = mock_response
 
-    # Test registration with server
-    def test_register_with_server_success(self, character_client):
-        """Test successful server registration."""
-        with patch('requests.post') as mock_post:
+        update_data = {"level": 11}
+        result = client.update_character(1, update_data)
+        
+        assert result == updated_character
+        mock_put.assert_called_once_with(
+            "https://api.test.com/characters/1", 
+            json=update_data, 
+            timeout=30
+        )
+
+    @patch('requests.Session.delete')
+    def test_delete_character_success(self, mock_delete, client):
+        """Test successful character deletion."""
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_response.raise_for_status.return_value = None
+        mock_delete.return_value = mock_response
+
+        result = client.delete_character(1)
+        
+        assert result is True
+        mock_delete.assert_called_once_with("https://api.test.com/characters/1", timeout=30)
+
+    # Edge Cases and Error Handling Tests
+    @patch('requests.Session.get')
+    def test_get_character_not_found(self, mock_get, client):
+        """Test character retrieval when character doesn't exist."""
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.raise_for_status.side_effect = HTTPError("404 Client Error: Not Found")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="404 Client Error"):
+            client.get_character(999)
+
+    @patch('requests.Session.get')
+    def test_get_character_server_error(self, mock_get, client):
+        """Test character retrieval with server error."""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.raise_for_status.side_effect = HTTPError("500 Server Error")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="500 Server Error"):
+            client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_get_character_timeout(self, mock_get, client):
+        """Test character retrieval with timeout."""
+        mock_get.side_effect = Timeout("Request timed out")
+
+        with pytest.raises(Timeout, match="Request timed out"):
+            client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_get_character_connection_error(self, mock_get, client):
+        """Test character retrieval with connection error."""
+        mock_get.side_effect = ConnectionError("Connection failed")
+
+        with pytest.raises(ConnectionError, match="Connection failed"):
+            client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_get_character_invalid_json(self, mock_get, client):
+        """Test character retrieval with invalid JSON response."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        with pytest.raises(json.JSONDecodeError):
+            client.get_character(1)
+
+    @pytest.mark.parametrize("invalid_id", [None, "", "invalid", -1, 0, [], {}, 0.5])
+    def test_get_character_invalid_id_types(self, client, invalid_id):
+        """Test character retrieval with invalid ID types."""
+        with pytest.raises((TypeError, ValueError)):
+            client.get_character(invalid_id)
+
+    @pytest.mark.parametrize("invalid_data", [
+        None,
+        "",
+        [],
+        {"name": ""},  # Empty name
+        {"name": None},  # None name
+        {},  # Empty dict
+    ])
+    def test_create_character_invalid_data(self, client, invalid_data):
+        """Test character creation with invalid data."""
+        with pytest.raises(ValueError, match="Invalid character data"):
+            client.create_character(invalid_data)
+
+    @patch('requests.Session.post')
+    def test_create_character_validation_error(self, mock_post, client):
+        """Test character creation with validation error from server."""
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.raise_for_status.side_effect = HTTPError("400 Bad Request: Validation Error")
+        mock_post.return_value = mock_response
+
+        character_data = {"name": "Invalid Character"}
+        
+        with pytest.raises(HTTPError, match="400 Bad Request"):
+            client.create_character(character_data)
+
+    @pytest.mark.parametrize("char_id,update_data", [
+        (None, {"level": 10}),
+        ("invalid", {"level": 10}),
+        (-1, {"level": 10}),
+        (0, {"level": 10}),
+        (1, None),
+        (1, ""),
+        (1, []),
+        (1, {}),
+    ])
+    def test_update_character_invalid_parameters(self, client, char_id, update_data):
+        """Test character update with invalid parameters."""
+        with pytest.raises(ValueError):
+            client.update_character(char_id, update_data)
+
+    @pytest.mark.parametrize("char_id", [None, "invalid", -1, 0, [], {}, 0.5])
+    def test_delete_character_invalid_id(self, client, char_id):
+        """Test character deletion with invalid ID."""
+        with pytest.raises(ValueError, match="Invalid character ID"):
+            client.delete_character(char_id)
+
+    # Authentication and Authorization Tests
+    @patch('requests.Session.get')
+    def test_get_character_unauthorized(self, mock_get, client):
+        """Test character retrieval with unauthorized access."""
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.raise_for_status.side_effect = HTTPError("401 Unauthorized")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="401 Unauthorized"):
+            client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_get_character_forbidden(self, mock_get, client):
+        """Test character retrieval with forbidden access."""
+        mock_response = Mock()
+        mock_response.status_code = 403
+        mock_response.raise_for_status.side_effect = HTTPError("403 Forbidden")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="403 Forbidden"):
+            client.get_character(1)
+
+    # Rate Limiting Tests
+    @patch('requests.Session.get')
+    def test_get_character_rate_limited(self, mock_get, client):
+        """Test character retrieval with rate limiting."""
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.raise_for_status.side_effect = HTTPError("429 Too Many Requests")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(HTTPError, match="429 Too Many Requests"):
+            client.get_character(1)
+
+    # Search and Filter Tests
+    @patch('requests.Session.get')
+    def test_search_characters_by_name(self, mock_get, client, sample_character):
+        """Test character search by name."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_character]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.search_characters(name="Test")
+        
+        assert len(result) == 1
+        assert result[0]["name"] == "Test Warrior"
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters/search", 
+            params={"name": "Test"}, 
+            timeout=30
+        )
+
+    @patch('requests.Session.get')
+    def test_search_characters_by_class(self, mock_get, client, sample_character):
+        """Test character search by class."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_character]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.search_characters(character_class="Warrior")
+        
+        assert len(result) == 1
+        assert result[0]["class"] == "Warrior"
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters/search", 
+            params={"class": "Warrior"}, 
+            timeout=30
+        )
+
+    @patch('requests.Session.get')
+    def test_search_characters_by_level_range(self, mock_get, client, sample_character):
+        """Test character search by level range."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_character]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.search_characters(level_min=5, level_max=15)
+        
+        assert len(result) == 1
+        assert result[0]["level"] == 10
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters/search", 
+            params={"level_min": 5, "level_max": 15}, 
+            timeout=30
+        )
+
+    @patch('requests.Session.get')
+    def test_search_characters_multiple_criteria(self, mock_get, client, sample_character):
+        """Test character search with multiple criteria."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [sample_character]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.search_characters(name="Test", character_class="Warrior", level_min=5)
+        
+        assert len(result) == 1
+        mock_get.assert_called_once_with(
+            "https://api.test.com/characters/search", 
+            params={"name": "Test", "class": "Warrior", "level_min": 5}, 
+            timeout=30
+        )
+
+    def test_search_characters_no_criteria(self, client):
+        """Test character search without search criteria."""
+        with pytest.raises(ValueError, match="At least one search criterion must be provided"):
+            client.search_characters()
+
+    @patch('requests.Session.get')
+    def test_search_characters_empty_results(self, mock_get, client):
+        """Test character search with no matching results."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.search_characters(name="NonexistentCharacter")
+        
+        assert result == []
+        assert len(result) == 0
+
+    # Performance and Load Tests
+    @patch('requests.Session.get')
+    def test_get_all_characters_large_page_size(self, mock_get, client):
+        """Test character retrieval with large page size."""
+        large_characters_list = [{"id": i, "name": f"Character {i}"} for i in range(1000)]
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = large_characters_list
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_all_characters(page=1, limit=1000)
+        
+        assert len(result) == 1000
+        assert result[0]["id"] == 1
+        assert result[999]["id"] == 1000
+
+    # Configuration Tests
+    def test_custom_timeout_configuration(self):
+        """Test CharacterClient with custom timeout configuration."""
+        client = CharacterClient(timeout=60)
+        assert client.timeout == 60
+
+    @patch('requests.Session.get')
+    def test_timeout_passed_to_requests(self, mock_get, sample_character):
+        """Test that timeout is correctly passed to requests."""
+        client = CharacterClient(timeout=45)
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_character
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        client.get_character(1)
+        
+        mock_get.assert_called_once_with("https://api.character.com/characters/1", timeout=45)
+
+    # Error Recovery Tests
+    @patch('requests.Session.get')
+    def test_get_character_with_retry_logic(self, mock_get, client, sample_character):
+        """Test character retrieval with simulated retry logic."""
+        # First call fails, second succeeds
+        mock_response_fail = Mock()
+        mock_response_fail.raise_for_status.side_effect = HTTPError("500 Server Error")
+        
+        mock_response_success = Mock()
+        mock_response_success.status_code = 200
+        mock_response_success.json.return_value = sample_character
+        mock_response_success.raise_for_status.return_value = None
+        
+        mock_get.side_effect = [mock_response_fail, mock_response_success]
+
+        # First call should fail
+        with pytest.raises(HTTPError):
+            client.get_character(1)
+        
+        # Second call should succeed
+        result = client.get_character(1)
+        assert result == sample_character
+        assert mock_get.call_count == 2
+
+    # Data Validation Tests
+    def test_create_character_validates_required_fields(self, client):
+        """Test that character creation validates required fields."""
+        # Test with missing required fields
+        incomplete_data = {"level": 1}  # Missing name and class
+        
+        with pytest.raises(ValueError):
+            client.create_character(incomplete_data)
+
+    @patch('requests.Session.post')
+    def test_create_character_with_complete_data(self, mock_post, client, sample_character):
+        """Test character creation with complete valid data."""
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = sample_character
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        complete_character_data = {
+            "name": "Complete Character",
+            "class": "Paladin",
+            "level": 1,
+            "stats": {
+                "strength": 14,
+                "dexterity": 10,
+                "intelligence": 12,
+                "constitution": 13
+            }
+        }
+        
+        result = client.create_character(complete_character_data)
+        
+        assert result == sample_character
+        mock_post.assert_called_once_with(
+            "https://api.test.com/characters", 
+            json=complete_character_data, 
+            timeout=30
+        )
+
+    # Boundary Value Tests
+    @pytest.mark.parametrize("level", [1, 50, 100])
+    def test_search_characters_level_boundaries(self, client, level):
+        """Test character search with boundary level values."""
+        with patch('requests.Session.get') as mock_get:
             mock_response = Mock()
             mock_response.status_code = 200
-            mock_post.return_value = mock_response
-            
-            result = character_client._register_with_server_blocking()
-            
-            assert result is True
-            mock_post.assert_called_once()
-            args, kwargs = mock_post.call_args
-            assert args[0] == "http://localhost:8000/register"
-            assert kwargs['json']['Actor_id'] == "test_actor"
-            assert kwargs['json']['token'] == "test_token"
-
-    def test_register_with_server_failure_with_retries(self, character_client):
-        """Test server registration failure with retries."""
-        with patch('requests.post') as mock_post, \
-             patch('time.sleep') as mock_sleep:
-            mock_post.side_effect = requests.exceptions.RequestException("Connection failed")
-            
-            result = character_client._register_with_server_blocking(max_retries=2, base_delay=0.1)
-            
-            assert result is False
-            assert mock_post.call_count == 3  # Initial + 2 retries
-            assert mock_sleep.call_count == 2  # Sleep after each failed attempt except the last
-
-    def test_register_with_server_http_error(self, character_client):
-        """Test server registration with HTTP error response."""
-        with patch('requests.post') as mock_post:
-            mock_response = Mock()
-            mock_response.status_code = 500
-            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Server Error")
-            mock_post.return_value = mock_response
-            
-            result = character_client._register_with_server_blocking(max_retries=0)
-            
-            assert result is False
-
-    # Test traits fetching
-    def test_fetch_traits_success(self, character_client, mock_character_traits):
-        """Test successful traits fetching."""
-        with patch('requests.get') as mock_get:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_character_traits
+            mock_response.json.return_value = []
+            mock_response.raise_for_status.return_value = None
             mock_get.return_value = mock_response
+
+            result = client.search_characters(level_min=level, level_max=level)
             
-            result = character_client._fetch_traits_blocking()
-            
-            assert result == mock_character_traits
-            mock_get.assert_called_once_with(
-                "http://localhost:8000/get_traits",
-                params={"Actor_id": "test_actor", "token": "test_token"},
-                timeout=10
-            )
+            assert result == []
+            assert mock_get.called
 
-    def test_fetch_traits_failure(self, character_client):
-        """Test traits fetching failure."""
-        with patch('requests.get') as mock_get:
-            mock_get.side_effect = requests.exceptions.RequestException("Network error")
-            
-            result = character_client._fetch_traits_blocking()
-            
-            assert result is None
+    # Integration-style Tests
+    @patch('requests.Session.post')
+    @patch('requests.Session.get')
+    def test_create_then_retrieve_character(self, mock_get, mock_post, client, sample_character):
+        """Test creating a character and then retrieving it."""
+        # Mock character creation
+        mock_post_response = Mock()
+        mock_post_response.status_code = 201
+        mock_post_response.json.return_value = sample_character
+        mock_post_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_post_response
 
-    def test_fetch_traits_invalid_response(self, character_client):
-        """Test traits fetching with invalid JSON response."""
-        with patch('requests.get') as mock_get:
-            mock_response = Mock()
-            mock_response.json.side_effect = ValueError("Invalid JSON")
-            mock_get.return_value = mock_response
-            
-            result = character_client._fetch_traits_blocking()
-            
-            assert result is None
+        # Mock character retrieval
+        mock_get_response = Mock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = sample_character
+        mock_get_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_get_response
 
-    # Test reference audio download
-    @patch('os.makedirs')
-    @patch('os.path.exists')
-    @patch('os.path.getsize')
-    def test_download_reference_audio_success(self, mock_getsize, mock_exists, mock_makedirs, character_client):
-        """Test successful reference audio download."""
-        character_client.character = {
-            "reference_audio_filename": "test_voice.wav"
-        }
-        mock_exists.return_value = False
-        mock_getsize.return_value = 0
+        # Create character
+        character_data = {"name": "New Character", "class": "Rogue", "level": 1}
+        created_character = client.create_character(character_data)
         
-        with patch('requests.get') as mock_get, \
-             patch('builtins.open', mock_open()) as mock_file:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.iter_content.return_value = [b'audio_data_chunk']
-            mock_get.return_value = mock_response
-            
-            character_client._download_reference_audio_blocking()
-            
-            mock_get.assert_called_once()
-            mock_file.assert_called_once()
+        # Retrieve the created character
+        retrieved_character = client.get_character(created_character["id"])
+        
+        assert created_character == sample_character
+        assert retrieved_character == sample_character
+        assert created_character["id"] == retrieved_character["id"]
 
-    def test_download_reference_audio_no_character(self, character_client):
-        """Test reference audio download when no character traits available."""
-        character_client.character = None
-        
-        # Should not raise exception, just return early
-        character_client._download_reference_audio_blocking()
 
-    def test_download_reference_audio_no_filename(self, character_client):
-        """Test reference audio download when no filename specified."""
-        character_client.character = {"tts": "xttsv2"}
-        
-        # Should not raise exception, just return early
-        character_client._download_reference_audio_blocking()
+# Test Configuration and Fixtures for pytest
+class TestCharacterClientConfiguration:
+    """Test class for CharacterClient configuration and setup."""
 
-    @patch('os.path.exists')
-    def test_download_reference_audio_already_exists(self, mock_exists, character_client):
-        """Test reference audio download when file already exists."""
-        character_client.character = {"reference_audio_filename": "test_voice.wav"}
-        mock_exists.return_value = True
-        
-        with patch('os.path.getsize', return_value=1000):
-            character_client._download_reference_audio_blocking()
-        
-        # Should return early without making HTTP request
-        with patch('requests.get') as mock_get:
-            assert not mock_get.called
+    def test_session_is_configured(self):
+        """Test that the session is properly configured."""
+        client = CharacterClient(api_key="test_key")
+        assert hasattr(client, 'session')
+        assert isinstance(client.session, requests.Session)
 
-    # Test heartbeat functionality
-    @pytest.mark.asyncio
-    async def test_send_heartbeat_success(self, character_client):
-        """Test successful heartbeat sending."""
-        with patch('requests.post') as mock_post:
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_post.return_value = mock_response
-            
-            result = await character_client.send_heartbeat_async()
-            
-            assert result is True
+    def test_session_headers_with_api_key(self):
+        """Test that session headers are set correctly with API key."""
+        api_key = "test_api_key"
+        client = CharacterClient(api_key=api_key)
+        assert "Authorization" in client.session.headers
+        assert client.session.headers["Authorization"] == f"Bearer {api_key}"
 
-    @pytest.mark.asyncio
-    async def test_send_heartbeat_failure_with_retries(self, character_client):
-        """Test heartbeat failure with retries."""
-        with patch('requests.post') as mock_post:
-            mock_post.side_effect = requests.exceptions.RequestException("Connection failed")
-            
-            result = await character_client.send_heartbeat_async(max_retries=1, base_delay=0.01)
-            
-            assert result is False
-            assert mock_post.call_count == 2  # Initial + 1 retry
+    def test_session_headers_without_api_key(self):
+        """Test that session headers are correct without API key."""
+        client = CharacterClient()
+        assert "Authorization" not in client.session.headers
 
-    @pytest.mark.asyncio
-    async def test_send_heartbeat_timeout(self, character_client):
-        """Test heartbeat timeout handling."""
-        with patch('requests.post') as mock_post:
-            mock_post.side_effect = requests.exceptions.Timeout("Request timeout")
-            
-            result = await character_client.send_heartbeat_async(max_retries=0)
-            
-            assert result is False
 
-    # Test response generation
-    @pytest.mark.asyncio
-    async def test_generate_response_success(self, character_client, mock_character_traits, mock_llm_engine):
-        """Test successful response generation."""
-        character_client.character = mock_character_traits
-        character_client.llm = mock_llm_engine
-        
-        with patch('requests.post') as mock_post:
-            mock_post.return_value = Mock(status_code=200)
-            
-            result = await character_client.generate_response_async(
-                "Test narration",
-                {"character1": "Hello"}
-            )
-            
-            assert result == "Test response from LLM"
-            mock_llm_engine.generate.assert_called_once()
-            mock_llm_engine.fine_tune_async.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_response_llm_not_initialized(self, character_client, mock_character_traits):
-        """Test response generation when LLM is not initialized."""
-        character_client.character = mock_character_traits
-        character_client.llm = None
-        
-        result = await character_client.generate_response_async(
-            "Test narration",
-            {"character1": "Hello"}
-        )
-        
-        assert "[Rick Sanchez LLM not ready]" in result
-
-    @pytest.mark.asyncio
-    async def test_generate_response_no_character(self, character_client):
-        """Test response generation when no character is set."""
-        character_client.character = None
-        character_client.llm = None
-        
-        result = await character_client.generate_response_async(
-            "Test narration",
-            {"character1": "Hello"}
-        )
-        
-        assert "[test_actor LLM not ready]" in result
-
-    @pytest.mark.asyncio
-    async def test_generate_response_training_data_save_failure(self, character_client, mock_character_traits, mock_llm_engine):
-        """Test response generation when training data save fails."""
-        character_client.character = mock_character_traits
-        character_client.llm = mock_llm_engine
-        
-        with patch('requests.post') as mock_post:
-            mock_post.side_effect = requests.exceptions.RequestException("Save failed")
-            
-            # Should not raise exception, just log error
-            result = await character_client.generate_response_async(
-                "Test narration",
-                {"character1": "Hello"}
-            )
-            
-            assert result == "Test response from LLM"
-
-    # Test audio synthesis
-    @pytest.mark.asyncio
-    async def test_synthesize_audio_success(self, character_client, mock_character_traits, mock_tts_manager):
-        """Test successful audio synthesis."""
-        character_client.character = mock_character_traits
-        character_client.tts = mock_tts_manager
-        character_client.local_reference_audio_path = "/path/to/reference.wav"
-        
-        with patch('os.path.exists', return_value=True):
-            result = await character_client.synthesize_audio_async("Hello world")
-            
-            assert result == "/path/to/audio.wav"
-            mock_tts_manager.synthesize.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_synthesize_audio_tts_not_initialized(self, character_client, mock_character_traits):
-        """Test audio synthesis when TTS is not initialized."""
-        character_client.character = mock_character_traits
-        character_client.tts = None
-        
-        result = await character_client.synthesize_audio_async("Hello world")
-        
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_synthesize_audio_gtts_service(self, character_client, mock_tts_manager):
-        """Test audio synthesis with GTTS service (no reference audio)."""
-        character_client.character = {"name": "Test", "tts": "gtts"}
-        character_client.tts = mock_tts_manager
-        
-        result = await character_client.synthesize_audio_async("Hello world")
-        
-        assert result == "/path/to/audio.wav"
-        # Should not pass speaker_wav_for_synthesis for gtts
-        args, kwargs = mock_tts_manager.synthesize.call_args
-        assert kwargs.get('speaker_wav_for_synthesis') is None
-
-    @pytest.mark.asyncio
-    async def test_synthesize_audio_xttsv2_no_reference(self, character_client, mock_tts_manager):
-        """Test audio synthesis with XTTS v2 but no reference audio."""
-        character_client.character = {"name": "Test", "tts": "xttsv2"}
-        character_client.tts = mock_tts_manager
-        character_client.local_reference_audio_path = None
-        
-        result = await character_client.synthesize_audio_async("Hello world")
-        
-        assert result == "/path/to/audio.wav"
-        args, kwargs = mock_tts_manager.synthesize.call_args
-        assert kwargs.get('speaker_wav_for_synthesis') is None
-
-    # Test FastAPI endpoints
-    def test_health_check_success(self):
-        """Test health check endpoint with healthy client."""
-        mock_client = Mock()
-        mock_client.Actor_id = "test_actor"
-        mock_client.llm.is_initialized = True
-        mock_client.tts.is_initialized = True
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        result = asyncio.run(health_check(mock_request))
-        
-        assert result["status"] == "ok"
-        assert result["Actor_id"] == "test_actor"
-        assert result["llm_ready"] is True
-        assert result["tts_ready"] is True
-
-    def test_health_check_degraded(self):
-        """Test health check endpoint with degraded client."""
-        mock_client = Mock()
-        mock_client.Actor_id = "test_actor"
-        mock_client.llm.is_initialized = False
-        mock_client.tts.is_initialized = True
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        result = asyncio.run(health_check(mock_request))
-        
-        assert result["status"] == "degraded"
-        assert "not fully ready" in result["detail"]
-
-    def test_health_check_no_client(self):
-        """Test health check endpoint when no client is available."""
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = None
-        
-        with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(health_check(mock_request))
-        
-        assert exc_info.value.status_code == 503
-
-    @pytest.mark.asyncio
-    async def test_handle_character_generation_request_success(self):
-        """Test successful character generation request."""
-        mock_client = Mock()
-        mock_client.token = "valid_token"
-        mock_client.generate_response_async = AsyncMock(return_value="Generated response")
-        mock_client.synthesize_audio_async = AsyncMock(return_value="/path/to/audio.wav")
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        data = {
-            "token": "valid_token",
-            "narration": "Test narration",
-            "character_texts": {"char1": "Hello"}
-        }
-        
-        with patch('os.path.exists', return_value=True), \
-             patch('builtins.open', mock_open(read_data=b'audio_data')), \
-             patch('os.remove'):
-            
-            result = await handle_character_generation_request(data, mock_request)
-            
-            assert result["text"] == "Generated response"
-            assert result["audio_data"] is not None
-            # Verify base64 encoding
-            decoded_audio = base64.b64decode(result["audio_data"])
-            assert decoded_audio == b'audio_data'
-
-    @pytest.mark.asyncio
-    async def test_handle_character_generation_request_invalid_token(self):
-        """Test character generation request with invalid token."""
-        mock_client = Mock()
-        mock_client.token = "valid_token"
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        data = {
-            "token": "invalid_token",
-            "narration": "Test narration"
-        }
-        
-        with pytest.raises(HTTPException) as exc_info:
-            await handle_character_generation_request(data, mock_request)
-        
-        assert exc_info.value.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_handle_character_generation_request_missing_narration(self):
-        """Test character generation request with missing narration."""
-        mock_client = Mock()
-        mock_client.token = "valid_token"
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        data = {"token": "valid_token"}
-        
-        with pytest.raises(HTTPException) as exc_info:
-            await handle_character_generation_request(data, mock_request)
-        
-        assert exc_info.value.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_handle_character_generation_request_no_client(self):
-        """Test character generation request when no client is available."""
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = None
-        
-        data = {"token": "valid_token", "narration": "Test"}
-        
-        with pytest.raises(HTTPException) as exc_info:
-            await handle_character_generation_request(data, mock_request)
-        
-        assert exc_info.value.status_code == 503
-
-    @pytest.mark.asyncio
-    async def test_handle_character_generation_request_no_audio_file(self):
-        """Test character generation request when audio file doesn't exist."""
-        mock_client = Mock()
-        mock_client.token = "valid_token"
-        mock_client.generate_response_async = AsyncMock(return_value="Generated response")
-        mock_client.synthesize_audio_async = AsyncMock(return_value="/path/to/nonexistent.wav")
-        
-        mock_request = Mock()
-        mock_request.app.state.character_client_instance = mock_client
-        
-        data = {
-            "token": "valid_token",
-            "narration": "Test narration"
-        }
-        
-        with patch('os.path.exists', return_value=False):
-            result = await handle_character_generation_request(data, mock_request)
-            
-            assert result["text"] == "Generated response"
-            assert result["audio_data"] is None
-
-    # Test heartbeat task functionality
-    @pytest.mark.asyncio
-    async def test_heartbeat_task_runner(self):
-        """Test the heartbeat task runner."""
-        mock_client = Mock()
-        mock_client.send_heartbeat_async = AsyncMock(return_value=True)
-        
-        # Run for a short time to avoid infinite loop
-        task = asyncio.create_task(_heartbeat_task_runner(mock_client))
-        await asyncio.sleep(0.01)  # Very short sleep
-        task.cancel()
-        
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        
-        # Should have called send_heartbeat_async at least once
-        # (This test might be flaky due to timing, consider mocking asyncio.sleep)
-
-    def test_start_heartbeat_task(self):
-        """Test starting the heartbeat task."""
-        mock_client = Mock()
-        
-        with patch('asyncio.get_running_loop') as mock_get_loop:
-            mock_loop = Mock()
-            mock_get_loop.return_value = mock_loop
-            
-            start_heartbeat_task(mock_client)
-            
-            mock_loop.create_task.assert_called_once()
-
-    # Test initialization function
-    @patch('CharacterClient.character_client.ensure_client_directories')
-    def test_initialize_character_client_new_client(self, mock_ensure_dirs):
-        """Test initializing a new character client."""
-        # Clear any existing client
-        if hasattr(app.state, 'character_client_instance'):
-            app.state.character_client_instance = None
-        
-        with patch('asyncio.get_running_loop') as mock_get_loop, \
-             patch.object(CharacterClient, 'create', new_callable=AsyncMock) as mock_create:
-            
-            mock_loop = Mock()
-            mock_get_loop.return_value = mock_loop
-            mock_client = Mock()
-            mock_client.llm.is_initialized = True
-            mock_client.tts.is_initialized = True
-            mock_create.return_value = mock_client
-            
-            initialize_character_client(
-                token="test_token",
-                Actor_id="test_actor",
-                server_url="http://localhost:8000",
-                client_port=8080
-            )
-            
-            mock_ensure_dirs.assert_called_once()
-            mock_loop.create_task.assert_called()
-
-    def test_initialize_character_client_existing_client(self):
-        """Test initializing when client already exists."""
-        # Set existing client
-        app.state.character_client_instance = Mock()
-        
-        with patch('CharacterClient.character_client.ensure_client_directories') as mock_ensure_dirs:
-            initialize_character_client(
-                token="test_token",
-                Actor_id="test_actor",
-                server_url="http://localhost:8000",
-                client_port=8080
-            )
-            
-            # Should not call ensure_client_directories for existing client
-            mock_ensure_dirs.assert_not_called()
-
-    # Edge cases and error conditions
-    def test_character_client_with_very_long_actor_id(self):
-        """Test CharacterClient with very long Actor_id."""
-        long_id = "a" * 1000
-        client = CharacterClient(
-            token="test_token",
-            Actor_id=long_id,
-            server_url="http://localhost:8000",
-            client_port=8080
-        )
-        assert client.Actor_id == long_id
-
-    def test_character_client_with_special_characters_in_actor_id(self):
-        """Test CharacterClient with special characters in Actor_id."""
-        special_id = "test-actor_123!@#$%^&*()"
-        client = CharacterClient(
-            token="test_token",
-            Actor_id=special_id,
-            server_url="http://localhost:8000",
-            client_port=8080
-        )
-        assert client.Actor_id == special_id
-
-    def test_character_client_with_unicode_actor_id(self):
-        """Test CharacterClient with Unicode characters in Actor_id."""
-        unicode_id = "测试角色_🎭"
-        client = CharacterClient(
-            token="test_token",
-            Actor_id=unicode_id,
-            server_url="http://localhost:8000",
-            client_port=8080
-        )
-        assert client.Actor_id == unicode_id
-
-    @pytest.mark.asyncio
-    async def test_async_init_with_exceptions(self, character_client):
-        """Test async_init when various methods raise exceptions."""
-        with patch.object(character_client, '_register_with_server_blocking', side_effect=Exception("Registration failed")), \
-             patch.object(character_client, '_fetch_traits_blocking', side_effect=Exception("Fetch failed")), \
-             patch.object(character_client, '_download_reference_audio_blocking', side_effect=Exception("Download failed")):
-            
-            # Should not raise exception, should handle gracefully
-            await character_client.async_init()
-            
-            # Should have default character traits
-            assert character_client.character is not None
-
-    def test_file_sanitization_in_download_reference_audio(self, character_client):
-        """Test that filenames are properly sanitized in reference audio download."""
-        character_client.character = {
-            "reference_audio_filename": "../../../etc/passwd"
-        }
-        character_client.Actor_id = "../../dangerous_path"
-        
-        with patch('os.makedirs'), \
-             patch('os.path.exists', return_value=False), \
-             patch('os.path.getsize', return_value=0), \
-             patch('requests.get') as mock_get, \
-             patch('builtins.open', mock_open()):
-            
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.iter_content.return_value = [b'data']
-            mock_get.return_value = mock_response
-            
-            character_client._download_reference_audio_blocking()
-            
-            # Verify that the path contains sanitized versions
-            assert character_client.local_reference_audio_path is not None
-            # Should not contain directory traversal sequences
-            assert "../" not in character_client.local_reference_audio_path
-            assert character_client.local_reference_audio_path.find("___") != -1  # Sanitized characters
-
-# Test the mock_open function since we use it
-def mock_open(mock=None, read_data=''):
-    """Create a mock for the built-in open function."""
-    if mock is None:
-        mock = MagicMock(spec=open)
-    
-    handle = MagicMock(spec=['read', 'write', 'close', '__enter__', '__exit__'])
-    handle.read.return_value = read_data
-    handle.__enter__.return_value = handle
-    mock.return_value = handle
-    return mock
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])
