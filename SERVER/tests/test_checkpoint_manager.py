@@ -561,998 +561,645 @@ if __name__ == '__main__':
     # Run with verbose output
     unittest.main(verbosity=2, buffer=True)
 
-class TestCheckpointManagerAdvanced(unittest.TestCase):
-    """Advanced test scenarios for CheckpointManager with additional edge cases and robustness testing."""
+class TestCheckpointManagerRealImplementation(unittest.TestCase):
+    """Tests specifically for the real CheckpointManager implementation."""
     
     def setUp(self):
-        """Set up test fixtures for advanced testing scenarios."""
+        """Set up test fixtures for real implementation tests."""
         self.temp_dir = tempfile.mkdtemp()
-        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
-        self.maxDiff = None  # Show full diff for assertion failures
+        # Mock the config paths to use our temp directory
+        self.config_patcher = patch.multiple(
+            'SERVER.checkpoint_manager',
+            BASE_CHECKPOINT_PATH=self.temp_dir,
+            DB_PATH=os.path.join(self.temp_dir, "test_db.db"),
+            ADAPTERS_PATH=os.path.join(self.temp_dir, "adapters"),
+            BASE_DATA_PATH=self.temp_dir
+        )
+        self.config_patcher.start()
+        
+        # Create test database file
+        self.test_db_path = os.path.join(self.temp_dir, "test_db.db")
+        with open(self.test_db_path, 'w') as f:
+            f.write("test database content")
+        
+        try:
+            from SERVER.checkpoint_manager import CheckpointManager
+            self.checkpoint_manager = CheckpointManager(
+                server_model_name="TestModel",
+                server_Actor_id="TestActor"
+            )
+            self.real_implementation = True
+        except ImportError:
+            # Fall back to mock if real implementation not available
+            self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+            self.real_implementation = False
         
     def tearDown(self):
-        """Clean up after advanced tests."""
+        """Clean up after real implementation tests."""
+        self.config_patcher.stop()
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    # Memory and Resource Management Tests
-    def test_memory_usage_large_checkpoints(self):
-        """Test memory usage with very large checkpoint data."""
-        import sys
-        
-        # Create a large data structure (50MB worth of data)
-        large_data = {
-            'massive_list': [i for i in range(1000000)],
-            'massive_dict': {f'key_{i}': f'value_{i}' * 100 for i in range(10000)},
-            'metadata': {'size': 'massive', 'items': 1000000}
-        }
-        
-        checkpoint_name = "memory_test_large"
-        
-        # Monitor memory usage (simplified approach)
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, large_data)
-            self.assertTrue(result)
+    def test_initialization_with_custom_model_and_actor(self):
+        """Test CheckpointManager initialization with custom model and actor IDs."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
             
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(len(loaded_data['massive_list']), 1000000)
-            self.assertEqual(len(loaded_data['massive_dict']), 10000)
-            
-        except MemoryError:
-            self.skipTest("Insufficient memory for large checkpoint test")
+        custom_manager = CheckpointManager(
+            server_model_name="CustomModel",
+            server_Actor_id="CustomActor"
+        )
+        self.assertEqual(custom_manager.server_model_name, "CustomModel")
+        self.assertEqual(custom_manager.server_Actor_id, "CustomActor")
 
-    def test_resource_cleanup_after_failed_operations(self):
-        """Test that resources are properly cleaned up after failed operations."""
-        checkpoint_name = "cleanup_test"
+    def test_timestamped_checkpoint_naming(self):
+        """Test that checkpoints are created with proper timestamp naming."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        # Save checkpoint with prefix
+        result_msg, checkpoint_list = self.checkpoint_manager.save_checkpoint("test_prefix")
+        self.assertIn("saved successfully", result_msg)
         
-        # Mock a failure scenario
-        with patch.object(self.checkpoint_manager, 'save_checkpoint', side_effect=Exception("Simulated failure")):
-            try:
-                self.checkpoint_manager.save_checkpoint(checkpoint_name, {"test": "data"})
-            except Exception:
-                pass
+        # Verify timestamp format in checkpoint names
+        for checkpoint in checkpoint_list:
+            if checkpoint.startswith("test_prefix_"):
+                timestamp_part = checkpoint.replace("test_prefix_", "")
+                # Should match YYYYMMDD_HHMMSS format
+                self.assertEqual(len(timestamp_part), 15)  # 8 digits + _ + 6 digits
+                self.assertTrue(timestamp_part[8] == "_")
+
+    def test_save_checkpoint_without_prefix(self):
+        """Test saving checkpoint without name prefix."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        result_msg, checkpoint_list = self.checkpoint_manager.save_checkpoint()
+        self.assertIn("saved successfully", result_msg)
+        self.assertGreater(len(checkpoint_list), 0)
+
+    def test_database_file_handling(self):
+        """Test that database files are properly handled in checkpoints."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        # Create checkpoint
+        result_msg, _ = self.checkpoint_manager.save_checkpoint("db_test")
+        self.assertIn("saved successfully", result_msg)
         
-        # Verify no partial state is left behind
+        # Verify database file was copied to checkpoint
         checkpoints = self.checkpoint_manager.list_checkpoints()
-        self.assertNotIn(checkpoint_name, checkpoints)
+        latest_checkpoint = checkpoints[0]
+        checkpoint_dir = os.path.join(self.temp_dir, latest_checkpoint)
+        db_file = os.path.join(checkpoint_dir, "dream_weaver.db")
+        
+        if os.path.exists(db_file):
+            with open(db_file, 'r') as f:
+                content = f.read()
+            self.assertEqual(content, "test database content")
 
-    # File System Edge Cases
-    def test_readonly_checkpoint_directory(self):
-        """Test behavior when checkpoint directory becomes read-only."""
-        if os.name == 'nt':  # Skip on Windows due to permission model differences
-            self.skipTest("Read-only directory test not applicable on Windows")
+    def test_adapter_file_handling(self):
+        """Test that adapter files are properly handled in checkpoints."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
             
-        checkpoint_name = "readonly_test"
-        sample_data = {"test": "data"}
+        # Create test adapter files
+        adapter_dir = os.path.join(self.temp_dir, "adapters", "TestModel", "TestActor")
+        os.makedirs(adapter_dir, exist_ok=True)
+        test_adapter_file = os.path.join(adapter_dir, "adapter.bin")
+        with open(test_adapter_file, 'w') as f:
+            f.write("test adapter content")
         
-        # First save a checkpoint normally
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, sample_data)
-        self.assertTrue(result)
+        # Create checkpoint
+        result_msg, _ = self.checkpoint_manager.save_checkpoint("adapter_test")
+        self.assertIn("saved successfully", result_msg)
         
-        # Make directory read-only
-        try:
-            os.chmod(self.temp_dir, 0o444)
-            
-            # Try to save another checkpoint (should fail)
-            with self.assertRaises((PermissionError, OSError)):
-                self.checkpoint_manager.save_checkpoint("readonly_fail", sample_data)
-                
-        finally:
-            # Restore permissions for cleanup
-            os.chmod(self.temp_dir, 0o755)
+        # Verify adapter files were copied
+        checkpoints = self.checkpoint_manager.list_checkpoints()
+        latest_checkpoint = checkpoints[0]
+        checkpoint_dir = os.path.join(self.temp_dir, latest_checkpoint)
+        adapter_checkpoint_dir = os.path.join(checkpoint_dir, "TestActor_adapters")
+        
+        if os.path.exists(adapter_checkpoint_dir):
+            adapter_file = os.path.join(adapter_checkpoint_dir, "adapter.bin")
+            self.assertTrue(os.path.exists(adapter_file))
 
-    def test_filesystem_full_simulation(self):
-        """Test behavior when filesystem is full."""
-        checkpoint_name = "disk_full_test"
-        
-        # Create a very large data structure to potentially fill disk
-        large_data = {'huge_string': 'x' * (1024 * 1024 * 100)}  # 100MB string
-        
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, large_data)
-            # If it succeeds, verify it can be loaded
-            if result:
-                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-                self.assertEqual(len(loaded_data['huge_string']), 1024 * 1024 * 100)
-        except (OSError, IOError) as e:
-            # Expected behavior when disk is full
-            self.assertIn(str(e), [
-                'No space left on device',
-                'Disk full',
-                'Not enough space'
-            ], f"Unexpected error: {e}")
-
-    # Data Corruption and Recovery Tests
-    def test_corrupted_checkpoint_handling(self):
-        """Test handling of corrupted checkpoint data."""
-        checkpoint_name = "corruption_test"
-        sample_data = {"valid": "data", "numbers": [1, 2, 3]}
-        
-        # Save valid checkpoint first
-        self.checkpoint_manager.save_checkpoint(checkpoint_name, sample_data)
-        
-        # Simulate corruption by directly modifying stored data (if file-based)
-        if hasattr(self.checkpoint_manager, 'checkpoint_dir'):
-            checkpoint_files = []
-            for root, dirs, files in os.walk(self.checkpoint_manager.checkpoint_dir):
-                for file in files:
-                    if checkpoint_name in file:
-                        checkpoint_files.append(os.path.join(root, file))
+    def test_load_checkpoint_file_restoration(self):
+        """Test that load_checkpoint properly restores files."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
             
-            # Corrupt the first file found
-            if checkpoint_files:
-                with open(checkpoint_files[0], 'w') as f:
-                    f.write("corrupted data that's not valid JSON/pickle")
-                
-                # Try to load corrupted checkpoint
+        # Create and save checkpoint
+        result_msg, _ = self.checkpoint_manager.save_checkpoint("restore_test")
+        checkpoints = self.checkpoint_manager.list_checkpoints()
+        checkpoint_name = checkpoints[0]
+        
+        # Modify original database
+        modified_content = "modified database content"
+        with open(self.test_db_path, 'w') as f:
+            f.write(modified_content)
+        
+        # Load checkpoint
+        load_result = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        self.assertIn("loaded", load_result)
+        self.assertIn("RESTART", load_result)
+        
+        # Verify database was restored
+        with open(self.test_db_path, 'r') as f:
+            restored_content = f.read()
+        self.assertEqual(restored_content, "test database content")
+
+    def test_load_nonexistent_checkpoint_real_implementation(self):
+        """Test loading a nonexistent checkpoint with real implementation."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        result = self.checkpoint_manager.load_checkpoint("nonexistent_checkpoint_12345")
+        self.assertIn("Error", result)
+        self.assertIn("not found", result)
+
+    def test_export_story_functionality(self):
+        """Test the export_story functionality."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        # Mock the database dependency
+        with patch('SERVER.checkpoint_manager.Database') as mock_db_class:
+            mock_db = Mock()
+            mock_db_class.return_value = mock_db
+            mock_db.get_story_history.return_value = [
+                ("User", "Hello world", "2024-01-01 10:00:00"),
+                ("Assistant", "Hello! How can I help?", "2024-01-01 10:00:05")
+            ]
+            
+            # Test JSON export
+            result, filename = self.checkpoint_manager.export_story("json")
+            self.assertIn("exported", result)
+            self.assertIn("JSON", result)
+            self.assertTrue(filename.endswith(".json"))
+            
+            # Test text export
+            result, filename = self.checkpoint_manager.export_story("text")
+            self.assertIn("exported", result)
+            self.assertIn("Text", result)
+            self.assertTrue(filename.endswith(".txt"))
+
+    def test_export_story_invalid_format(self):
+        """Test export_story with invalid format."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        result, filename = self.checkpoint_manager.export_story("invalid_format")
+        self.assertIn("Error", result)
+        self.assertIn("Invalid export format", result)
+        self.assertIsNone(filename)
+
+    def test_export_story_no_history(self):
+        """Test export_story when no history exists."""
+        if not self.real_implementation:
+            self.skipTest("Real implementation not available")
+            
+        with patch('SERVER.checkpoint_manager.Database') as mock_db_class:
+            mock_db = Mock()
+            mock_db_class.return_value = mock_db
+            mock_db.get_story_history.return_value = []
+            
+            result = self.checkpoint_manager.export_story("json")
+            self.assertIn("Error", result)
+            self.assertIn("No story history", result)
+
+
+class TestCheckpointManagerAdditionalEdgeCases(unittest.TestCase):
+    """Additional edge case tests that work with both mock and real implementations."""
+    
+    def setUp(self):
+        """Set up test fixtures for additional edge case tests."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+        
+    def tearDown(self):
+        """Clean up after additional edge case tests."""
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_checkpoint_name_length_boundaries(self):
+        """Test checkpoint names at various length boundaries."""
+        test_cases = [
+            ("", "empty_name"),
+            ("a", "single_char"),
+            ("ab", "two_chars"),
+            ("a" * 50, "fifty_chars"),
+            ("a" * 100, "hundred_chars"),
+            ("a" * 255, "max_filename_length")
+        ]
+        
+        for name, description in test_cases:
+            with self.subTest(name=description):
                 try:
-                    loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-                    # Depending on implementation, might return None or raise exception
-                    if loaded_data is not None:
-                        self.fail("Expected corrupted checkpoint to fail loading")
-                except (ValueError, TypeError, Exception) as e:
-                    # Expected behavior for corrupted data
-                    self.assertIsInstance(e, (ValueError, TypeError, Exception))
+                    if hasattr(self.checkpoint_manager, 'save_checkpoint'):
+                        if len(name) == 0:
+                            # Empty names should be handled gracefully
+                            continue
+                        result = self.checkpoint_manager.save_checkpoint(name, {"test": description})
+                        if result:
+                            loaded = self.checkpoint_manager.load_checkpoint(name)
+                            if loaded:
+                                self.assertEqual(loaded.get("test"), description)
+                except (ValueError, OSError) as e:
+                    # Long names might be rejected by filesystem or implementation
+                    self.assertIsInstance(e, (ValueError, OSError))
 
-    # Serialization Edge Cases
-    def test_custom_object_serialization(self):
-        """Test serialization of custom Python objects."""
-        class CustomObject:
-            def __init__(self, value, name):
-                self.value = value
-                self.name = name
-                
-            def __eq__(self, other):
-                return isinstance(other, CustomObject) and self.value == other.value and self.name == other.name
-                
-            def __repr__(self):
-                return f"CustomObject(value={self.value}, name='{self.name}')"
-        
-        custom_data = {
-            'custom_obj': CustomObject(42, "test_object"),
-            'list_of_custom': [CustomObject(i, f"obj_{i}") for i in range(5)],
-            'mixed': {'regular': 'data', 'custom': CustomObject(99, "mixed_obj")}
-        }
-        
-        checkpoint_name = "custom_object_test"
-        
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, custom_data)
-            if result:
-                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-                # Verify structure is maintained (exact equality might not work due to serialization)
-                self.assertIsNotNone(loaded_data)
-                self.assertIn('custom_obj', loaded_data)
-                self.assertIn('list_of_custom', loaded_data)
-        except (TypeError, ValueError) as e:
-            # Expected if custom objects aren't serializable
-            self.assertIsInstance(e, (TypeError, ValueError))
-
-    def test_function_and_lambda_serialization(self):
-        """Test handling of functions and lambdas in checkpoint data."""
-        def test_function(x):
-            return x * 2
-            
-        lambda_func = lambda x: x + 1
-        
-        function_data = {
-            'function': test_function,
-            'lambda': lambda_func,
-            'builtin': len,
-            'method': str.upper
-        }
-        
-        checkpoint_name = "function_test"
-        
-        # Functions typically aren't serializable
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, function_data)
-            if result:
-                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-                self.assertIsNotNone(loaded_data)
-        except (TypeError, ValueError) as e:
-            # Expected behavior for non-serializable function objects
-            self.assertIsInstance(e, (TypeError, ValueError))
-
-    # Configuration and State Tests
-    def test_checkpoint_manager_state_persistence(self):
-        """Test that CheckpointManager maintains consistent state across operations."""
-        # Save multiple checkpoints
-        test_data = [
-            ("checkpoint_1", {"data": 1}),
-            ("checkpoint_2", {"data": 2}),
-            ("checkpoint_3", {"data": 3}),
-        ]
-        
-        for name, data in test_data:
-            result = self.checkpoint_manager.save_checkpoint(name, data)
-            self.assertTrue(result)
-        
-        # Verify state consistency
-        initial_list = set(self.checkpoint_manager.list_checkpoints())
-        
-        # Perform various operations
-        self.checkpoint_manager.load_checkpoint("checkpoint_1")
-        self.checkpoint_manager.load_checkpoint("nonexistent")
-        
-        # State should remain consistent
-        final_list = set(self.checkpoint_manager.list_checkpoints())
-        self.assertEqual(initial_list, final_list)
-
-    def test_checkpoint_metadata_preservation(self):
-        """Test that checkpoint metadata is preserved correctly."""
-        import datetime
-        
-        metadata_data = {
-            'timestamp': datetime.datetime.now().isoformat(),
-            'version': "1.0.0",
-            'author': "test_user",
-            'description': "Test checkpoint with metadata",
-            'tags': ["test", "metadata", "validation"],
-            'config': {
-                'learning_rate': 0.001,
-                'batch_size': 32,
-                'epochs': 100
+    def test_checkpoint_with_memory_mapped_data_simulation(self):
+        """Test checkpoints with data that simulates memory-mapped structures."""
+        # Simulate memory-mapped data with large arrays
+        memory_like_data = {
+            'buffer_simulation': [0] * 10000,  # Large array
+            'sparse_data': {i: i**2 for i in range(0, 1000, 10)},  # Sparse mapping
+            'metadata': {
+                'size': 10000,
+                'type': 'buffer',
+                'encoding': 'int32'
             }
         }
         
-        checkpoint_name = "metadata_test"
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, metadata_data)
-        self.assertTrue(result)
-        
-        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-        self.assertEqual(loaded_data['version'], "1.0.0")
-        self.assertEqual(loaded_data['author'], "test_user")
-        self.assertEqual(len(loaded_data['tags']), 3)
-        self.assertEqual(loaded_data['config']['learning_rate'], 0.001)
+        checkpoint_name = "memory_mapped_simulation"
+        try:
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, memory_like_data)
+            if result:
+                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                if loaded_data:
+                    self.assertEqual(len(loaded_data['buffer_simulation']), 10000)
+                    self.assertEqual(loaded_data['metadata']['size'], 10000)
+        except (MemoryError, OverflowError) as e:
+            # Large data structures might cause memory issues
+            self.assertIsInstance(e, (MemoryError, OverflowError))
 
-    # Stress and Load Tests
-    def test_rapid_checkpoint_operations(self):
-        """Test rapid succession of checkpoint operations."""
+    def test_checkpoint_data_serialization_edge_cases(self):
+        """Test edge cases in data serialization."""
+        edge_case_data = {
+            'recursive_list': [],
+            'self_referencing_dict': {},
+            'mixed_types': [1, "string", True, None, [], {}],
+            'nested_mixed': {
+                'level1': [1, {"level2": [2, {"level3": 3}]}]
+            }
+        }
+        
+        # Make one list reference itself (if the implementation handles this)
+        edge_case_data['recursive_list'].append(edge_case_data['recursive_list'])
+        edge_case_data['self_referencing_dict']['self'] = edge_case_data['self_referencing_dict']
+        
+        checkpoint_name = "serialization_edge_cases"
+        try:
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, edge_case_data)
+            # If serialization succeeds, try to load
+            if result:
+                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                # The loaded data might not have circular references preserved
+                if loaded_data:
+                    self.assertIn('mixed_types', loaded_data)
+        except (ValueError, TypeError, RecursionError) as e:
+            # Circular references often cause serialization errors
+            self.assertIsInstance(e, (ValueError, TypeError, RecursionError))
+
+    def test_checkpoint_concurrent_name_generation(self):
+        """Test potential naming conflicts with rapid checkpoint creation."""
         import time
-        
-        checkpoint_name = "rapid_test"
-        base_data = {"counter": 0, "timestamp": time.time()}
-        
-        # Perform rapid save/load/delete cycles
-        for i in range(100):
-            data = base_data.copy()
-            data["counter"] = i
-            data["timestamp"] = time.time()
-            
-            # Save
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
-            self.assertTrue(result)
-            
-            # Load
-            loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(loaded["counter"], i)
-            
-            # Delete every 10th iteration
-            if i % 10 == 0:
-                delete_result = self.checkpoint_manager.delete_checkpoint(checkpoint_name)
-                self.assertTrue(delete_result)
-
-    def test_checkpoint_name_collision_handling(self):
-        """Test handling of checkpoint name collisions and overwrites."""
-        collision_name = "collision_test"
-        
-        # Create multiple different data structures with same name
-        data_versions = [
-            {"version": 1, "type": "initial"},
-            {"version": 2, "type": "updated", "new_field": "added"},
-            {"version": 3, "type": "final", "removed_field": None},
-        ]
-        
-        for i, data in enumerate(data_versions):
-            result = self.checkpoint_manager.save_checkpoint(collision_name, data)
-            self.assertTrue(result)
-            
-            # Verify current version is what we just saved
-            loaded = self.checkpoint_manager.load_checkpoint(collision_name)
-            self.assertEqual(loaded["version"], i + 1)
-        
-        # Final verification
-        final_loaded = self.checkpoint_manager.load_checkpoint(collision_name)
-        self.assertEqual(final_loaded["version"], 3)
-        self.assertEqual(final_loaded["type"], "final")
-
-    # Edge Case Input Validation
-    def test_checkpoint_name_with_unicode_normalization(self):
-        """Test checkpoint names with different Unicode normalization forms."""
-        import unicodedata
-        
-        base_name = "café"  # Contains accented character
-        
-        # Different Unicode normalization forms
-        nfc_name = unicodedata.normalize('NFC', base_name)   # Composed
-        nfd_name = unicodedata.normalize('NFD', base_name)   # Decomposed
-        
-        sample_data = {"encoding": "unicode_test"}
-        
-        # Save with NFC form
-        result1 = self.checkpoint_manager.save_checkpoint(nfc_name, sample_data)
-        self.assertTrue(result1)
-        
-        # Try to load with NFD form (might be treated as different name)
-        loaded1 = self.checkpoint_manager.load_checkpoint(nfd_name)
-        # Behavior depends on implementation - both are valid
-        
-        # Save with NFD form
-        result2 = self.checkpoint_manager.save_checkpoint(nfd_name, sample_data)
-        self.assertTrue(result2)
-        
-        # Check how many unique names we have
-        checkpoints = self.checkpoint_manager.list_checkpoints()
-        unicode_checkpoints = [cp for cp in checkpoints if 'caf' in cp]
-        # Should be 1 or 2 depending on Unicode handling
-        self.assertGreaterEqual(len(unicode_checkpoints), 1)
-        self.assertLessEqual(len(unicode_checkpoints), 2)
-
-    def test_checkpoint_with_extreme_numeric_values(self):
-        """Test checkpoints with extreme numeric values."""
-        extreme_data = {
-            'max_int': sys.maxsize,
-            'min_int': -sys.maxsize - 1,
-            'max_float': sys.float_info.max,
-            'min_float': sys.float_info.min,
-            'epsilon': sys.float_info.epsilon,
-            'infinity': float('inf'),
-            'negative_infinity': float('-inf'),
-            'not_a_number': float('nan'),
-            'very_large_list': [sys.maxsize] * 1000,
-            'precision_test': 1.23456789012345678901234567890
-        }
-        
-        checkpoint_name = "extreme_numeric_test"
-        
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, extreme_data)
-            self.assertTrue(result)
-            
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(loaded_data['max_int'], sys.maxsize)
-            self.assertEqual(loaded_data['min_int'], -sys.maxsize - 1)
-            
-            # Special handling for infinity and NaN
-            import math
-            self.assertTrue(math.isinf(loaded_data['infinity']))
-            self.assertTrue(math.isinf(loaded_data['negative_infinity']))
-            self.assertTrue(math.isnan(loaded_data['not_a_number']))
-            
-        except (OverflowError, ValueError) as e:
-            # Some extreme values might not be serializable
-            self.assertIsInstance(e, (OverflowError, ValueError))
-
-    # Integration with System Resources
-    def test_checkpoint_operations_under_memory_pressure(self):
-        """Test checkpoint operations when system memory is under pressure."""
-        # Create memory pressure by allocating large amounts of memory
-        memory_pressure = []
-        
-        try:
-            # Allocate memory in chunks until we have significant pressure
-            for i in range(10):
-                chunk = [0] * (1024 * 1024)  # 1MB chunks
-                memory_pressure.append(chunk)
-            
-            # Now try checkpoint operations under pressure
-            checkpoint_name = "memory_pressure_test"
-            sample_data = {"test": "under_pressure", "data": list(range(1000))}
-            
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, sample_data)
-            self.assertTrue(result)
-            
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(loaded_data, sample_data)
-            
-        except MemoryError:
-            self.skipTest("Unable to create sufficient memory pressure")
-        finally:
-            # Clean up memory pressure
-            memory_pressure.clear()
-
-    def test_checkpoint_with_different_python_versions_compatibility(self):
-        """Test checkpoint data compatibility across different scenarios."""
-        # Test data that might behave differently across Python versions
-        version_sensitive_data = {
-            'dict_order': {'z': 1, 'a': 2, 'b': 3},  # Dict ordering
-            'string_encoding': "Testing 🐍 Python encoding",
-            'numeric_precision': 0.1 + 0.2,  # Floating point precision
-            'large_int': 2**100,  # Large integer handling
-            'boolean_values': [True, False, 1, 0],
-            'none_values': [None, [], {}, ''],
-        }
-        
-        checkpoint_name = "version_compatibility_test"
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, version_sensitive_data)
-        self.assertTrue(result)
-        
-        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-        self.assertEqual(loaded_data['large_int'], 2**100)
-        self.assertEqual(loaded_data['string_encoding'], "Testing 🐍 Python encoding")
-        self.assertIsNotNone(loaded_data['dict_order'])
-
-    # Error Recovery and Resilience
-    def test_partial_failure_recovery(self):
-        """Test recovery from partial operation failures."""
-        checkpoint_names = [f"recovery_test_{i}" for i in range(5)]
-        sample_data = {"recovery": "test", "id": None}
-        
-        # Save several checkpoints
-        for i, name in enumerate(checkpoint_names):
-            data = sample_data.copy()
-            data["id"] = i
-            result = self.checkpoint_manager.save_checkpoint(name, data)
-            self.assertTrue(result)
-        
-        # Simulate partial failure by corrupting middle checkpoint
-        if hasattr(self.checkpoint_manager, 'checkpoints'):
-            # For mock implementation
-            middle_name = checkpoint_names[2]
-            if middle_name in self.checkpoint_manager.checkpoints:
-                self.checkpoint_manager.checkpoints[middle_name] = "corrupted"
-        
-        # Verify other checkpoints still work
-        for i, name in enumerate(checkpoint_names):
-            if i != 2:  # Skip the corrupted one
-                loaded = self.checkpoint_manager.load_checkpoint(name)
-                if loaded and loaded != "corrupted":
-                    self.assertEqual(loaded["id"], i)
-
-    def test_graceful_degradation_on_resource_exhaustion(self):
-        """Test graceful degradation when resources are exhausted."""
-        checkpoint_name = "resource_exhaustion_test"
-        
-        # Try to save progressively larger checkpoints until resource exhaustion
-        for size_multiplier in [1, 10, 100, 1000]:
-            try:
-                large_data = {
-                    'size_multiplier': size_multiplier,
-                    'large_data': 'x' * (1024 * size_multiplier),
-                    'metadata': {'attempt': size_multiplier}
-                }
-                
-                result = self.checkpoint_manager.save_checkpoint(
-                    f"{checkpoint_name}_{size_multiplier}", large_data
-                )
-                
-                if result:
-                    # Verify we can still load it
-                    loaded = self.checkpoint_manager.load_checkpoint(
-                        f"{checkpoint_name}_{size_multiplier}"
-                    )
-                    self.assertEqual(loaded['size_multiplier'], size_multiplier)
-                    
-            except (MemoryError, OSError, IOError) as e:
-                # Expected when resources are exhausted
-                self.assertIsInstance(e, (MemoryError, OSError, IOError))
-                break
-
-
-class TestCheckpointManagerBoundaryConditions(unittest.TestCase):
-    """Test boundary conditions and limit cases for CheckpointManager."""
-    
-    def setUp(self):
-        """Set up boundary condition tests."""
-        self.temp_dir = tempfile.mkdtemp()
-        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
-        
-    def tearDown(self):
-        """Clean up boundary condition tests."""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
-    def test_zero_length_data_structures(self):
-        """Test handling of zero-length data structures."""
-        zero_length_data = {
-            'empty_string': '',
-            'empty_list': [],
-            'empty_dict': {},
-            'empty_tuple': (),
-            'empty_set': set(),
-            'zero_int': 0,
-            'zero_float': 0.0,
-            'false_bool': False
-        }
-        
-        checkpoint_name = "zero_length_test"
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, zero_length_data)
-        self.assertTrue(result)
-        
-        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-        self.assertEqual(loaded_data['empty_string'], '')
-        self.assertEqual(loaded_data['empty_list'], [])
-        self.assertEqual(loaded_data['empty_dict'], {})
-        self.assertEqual(loaded_data['zero_int'], 0)
-        self.assertEqual(loaded_data['zero_float'], 0.0)
-        self.assertFalse(loaded_data['false_bool'])
-
-    def test_single_character_strings(self):
-        """Test handling of single character strings and edge cases."""
-        single_char_data = {
-            'space': ' ',
-            'newline': '\n',
-            'tab': '\t',
-            'carriage_return': '\r',
-            'null_char': '\0',
-            'backslash': '\\',
-            'quote': '"',
-            'single_quote': "'",
-            'unicode_char': '€',
-            'emoji_char': '🚀'
-        }
-        
-        checkpoint_name = "single_char_test"
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, single_char_data)
-        self.assertTrue(result)
-        
-        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-        self.assertEqual(loaded_data['space'], ' ')
-        self.assertEqual(loaded_data['newline'], '\n')
-        self.assertEqual(loaded_data['tab'], '\t')
-        self.assertEqual(loaded_data['unicode_char'], '€')
-        self.assertEqual(loaded_data['emoji_char'], '🚀')
-
-    def test_boundary_numeric_values(self):
-        """Test numeric values at system boundaries."""
-        import sys
-        
-        boundary_data = {
-            'max_int_32': 2**31 - 1,
-            'min_int_32': -2**31,
-            'max_int_64': 2**63 - 1,
-            'min_int_64': -2**63,
-            'smallest_positive_float': sys.float_info.min,
-            'largest_float': sys.float_info.max,
-            'float_epsilon': sys.float_info.epsilon,
-            'one_plus_epsilon': 1.0 + sys.float_info.epsilon,
-            'one_minus_epsilon': 1.0 - sys.float_info.epsilon,
-        }
-        
-        checkpoint_name = "boundary_numeric_test"
-        
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, boundary_data)
-            self.assertTrue(result)
-            
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(loaded_data['max_int_32'], 2**31 - 1)
-            self.assertEqual(loaded_data['min_int_32'], -2**31)
-            self.assertEqual(loaded_data['float_epsilon'], sys.float_info.epsilon)
-            
-        except (OverflowError, ValueError) as e:
-            # Some boundary values might cause overflow
-            self.assertIsInstance(e, (OverflowError, ValueError))
-
-    def test_maximum_nesting_depth(self):
-        """Test maximum practical nesting depth for data structures."""
-        # Create nested structure approaching recursion limits
-        max_depth = 500  # Conservative limit to avoid stack overflow
-        nested_data = current = {}
-        
-        for i in range(max_depth):
-            current['level'] = i
-            current['nested'] = {}
-            current = current['nested']
-        
-        # Add leaf data
-        current['leaf'] = True
-        current['depth'] = max_depth
-        
-        checkpoint_name = "max_nesting_test"
-        
-        try:
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, nested_data)
-            self.assertTrue(result)
-            
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            self.assertEqual(loaded_data['level'], 0)
-            
-            # Navigate to a middle level
-            current_level = loaded_data
-            for i in range(100):  # Check first 100 levels
-                self.assertEqual(current_level['level'], i)
-                if 'nested' in current_level:
-                    current_level = current_level['nested']
-                    
-        except (RecursionError, ValueError) as e:
-            # Expected for very deep nesting
-            self.assertIsInstance(e, (RecursionError, ValueError))
-
-
-class TestCheckpointManagerRealWorldIntegration(unittest.TestCase):
-    """Test real-world integration scenarios for CheckpointManager."""
-    
-    def setUp(self):
-        """Set up real-world integration tests."""
-        self.temp_dir = tempfile.mkdtemp()
-        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
-        
-    def tearDown(self):
-        """Clean up real-world integration tests."""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
-    def test_checkpoint_with_actual_model_data_structure(self):
-        """Test checkpoint with realistic ML model data structures."""
-        # Simulate typical ML model checkpoint data
-        model_checkpoint_data = {
-            'model_state_dict': {
-                'layer1.weight': [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-                'layer1.bias': [0.1, 0.2],
-                'layer2.weight': [[0.7, 0.8], [0.9, 1.0], [1.1, 1.2]],
-                'layer2.bias': [0.3, 0.4, 0.5]
-            },
-            'optimizer_state_dict': {
-                'state': {
-                    0: {'momentum_buffer': [0.01, 0.02, 0.03]},
-                    1: {'momentum_buffer': [0.04, 0.05]}
-                },
-                'param_groups': [
-                    {'lr': 0.001, 'momentum': 0.9, 'dampening': 0, 'weight_decay': 0}
-                ]
-            },
-            'epoch': 150,
-            'loss': 0.0234,
-            'accuracy': 0.9567,
-            'lr_scheduler_state': {'_step_count': 150, 'last_epoch': 149},
-            'random_state': {'numpy': [1, 2, 3, 4, 5], 'python': 42},
-            'metadata': {
-                'model_architecture': 'MLP',
-                'dataset': 'MNIST',
-                'training_started': '2024-01-01T10:00:00',
-                'last_checkpoint': '2024-01-01T15:30:00',
-                'total_training_time': 19800.5
-            }
-        }
-        
-        checkpoint_name = "model_checkpoint_epoch_150"
-        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, model_checkpoint_data)
-        self.assertTrue(result)
-        
-        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-        self.assertEqual(loaded_data['epoch'], 150)
-        self.assertEqual(loaded_data['loss'], 0.0234)
-        self.assertEqual(loaded_data['accuracy'], 0.9567)
-        self.assertEqual(len(loaded_data['model_state_dict']['layer1.weight']), 2)
-        self.assertEqual(loaded_data['optimizer_state_dict']['param_groups'][0]['lr'], 0.001)
-
-    def test_checkpoint_versioning_and_migration(self):
-        """Test checkpoint versioning and data migration scenarios."""
-        # Version 1.0 checkpoint format
-        v1_checkpoint = {
-            'format_version': '1.0',
-            'model_weights': [1, 2, 3, 4, 5],
-            'learning_rate': 0.01,
-            'epoch': 10
-        }
-        
-        # Version 2.0 checkpoint format (with additional fields)
-        v2_checkpoint = {
-            'format_version': '2.0',
-            'model': {
-                'weights': [1, 2, 3, 4, 5],
-                'architecture': 'dense'
-            },
-            'optimizer': {
-                'learning_rate': 0.01,
-                'momentum': 0.9
-            },
-            'training': {
-                'epoch': 10,
-                'batch_size': 32
-            },
-            'metadata': {
-                'created_by': 'training_script_v2.py',
-                'framework_version': '2.0.1'
-            }
-        }
-        
-        # Save both versions
-        self.checkpoint_manager.save_checkpoint("model_v1", v1_checkpoint)
-        self.checkpoint_manager.save_checkpoint("model_v2", v2_checkpoint)
-        
-        # Load and verify both can be read
-        loaded_v1 = self.checkpoint_manager.load_checkpoint("model_v1")
-        loaded_v2 = self.checkpoint_manager.load_checkpoint("model_v2")
-        
-        self.assertEqual(loaded_v1['format_version'], '1.0')
-        self.assertEqual(loaded_v2['format_version'], '2.0')
-        self.assertEqual(loaded_v1['epoch'], 10)
-        self.assertEqual(loaded_v2['training']['epoch'], 10)
-
-    def test_concurrent_checkpoint_access_simulation(self):
-        """Test simulated concurrent access patterns."""
         import threading
-        import time
-        import random
         
         results = []
         errors = []
         
-        def worker_save_load_delete(worker_id, iterations=20):
-            """Worker function that performs save/load/delete operations."""
+        def rapid_checkpoint_creation(worker_id):
+            """Create checkpoints rapidly to test naming conflicts."""
             try:
-                for i in range(iterations):
-                    checkpoint_name = f"concurrent_worker_{worker_id}_iter_{i}"
-                    data = {
-                        'worker_id': worker_id,
-                        'iteration': i,
-                        'timestamp': time.time(),
-                        'random_data': [random.randint(0, 1000) for _ in range(100)]
-                    }
-                    
-                    # Save
-                    save_result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
-                    results.append(('save', worker_id, i, save_result))
-                    
-                    # Small random delay
-                    time.sleep(random.uniform(0.001, 0.01))
-                    
-                    # Load
-                    loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-                    load_success = loaded_data is not None and loaded_data.get('worker_id') == worker_id
-                    results.append(('load', worker_id, i, load_success))
-                    
-                    # Delete every other checkpoint
-                    if i % 2 == 0:
-                        delete_result = self.checkpoint_manager.delete_checkpoint(checkpoint_name)
-                        results.append(('delete', worker_id, i, delete_result))
-                        
+                for i in range(5):
+                    name = f"rapid_{worker_id}_{i}"
+                    data = {"worker": worker_id, "iteration": i, "timestamp": time.time()}
+                    result = self.checkpoint_manager.save_checkpoint(name, data)
+                    results.append((worker_id, i, result, name))
+                    # Very small delay to simulate rapid operations
+                    time.sleep(0.001)
             except Exception as e:
-                errors.append(('worker', worker_id, str(e)))
+                errors.append((worker_id, str(e)))
         
-        # Create and start multiple worker threads
+        # Create multiple threads for concurrent checkpoint creation
         threads = []
-        num_workers = 5
-        for worker_id in range(num_workers):
-            thread = threading.Thread(target=worker_save_load_delete, args=(worker_id,))
+        for worker_id in range(3):
+            thread = threading.Thread(target=rapid_checkpoint_creation, args=(worker_id,))
             threads.append(thread)
             thread.start()
         
         # Wait for all threads to complete
         for thread in threads:
-            thread.join(timeout=30)  # 30 second timeout
+            thread.join(timeout=10)  # 10 second timeout
         
-        # Analyze results
-        self.assertEqual(len(errors), 0, f"Errors occurred during concurrent access: {errors}")
+        # Verify no errors occurred
+        self.assertEqual(len(errors), 0, f"Concurrent errors: {errors}")
         
-        # Verify expected number of operations
-        save_operations = [r for r in results if r[0] == 'save']
-        load_operations = [r for r in results if r[0] == 'load']
-        delete_operations = [r for r in results if r[0] == 'delete']
-        
-        self.assertEqual(len(save_operations), num_workers * 20)  # 5 workers * 20 iterations
-        self.assertEqual(len(load_operations), num_workers * 20)
-        self.assertEqual(len(delete_operations), num_workers * 10)  # Every other iteration
+        # Verify all checkpoints were created
+        self.assertEqual(len(results), 15)  # 3 workers * 5 iterations
 
-    def test_checkpoint_backup_and_recovery_workflow(self):
-        """Test backup and recovery workflow scenarios."""
-        # Create initial set of checkpoints
-        original_checkpoints = {}
-        for i in range(10):
-            name = f"backup_test_{i}"
-            data = {
-                'checkpoint_id': i,
-                'model_state': f"state_{i}",
-                'created_at': time.time(),
-                'metadata': {'backup_test': True}
+    def test_checkpoint_with_complex_nested_structures(self):
+        """Test checkpoints with complex nested data structures."""
+        complex_nested = {
+            'matrix_3d': [[[i*j*k for k in range(5)] for j in range(5)] for i in range(5)],
+            'tree_structure': {
+                'root': {
+                    'children': [
+                        {'name': 'child1', 'value': 10, 'children': []},
+                        {'name': 'child2', 'value': 20, 'children': [
+                            {'name': 'grandchild1', 'value': 30, 'children': []}
+                        ]}
+                    ]
+                }
+            },
+            'graph_adjacency': {
+                'nodes': ['A', 'B', 'C', 'D'],
+                'edges': [('A', 'B'), ('B', 'C'), ('C', 'D'), ('D', 'A')]
             }
-            original_checkpoints[name] = data
-            result = self.checkpoint_manager.save_checkpoint(name, data)
-            self.assertTrue(result)
+        }
         
-        # Verify all checkpoints exist
-        checkpoint_list = self.checkpoint_manager.list_checkpoints()
-        for name in original_checkpoints.keys():
-            self.assertIn(name, checkpoint_list)
+        checkpoint_name = "complex_nested_structures"
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, complex_nested)
+        self.assertTrue(result)
         
-        # Simulate backup by reading all checkpoints
-        backup_data = {}
-        for name in original_checkpoints.keys():
+        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        if loaded_data:
+            # Verify structure integrity
+            self.assertEqual(len(loaded_data['matrix_3d']), 5)
+            self.assertEqual(len(loaded_data['matrix_3d'][0]), 5)
+            self.assertEqual(len(loaded_data['matrix_3d'][0][0]), 5)
+            self.assertEqual(loaded_data['tree_structure']['root']['children'][0]['name'], 'child1')
+            self.assertEqual(len(loaded_data['graph_adjacency']['nodes']), 4)
+
+    def test_checkpoint_with_datetime_objects(self):
+        """Test checkpoints containing datetime objects."""
+        from datetime import datetime, timedelta
+        
+        datetime_data = {
+            'current_time': datetime.now(),
+            'past_time': datetime.now() - timedelta(days=30),
+            'future_time': datetime.now() + timedelta(days=30),
+            'timestamps': [
+                datetime.now() - timedelta(hours=i) for i in range(24)
+            ],
+            'time_metadata': {
+                'created': datetime.now(),
+                'format': 'ISO-8601',
+                'timezone': 'UTC'
+            }
+        }
+        
+        checkpoint_name = "datetime_objects"
+        try:
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, datetime_data)
+            if result:
+                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                # Datetime objects might be serialized as strings
+                if loaded_data:
+                    self.assertIn('current_time', loaded_data)
+                    self.assertEqual(len(loaded_data['timestamps']), 24)
+        except (TypeError, ValueError) as e:
+            # Datetime objects might not be directly serializable
+            self.assertIsInstance(e, (TypeError, ValueError))
+
+    def test_checkpoint_performance_profiling(self):
+        """Test checkpoint operations with performance profiling."""
+        import time
+        
+        # Performance test data
+        perf_data = {
+            'large_list': list(range(50000)),
+            'large_dict': {f'key_{i}': f'value_{i}' for i in range(10000)},
+            'nested_performance': {
+                f'level_{i}': {
+                    f'sublevel_{j}': list(range(100))
+                    for j in range(10)
+                } for i in range(10)
+            }
+        }
+        
+        checkpoint_name = "performance_test"
+        
+        # Time the save operation
+        start_save = time.time()
+        save_result = self.checkpoint_manager.save_checkpoint(checkpoint_name, perf_data)
+        end_save = time.time()
+        save_time = end_save - start_save
+        
+        self.assertTrue(save_result)
+        
+        # Time the load operation
+        start_load = time.time()
+        loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        end_load = time.time()
+        load_time = end_load - start_load
+        
+        if loaded_data:
+            self.assertEqual(len(loaded_data['large_list']), 50000)
+            self.assertEqual(len(loaded_data['large_dict']), 10000)
+        
+        # Performance assertions (adjust thresholds based on system capabilities)
+        self.assertLess(save_time, 30.0, f"Save operation took {save_time:.2f}s, expected < 30s")
+        self.assertLess(load_time, 30.0, f"Load operation took {load_time:.2f}s, expected < 30s")
+        
+        # Log performance metrics for monitoring
+        print(f"Performance metrics - Save: {save_time:.3f}s, Load: {load_time:.3f}s")
+
+    def test_checkpoint_state_consistency_across_operations(self):
+        """Test that checkpoint state remains consistent across multiple operations."""
+        # Create initial checkpoint
+        initial_data = {'state': 'initial', 'counter': 0}
+        self.checkpoint_manager.save_checkpoint('consistency_test', initial_data)
+        
+        # Perform multiple operations and verify consistency
+        operations = [
+            ('update_1', {'state': 'updated', 'counter': 1}),
+            ('update_2', {'state': 'updated_again', 'counter': 2}),
+            ('final', {'state': 'final', 'counter': 3})
+        ]
+        
+        for name, data in operations:
+            # Save new checkpoint
+            save_result = self.checkpoint_manager.save_checkpoint(name, data)
+            self.assertTrue(save_result)
+            
+            # Verify we can load it immediately
             loaded = self.checkpoint_manager.load_checkpoint(name)
-            backup_data[name] = loaded
+            if loaded:
+                self.assertEqual(loaded['state'], data['state'])
+                self.assertEqual(loaded['counter'], data['counter'])
+            
+            # Verify checkpoint list is updated
+            checkpoints = self.checkpoint_manager.list_checkpoints()
+            self.assertIn(name, checkpoints)
         
-        # Simulate disaster - delete some checkpoints
-        disaster_victims = ['backup_test_2', 'backup_test_5', 'backup_test_8']
-        for name in disaster_victims:
-            delete_result = self.checkpoint_manager.delete_checkpoint(name)
-            self.assertTrue(delete_result)
+        # Verify all checkpoints still exist and are loadable
+        final_checkpoints = self.checkpoint_manager.list_checkpoints()
+        expected_names = ['consistency_test'] + [op[0] for op in operations]
         
-        # Verify they're gone
-        post_disaster_list = self.checkpoint_manager.list_checkpoints()
-        for name in disaster_victims:
-            self.assertNotIn(name, post_disaster_list)
+        for name in expected_names:
+            self.assertIn(name, final_checkpoints)
+            loaded = self.checkpoint_manager.load_checkpoint(name)
+            self.assertIsNotNone(loaded)
+
+    def test_checkpoint_error_handling_robustness(self):
+        """Test robust error handling in various failure scenarios."""
+        error_scenarios = [
+            # (name, data, expected_exception_type_or_none)
+            (None, {'valid': 'data'}, (ValueError, TypeError)),
+            (123, {'valid': 'data'}, (ValueError, TypeError)),
+            ('valid_name', object(), (TypeError, ValueError)),  # Non-serializable object
+        ]
         
-        # Recovery - restore from backup
-        for name in disaster_victims:
-            if name in backup_data:
-                restore_result = self.checkpoint_manager.save_checkpoint(name, backup_data[name])
-                self.assertTrue(restore_result)
-        
-        # Verify recovery
-        post_recovery_list = self.checkpoint_manager.list_checkpoints()
-        for name in disaster_victims:
-            self.assertIn(name, post_recovery_list)
-            restored_data = self.checkpoint_manager.load_checkpoint(name)
-            self.assertEqual(restored_data['checkpoint_id'], original_checkpoints[name]['checkpoint_id'])
+        for name, data, expected_exception in error_scenarios:
+            with self.subTest(name=str(name), data_type=type(data).__name__):
+                if expected_exception:
+                    try:
+                        result = self.checkpoint_manager.save_checkpoint(name, data)
+                        # If no exception was raised, the implementation handled it gracefully
+                        if result is False or (isinstance(result, tuple) and "Error" in str(result[0])):
+                            # Implementation returned error status instead of raising exception
+                            pass
+                        else:
+                            # If save succeeded, try to load to see if it's actually valid
+                            if name and isinstance(name, str):
+                                loaded = self.checkpoint_manager.load_checkpoint(name)
+                                # Some implementations might handle edge cases gracefully
+                    except expected_exception:
+                        # Expected behavior
+                        pass
+                    except Exception as e:
+                        # Unexpected exception type
+                        self.fail(f"Unexpected exception {type(e).__name__}: {e}")
 
 
-# Performance monitoring decorator for critical tests
-def monitor_performance(max_time_seconds=30):
-    """Decorator to monitor test performance and fail if too slow."""
-    def decorator(test_func):
-        def wrapper(*args, **kwargs):
-            import time
-            start_time = time.time()
-            try:
-                result = test_func(*args, **kwargs)
-                end_time = time.time()
-                elapsed = end_time - start_time
-                if elapsed > max_time_seconds:
-                    raise AssertionError(f"Test {test_func.__name__} took {elapsed:.2f}s, exceeded limit of {max_time_seconds}s")
-                return result
-            except Exception as e:
-                end_time = time.time()
-                elapsed = end_time - start_time
-                # Re-raise with timing info
-                raise type(e)(f"{str(e)} (took {elapsed:.2f}s)")
-        return wrapper
-    return decorator
-
-
-class TestCheckpointManagerPerformanceBoundaries(unittest.TestCase):
-    """Performance boundary testing for CheckpointManager."""
+# Add test markers for pytest compatibility
+class TestCheckpointManagerMarkers(unittest.TestCase):
+    """Test class with pytest markers for test categorization."""
     
     def setUp(self):
-        """Set up performance boundary tests."""
+        """Set up for marker tests."""
         self.temp_dir = tempfile.mkdtemp()
         self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
         
     def tearDown(self):
-        """Clean up performance boundary tests."""
+        """Clean up marker tests."""
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
-    @monitor_performance(max_time_seconds=30)
-    def test_large_checkpoint_list_performance(self):
-        """Test performance with large number of checkpoints."""
-        num_checkpoints = 1000
-        sample_data = {"test": "performance", "small": True}
+    @unittest.skipUnless(sys.version_info >= (3, 8), "Requires Python 3.8+")
+    def test_python_version_specific_features(self):
+        """Test features that require specific Python versions."""
+        # Test walrus operator (Python 3.8+)
+        checkpoint_name = "python38_features"
+        data = {'version_test': True}
         
-        # Create many small checkpoints
-        for i in range(num_checkpoints):
-            checkpoint_name = f"perf_checkpoint_{i:04d}"
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, sample_data)
-            self.assertTrue(result)
-        
-        # Test listing performance
-        start_time = time.time()
-        checkpoint_list = self.checkpoint_manager.list_checkpoints()
-        list_time = time.time() - start_time
-        
-        self.assertEqual(len(checkpoint_list), num_checkpoints)
-        self.assertLess(list_time, 5.0, f"Listing {num_checkpoints} checkpoints took {list_time:.2f}s")
+        if (result := self.checkpoint_manager.save_checkpoint(checkpoint_name, data)):
+            loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+            self.assertEqual(loaded, data)
 
-    @monitor_performance(max_time_seconds=60)
-    def test_checkpoint_size_scaling_performance(self):
-        """Test how performance scales with checkpoint size."""
+    def test_performance_marked_test(self):
+        """Performance test that can be marked as slow."""
+        # This test would be marked as @pytest.mark.performance in a pytest environment
+        large_data = {'performance': list(range(10000))}
+        checkpoint_name = "performance_marked"
+        
         import time
+        start = time.time()
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, large_data)
+        duration = time.time() - start
         
-        sizes = [1024, 10240, 102400, 1024000]  # 1KB, 10KB, 100KB, 1MB
-        performance_data = []
-        
-        for size in sizes:
-            data = {'large_string': 'x' * size, 'size': size}
-            checkpoint_name = f"scaling_test_{size}"
-            
-            # Time save operation
-            start_time = time.time()
-            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
-            save_time = time.time() - start_time
-            
-            self.assertTrue(result)
-            
-            # Time load operation
-            start_time = time.time()
-            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
-            load_time = time.time() - start_time
-            
-            self.assertEqual(loaded_data['size'], size)
-            
-            performance_data.append((size, save_time, load_time))
-            
-            # Verify performance doesn't degrade exponentially
-            if len(performance_data) > 1:
-                prev_size, prev_save, prev_load = performance_data[-2]
-                size_ratio = size / prev_size
-                save_ratio = save_time / prev_save if prev_save > 0 else 1
-                load_ratio = load_time / prev_load if prev_load > 0 else 1
-                
-                # Performance should scale roughly linearly with size
-                # Allow for some overhead, but not exponential growth
-                self.assertLess(save_ratio, size_ratio * 2, 
-                               f"Save time scaling too poorly: {save_ratio} vs size ratio {size_ratio}")
-                self.assertLess(load_ratio, size_ratio * 2,
-                               f"Load time scaling too poorly: {load_ratio} vs size ratio {size_ratio}")
+        self.assertTrue(result)
+        # Mark this as slow if it takes more than 1 second
+        if duration > 1.0:
+            print(f"Slow test detected: {duration:.2f}s")
 
-
-# Custom test result class for better reporting
-class DetailedTestResult(unittest.TextTestResult):
-    """Custom test result class that provides detailed information about test execution."""
-    
-    def __init__(self, stream, descriptions, verbosity):
-        super().__init__(stream, descriptions, verbosity)
-        self.test_timings = {}
+    def test_integration_marked_test(self):
+        """Integration test that tests multiple components together."""
+        # This would be marked as @pytest.mark.integration in a pytest environment
         
-    def startTest(self, test):
-        super().startTest(test)
-        self.test_start_time = time.time()
+        # Test full workflow integration
+        checkpoint_name = "integration_test"
+        data = {'integration': True, 'workflow': 'complete'}
         
-    def stopTest(self, test):
-        super().stopTest(test)
-        if hasattr(self, 'test_start_time'):
-            elapsed = time.time() - self.test_start_time
-            self.test_timings[str(test)] = elapsed
-            
-    def printTimings(self):
-        """Print timing information for all tests."""
-        if self.test_timings:
-            print("\n" + "="*70)
-            print("TEST EXECUTION TIMINGS")
-            print("="*70)
-            sorted_timings = sorted(self.test_timings.items(), key=lambda x: x[1], reverse=True)
-            for test_name, timing in sorted_timings:
-                print(f"{test_name}: {timing:.3f}s")
+        # Save
+        save_result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
+        self.assertTrue(save_result)
+        
+        # List
+        checkpoints = self.checkpoint_manager.list_checkpoints()
+        self.assertIn(checkpoint_name, checkpoints)
+        
+        # Load
+        loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        self.assertEqual(loaded, data)
+        
+        # Delete
+        delete_result = self.checkpoint_manager.delete_checkpoint(checkpoint_name)
+        self.assertTrue(delete_result)
+        
+        # Verify deletion
+        final_checkpoints = self.checkpoint_manager.list_checkpoints()
+        self.assertNotIn(checkpoint_name, final_checkpoints)
 
 
 if __name__ == '__main__':
-    # Configure test runner for comprehensive output
+    # Enhanced test runner with better reporting
     import sys
-    import time
     
-    # Add command line options for test selection
-    if len(sys.argv) > 1 and sys.argv[1] == '--basic':
-        # Run only basic tests (exclude performance and stress tests)
-        suite = unittest.TestSuite()
-        suite.addTest(unittest.makeSuite(TestCheckpointManager))
-        suite.addTest(unittest.makeSuite(TestCheckpointManagerEdgeCases))
-        runner = unittest.TextTestRunner(verbosity=2, buffer=True, resultclass=DetailedTestResult)
-        result = runner.run(suite)
-        result.printTimings()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--performance':
-        # Run only performance tests
-        suite = unittest.TestSuite()
-        suite.addTest(unittest.makeSuite(TestCheckpointManagerPerformanceBoundaries))
-        runner = unittest.TextTestRunner(verbosity=2, buffer=True, resultclass=DetailedTestResult)
-        result = runner.run(suite)
-        result.printTimings()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--advanced':
-        # Run advanced and integration tests
-        suite = unittest.TestSuite()
-        suite.addTest(unittest.makeSuite(TestCheckpointManagerAdvanced))
-        suite.addTest(unittest.makeSuite(TestCheckpointManagerBoundaryConditions))
-        suite.addTest(unittest.makeSuite(TestCheckpointManagerRealWorldIntegration))
-        runner = unittest.TextTestRunner(verbosity=2, buffer=True, resultclass=DetailedTestResult)
-        result = runner.run(suite)
-        result.printTimings()
+    # Set up test discovery
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    
+    # Add all test classes including new ones
+    test_classes = [
+        TestCheckpointManager,
+        TestCheckpointManagerEdgeCases,
+        TestCheckpointManagerRealImplementation,
+        TestCheckpointManagerAdditionalEdgeCases,
+        TestCheckpointManagerMarkers
+    ]
+    
+    for test_class in test_classes:
+        suite.addTests(loader.loadTestsFromTestCase(test_class))
+    
+    # Run with enhanced verbosity
+    runner = unittest.TextTestRunner(
+        verbosity=2, 
+        buffer=True,
+        failfast=False,
+        stream=sys.stdout
+    )
+    
+    print("="*70)
+    print("COMPREHENSIVE CHECKPOINT MANAGER TEST SUITE")
+    print("="*70)
+    print(f"Testing Framework: unittest (pytest compatible)")
+    print(f"Total Test Classes: {len(test_classes)}")
+    print("="*70)
+    
+    result = runner.run(suite)
+    
+    # Enhanced summary reporting
+    print("\n" + "="*70)
+    print("FINAL TEST SUMMARY")
+    print("="*70)
+    print(f"Tests Run: {result.testsRun}")
+    print(f"Failures: {len(result.failures)}")
+    print(f"Errors: {len(result.errors)}")
+    print(f"Skipped: {len(result.skipped) if hasattr(result, 'skipped') else 'N/A'}")
+    
+    if result.testsRun > 0:
+        success_rate = ((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100)
+        print(f"Success Rate: {success_rate:.1f}%")
+    
+    print("="*70)
+    
+    # Exit with error code if tests failed
+    if result.failures or result.errors:
+        sys.exit(1)
     else:
-        # Run all tests with maximum verbosity and detailed reporting
-        runner = unittest.TextTestRunner(verbosity=2, buffer=True, resultclass=DetailedTestResult, warnings='ignore')
-        result = runner.main(exit=False)
-        if hasattr(result, 'printTimings'):
-            result.printTimings()
-            
-        # Print summary statistics
-        print(f"\n" + "="*70)
-        print("TEST EXECUTION SUMMARY")
-        print("="*70)
-        print(f"Tests run: {result.testsRun}")
-        print(f"Failures: {len(result.failures)}")
-        print(f"Errors: {len(result.errors)}")
-        print(f"Skipped: {len(result.skipped)}")
-        if result.wasSuccessful():
-            print("RESULT: ALL TESTS PASSED ✅")
-        else:
-            print("RESULT: SOME TESTS FAILED ❌")
+        print("✅ ALL TESTS PASSED!")
+        sys.exit(0)

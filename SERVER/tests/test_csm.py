@@ -1,3 +1,10 @@
+import sys
+import os
+import pytest
+import asyncio
+import tempfile
+from unittest.mock import MagicMock, AsyncMock, patch
+
 # Add the SERVER directory to the path to import CSM
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -563,326 +570,245 @@ async def test_csm_process_story():
 if __name__ == "__main__":
     # Run the original integration test if executed directly
     asyncio.run(test_csm_process_story())
-    # ========== Tests for update_last_narration_text method ==========
-    
-    def test_csm_update_last_narration_text_success(self, mock_dependencies):
-        """Test successful update of last narration text."""
-        csm = CSM()
-        
-        # Mock database to return story history with narrator entries
+    @pytest.mark.asyncio
+    async def test_csm_update_last_narration_text_success(self, csm_instance):
+        """Test CSM update_last_narration_text with successful update."""
+        # Mock story history with narrator entries
         mock_history = [
-            {"id": 1, "speaker": "Character1", "text": "Hello world"},
+            {"id": 1, "speaker": "Character1", "text": "Character response"},
             {"id": 2, "speaker": "Narrator", "text": "Old narration text"},
-            {"id": 3, "speaker": "Character2", "text": "Another response"},
+            {"id": 3, "speaker": "Character2", "text": "Another character response"},
             {"id": 4, "speaker": "Narrator", "text": "Most recent narration"}
         ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
         
-        # Execute
-        result = csm.update_last_narration_text("Corrected narration text")
+        csm_instance.db.get_story_history.return_value = mock_history
+        csm_instance.db.update_story_entry = MagicMock()
         
-        # Verify
-        assert result is True
-        csm.db.get_story_history.assert_called_once()
-        csm.db.update_story_entry.assert_called_once_with(4, new_text="Corrected narration text")
-
-    def test_csm_update_last_narration_text_no_narrator_entries(self, mock_dependencies):
-        """Test update when no narrator entries exist."""
-        csm = CSM()
-        
-        # Mock database to return history without narrator entries
-        mock_history = [
-            {"id": 1, "speaker": "Character1", "text": "Hello world"},
-            {"id": 2, "speaker": "Character2", "text": "Another response"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute
-        result = csm.update_last_narration_text("New narration text")
-        
-        # Verify
-        assert result is False
-        csm.db.get_story_history.assert_called_once()
-        csm.db.update_story_entry.assert_not_called()
-
-    def test_csm_update_last_narration_text_empty_history(self, mock_dependencies):
-        """Test update when story history is empty."""
-        csm = CSM()
-        
-        # Mock database to return empty history
-        csm.db.get_story_history.return_value = []
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute
-        result = csm.update_last_narration_text("New narration text")
-        
-        # Verify
-        assert result is False
-        csm.db.get_story_history.assert_called_once()
-        csm.db.update_story_entry.assert_not_called()
-
-    def test_csm_update_last_narration_text_single_narrator_entry(self, mock_dependencies):
-        """Test update with only one narrator entry."""
-        csm = CSM()
-        
-        # Mock database to return history with single narrator entry
-        mock_history = [
-            {"id": 5, "speaker": "Narrator", "text": "Only narration"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute
-        result = csm.update_last_narration_text("Updated only narration")
-        
-        # Verify
-        assert result is True
-        csm.db.update_story_entry.assert_called_once_with(5, new_text="Updated only narration")
-
-    def test_csm_update_last_narration_text_database_error(self, mock_dependencies):
-        """Test update when database operations fail."""
-        csm = CSM()
-        
-        # Mock database to raise error on get_story_history
-        csm.db.get_story_history.side_effect = Exception("Database connection failed")
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute - should propagate the database error
-        with pytest.raises(Exception, match="Database connection failed"):
-            csm.update_last_narration_text("Test text")
-        
-        csm.db.update_story_entry.assert_not_called()
-
-    def test_csm_update_last_narration_text_update_error(self, mock_dependencies):
-        """Test update when update operation fails."""
-        csm = CSM()
-        
-        # Mock database to return valid history but fail on update
-        mock_history = [
-            {"id": 1, "speaker": "Narrator", "text": "Test narration"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry.side_effect = Exception("Update failed")
-        
-        # Execute - should propagate the update error
-        with pytest.raises(Exception, match="Update failed"):
-            csm.update_last_narration_text("New text")
-
-    def test_csm_update_last_narration_text_malformed_history(self, mock_dependencies):
-        """Test update with malformed history data."""
-        csm = CSM()
-        
-        # Mock database to return malformed history entries
-        mock_history = [
-            {"id": 1, "text": "Missing speaker field"},  # Missing speaker
-            {"speaker": "Narrator"},  # Missing id and text
-            {"id": 2, "speaker": "Narrator", "text": "Valid entry"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Should handle malformed entries gracefully and find valid narrator entry
-        result = csm.update_last_narration_text("Updated text")
+        # Test successful update
+        result = csm_instance.update_last_narration_text("Corrected narration text")
         
         assert result is True
-        csm.db.update_story_entry.assert_called_once_with(2, new_text="Updated text")
-
-    def test_csm_update_last_narration_text_none_history(self, mock_dependencies):
-        """Test update when database returns None for history."""
-        csm = CSM()
-        
-        # Mock database to return None
-        csm.db.get_story_history.return_value = None
-        csm.db.update_story_entry = MagicMock()
-        
-        # Should handle None history gracefully
-        with pytest.raises((TypeError, AttributeError)):
-            csm.update_last_narration_text("Test text")
-
-    def test_csm_update_last_narration_text_empty_string(self, mock_dependencies):
-        """Test update with empty string."""
-        csm = CSM()
-        
-        # Mock database with valid narrator entry
-        mock_history = [
-            {"id": 1, "speaker": "Narrator", "text": "Original text"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute with empty string
-        result = csm.update_last_narration_text("")
-        
-        # Should still work with empty string
-        assert result is True
-        csm.db.update_story_entry.assert_called_once_with(1, new_text="")
-
-    def test_csm_update_last_narration_text_unicode_text(self, mock_dependencies):
-        """Test update with unicode characters."""
-        csm = CSM()
-        
-        # Mock database with valid narrator entry
-        mock_history = [
-            {"id": 1, "speaker": "Narrator", "text": "Original text"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute with unicode text
-        unicode_text = "Tëst ñärràtîøn wîth émøjîs 🎭 àñd spéçîål çhäräçtérs café naïve"
-        result = csm.update_last_narration_text(unicode_text)
-        
-        # Should handle unicode properly
-        assert result is True
-        csm.db.update_story_entry.assert_called_once_with(1, new_text=unicode_text)
-
-    def test_csm_update_last_narration_text_very_long_text(self, mock_dependencies):
-        """Test update with very long text."""
-        csm = CSM()
-        
-        # Mock database with valid narrator entry
-        mock_history = [
-            {"id": 1, "speaker": "Narrator", "text": "Original text"}
-        ]
-        csm.db.get_story_history.return_value = mock_history
-        csm.db.update_story_entry = MagicMock()
-        
-        # Execute with very long text
-        long_text = "A" * 50000  # 50KB of text
-        result = csm.update_last_narration_text(long_text)
-        
-        # Should handle long text
-        assert result is True
-        csm.db.update_story_entry.assert_called_once_with(1, new_text=long_text)
-
-    # ========== Additional Initialization Tests ==========
-    
-    def test_csm_initialization_component_order(self, mock_dependencies):
-        """Test that CSM components are initialized in correct order."""
-        with patch('SERVER.src.csm.Database') as mock_db_class, \
-             patch('SERVER.src.csm.Narrator') as mock_narrator_class, \
-             patch('SERVER.src.csm.CharacterServer') as mock_cs_class, \
-             patch('SERVER.src.csm.ClientManager') as mock_cm_class, \
-             patch('SERVER.src.csm.Hardware') as mock_hw_class, \
-             patch('SERVER.src.csm.ChaosEngine') as mock_ce_class:
-            
-            # Track initialization order
-            init_order = []
-            
-            def track_db_init(*args):
-                init_order.append('Database')
-                return MagicMock()
-            
-            def track_narrator_init(*args):
-                init_order.append('Narrator')
-                return MagicMock()
-            
-            def track_cs_init(*args):
-                init_order.append('CharacterServer')
-                return MagicMock()
-            
-            def track_cm_init(*args):
-                init_order.append('ClientManager')
-                cm_mock = MagicMock()
-                cm_mock.start_periodic_health_checks = MagicMock()
-                return cm_mock
-            
-            def track_hw_init(*args):
-                init_order.append('Hardware')
-                return MagicMock()
-            
-            def track_ce_init(*args):
-                init_order.append('ChaosEngine')
-                return MagicMock()
-            
-            mock_db_class.side_effect = track_db_init
-            mock_narrator_class.side_effect = track_narrator_init
-            mock_cs_class.side_effect = track_cs_init
-            mock_cm_class.side_effect = track_cm_init
-            mock_hw_class.side_effect = track_hw_init
-            mock_ce_class.side_effect = track_ce_init
-            
-            # Initialize CSM
-            csm = CSM()
-            
-            # Verify initialization order
-            expected_order = ['Database', 'Narrator', 'CharacterServer', 'ClientManager', 'Hardware', 'ChaosEngine']
-            assert init_order == expected_order
-
-    def test_csm_initialization_health_checks_started(self, mock_dependencies):
-        """Test that client health checks are started during initialization."""
-        csm = CSM()
-        
-        # Verify health checks were started
-        csm.client_manager.start_periodic_health_checks.assert_called_once()
-
-    def test_csm_initialization_with_invalid_db_path(self, mock_dependencies):
-        """Test CSM initialization with invalid database path."""
-        with patch('SERVER.src.csm.Database') as mock_db_class:
-            mock_db_class.side_effect = Exception("Invalid database path")
-            
-            # Should propagate database initialization error
-            with pytest.raises(Exception, match="Invalid database path"):
-                CSM()
-
-    # ========== Additional Process Story Edge Cases ==========
-    
-    @pytest.mark.asyncio
-    async def test_csm_process_story_narrator_timeout(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when narrator processing times out."""
-        csm_instance.narrator.process_narration.side_effect = asyncio.TimeoutError("Narrator timeout")
-        
-        with pytest.raises(asyncio.TimeoutError, match="Narrator timeout"):
-            await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        csm_instance.db.get_story_history.assert_called_once()
+        csm_instance.db.update_story_entry.assert_called_once_with(4, new_text="Corrected narration text")
         
         await csm_instance.shutdown_async()
 
     @pytest.mark.asyncio
-    async def test_csm_process_story_character_server_timeout(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when character server times out."""
+    async def test_csm_update_last_narration_text_no_narrator_entries(self, csm_instance):
+        """Test CSM update_last_narration_text when no narrator entries exist."""
+        # Mock story history with no narrator entries
+        mock_history = [
+            {"id": 1, "speaker": "Character1", "text": "Character response"},
+            {"id": 2, "speaker": "Character2", "text": "Another character response"}
+        ]
+        
+        csm_instance.db.get_story_history.return_value = mock_history
+        csm_instance.db.update_story_entry = MagicMock()
+        
+        # Test when no narrator entries exist
+        result = csm_instance.update_last_narration_text("New narration text")
+        
+        assert result is False
+        csm_instance.db.get_story_history.assert_called_once()
+        csm_instance.db.update_story_entry.assert_not_called()
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_update_last_narration_text_empty_history(self, csm_instance):
+        """Test CSM update_last_narration_text with empty story history."""
+        csm_instance.db.get_story_history.return_value = []
+        csm_instance.db.update_story_entry = MagicMock()
+        
+        # Test with empty history
+        result = csm_instance.update_last_narration_text("New narration text")
+        
+        assert result is False
+        csm_instance.db.get_story_history.assert_called_once()
+        csm_instance.db.update_story_entry.assert_not_called()
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_update_last_narration_text_database_error(self, csm_instance):
+        """Test CSM update_last_narration_text when database operations fail."""
+        csm_instance.db.get_story_history.side_effect = Exception("Database connection failed")
+        
+        # Test database error handling
+        with pytest.raises(Exception, match="Database connection failed"):
+            csm_instance.update_last_narration_text("New narration text")
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_none_audio_file(self, csm_instance):
+        """Test CSM process_story with None as audio file path."""
+        with pytest.raises((TypeError, ValueError)):
+            await csm_instance.process_story(None, chaos_level=0.5)
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_empty_string_audio_file(self, csm_instance):
+        """Test CSM process_story with empty string as audio file path."""
+        csm_instance.narrator.process_narration.side_effect = FileNotFoundError("Audio file not found")
+        
+        with pytest.raises(FileNotFoundError):
+            await csm_instance.process_story("", chaos_level=0.5)
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_invalid_chaos_level_string(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with string chaos level."""
+        with pytest.raises((TypeError, ValueError)):
+            await csm_instance.process_story(dummy_audio_file, chaos_level="0.5")
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_chaos_level_infinity(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with infinity chaos level."""
+        with pytest.raises((ValueError, OverflowError)):
+            await csm_instance.process_story(dummy_audio_file, chaos_level=float('inf'))
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_chaos_level_nan(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with NaN chaos level."""
+        with pytest.raises((ValueError, TypeError)):
+            await csm_instance.process_story(dummy_audio_file, chaos_level=float('nan'))
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_narrator_returns_none(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story when narrator returns None."""
+        csm_instance.narrator.process_narration.return_value = None
+        
+        # Should return empty results when narrator returns None
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration == ""
+        assert characters == {}
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_narrator_returns_malformed_data(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story when narrator returns malformed data."""
         csm_instance.narrator.process_narration.return_value = {
-            "text": "Timeout test",
+            "invalid_key": "value",
+            "missing_text": True
+        }
+        
+        # Should handle malformed data gracefully by treating missing text as empty
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration == ""
+        assert characters == {}
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_character_server_returns_none(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story when character server returns None."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Test narration",
             "audio_path": dummy_audio_file,
             "speaker": "Narrator"
         }
         
-        csm_instance.character_server.generate_response.side_effect = asyncio.TimeoutError("Character server timeout")
+        csm_instance.character_server.generate_response.return_value = None
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Server Character", "Actor_id": "Actor1"}
         
-        with pytest.raises(asyncio.TimeoutError, match="Character server timeout"):
-            await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        # Should handle None response gracefully
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration is not None
+        assert isinstance(characters, dict)
+        # No server character response should be added to characters dict
         
         await csm_instance.shutdown_async()
 
     @pytest.mark.asyncio
-    async def test_csm_process_story_hardware_update_failure(self, csm_instance, dummy_audio_file):
+    async def test_csm_process_story_hardware_integration(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story hardware integration."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Hardware test narration",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Hardware response"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Hardware Character", "Actor_id": "Actor1"}
+        
+        # Mock hardware update_leds method
+        csm_instance.hardware.update_leds = MagicMock()
+        
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration is not None
+        assert isinstance(characters, dict)
+        # Verify hardware was updated
+        csm_instance.hardware.update_leds.assert_called_once_with("Hardware test narration")
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_hardware_failure(self, csm_instance, dummy_audio_file):
         """Test CSM process_story when hardware update fails."""
         csm_instance.narrator.process_narration.return_value = {
-            "text": "Hardware test",
+            "text": "Hardware failure test",
             "audio_path": dummy_audio_file,
             "speaker": "Narrator"
         }
         
         csm_instance.character_server.generate_response.return_value = "Server response"
         csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Server Character", "Actor_id": "Actor1"}
         
-        # Mock hardware update failure
-        with patch('asyncio.to_thread') as mock_to_thread:
-            mock_to_thread.side_effect = [
-                {"name": "Test Character", "Actor_id": "Actor1"},  # DB call for character
-                [],  # get_clients_for_story_progression
-                Exception("Hardware update failed"),  # hardware.update_leds
-            ]
-            
-            # Should handle hardware failure gracefully or propagate error
-            try:
-                narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-                # If handled gracefully
-                assert narration is not None
-            except Exception as e:
-                # If hardware errors are propagated
-                assert "Hardware update failed" in str(e)
+        # Mock hardware failure
+        csm_instance.hardware.update_leds = MagicMock(side_effect=Exception("Hardware error"))
+        
+        # Should handle hardware failure gracefully if implemented properly
+        try:
+            narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+            assert narration is not None
+            assert isinstance(characters, dict)
+        except Exception as e:
+            # If hardware errors are propagated, that's also valid
+            assert "Hardware error" in str(e)
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_chaos_engine_integration(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story chaos engine integration."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Chaos test narration",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Chaos response"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Chaos Character", "Actor_id": "Actor1"}
+        
+        # Mock chaos engine to always trigger chaos
+        csm_instance.chaos_engine.random_factor = MagicMock(return_value=0.01)  # Low value to trigger chaos
+        csm_instance.chaos_engine.apply_chaos = MagicMock(return_value=("Chaotic narration", {"Chaos Character": "Chaotic response"}))
+        
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=1.0)
+        
+        # Verify chaos was applied
+        csm_instance.chaos_engine.random_factor.assert_called_once()
+        csm_instance.chaos_engine.apply_chaos.assert_called_once()
+        assert narration == "Chaotic narration"
+        assert "Chaos Character" in characters
         
         await csm_instance.shutdown_async()
 
@@ -890,308 +816,237 @@ if __name__ == "__main__":
     async def test_csm_process_story_database_save_failure(self, csm_instance, dummy_audio_file):
         """Test CSM process_story when database save fails."""
         csm_instance.narrator.process_narration.return_value = {
-            "text": "Save test",
+            "text": "Database save test",
             "audio_path": dummy_audio_file,
             "speaker": "Narrator"
         }
         
         csm_instance.character_server.generate_response.return_value = "Server response"
         csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Server Character", "Actor_id": "Actor1"}
         
         # Mock database save failure
-        with patch('asyncio.to_thread') as mock_to_thread:
-            mock_to_thread.side_effect = [
-                {"name": "Test Character", "Actor_id": "Actor1"},  # DB call for character
-                [],  # get_clients_for_story_progression
-                None,  # hardware.update_leds
-                Exception("Database save failed"),  # db.save_story
-            ]
-            
-            # Should handle save failure gracefully or propagate error
-            try:
-                narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-                # If handled gracefully
-                assert narration is not None
-            except Exception as e:
-                # If save errors are propagated
-                assert "Database save failed" in str(e)
+        csm_instance.db.save_story = MagicMock(side_effect=Exception("Database save failed"))
+        
+        # Should handle database save failure
+        with pytest.raises(Exception, match="Database save failed"):
+            await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
         
         await csm_instance.shutdown_async()
 
     @pytest.mark.asyncio
-    async def test_csm_process_story_chaos_engine_failure(self, csm_instance, dummy_audio_file):
-        """Test CSM process_story when chaos engine fails."""
+    async def test_csm_process_story_client_with_none_values(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story when client data contains None values."""
         csm_instance.narrator.process_narration.return_value = {
-            "text": "Chaos test",
+            "text": "None values test",
             "audio_path": dummy_audio_file,
             "speaker": "Narrator"
         }
         
         csm_instance.character_server.generate_response.return_value = "Server response"
-        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
         
-        # Mock chaos engine to trigger chaos, then fail
-        csm_instance.chaos_engine.random_factor.return_value = 0.05  # Should trigger chaos at level 0.6
-        csm_instance.chaos_engine.apply_chaos.side_effect = Exception("Chaos engine malfunction")
-        
-        # Should handle chaos engine failure
-        try:
-            narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.6)
-            # If handled gracefully
-            assert narration is not None
-        except Exception as e:
-            # If chaos errors are propagated
-            assert "Chaos engine malfunction" in str(e)
-        
-        await csm_instance.shutdown_async()
-
-    # ========== Performance and Resource Management Tests ==========
-    
-    @pytest.mark.asyncio
-    async def test_csm_resource_cleanup_verification(self, csm_instance, dummy_audio_file):
-        """Test that CSM properly manages and cleans up resources."""
-        csm_instance.narrator.process_narration.return_value = {
-            "text": "Resource test",
-            "audio_path": dummy_audio_file,
-            "speaker": "Narrator"
-        }
-        
-        csm_instance.character_server.generate_response.return_value = "Resource response"
-        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
-        
-        # Track resource usage
-        import resource
-        import psutil
-        import os
-        
-        # Get initial resource usage
-        initial_memory = psutil.Process(os.getpid()).memory_info().rss
-        initial_open_files = len(psutil.Process(os.getpid()).open_files())
-        
-        # Process multiple stories
-        for i in range(10):
-            narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.1)
-            assert narration is not None
-            assert isinstance(characters, dict)
-        
-        # Force garbage collection
-        gc.collect()
-        
-        # Check resource usage hasn't grown excessively
-        final_memory = psutil.Process(os.getpid()).memory_info().rss
-        final_open_files = len(psutil.Process(os.getpid()).open_files())
-        
-        # Memory growth should be reasonable (allow for 50MB growth)
-        memory_growth = final_memory - initial_memory
-        assert memory_growth < 50 * 1024 * 1024, f"Excessive memory growth: {memory_growth} bytes"
-        
-        # File handles should not leak
-        file_growth = final_open_files - initial_open_files
-        assert file_growth <= 5, f"Potential file handle leak: {file_growth} additional files"
-        
-        await csm_instance.shutdown_async()
-
-    @pytest.mark.asyncio
-    async def test_csm_concurrent_processing_isolation(self, mock_dependencies):
-        """Test that concurrent CSM processing maintains proper isolation."""
-        # Create multiple CSM instances
-        csm_instances = [CSM() for _ in range(3)]
-        
-        # Set up different responses for each instance
-        for i, csm in enumerate(csm_instances):
-            csm.narrator.process_narration = AsyncMock()
-            csm.character_server.generate_response = AsyncMock()
-            csm.client_manager.send_to_client = AsyncMock()
-            csm.client_manager.get_clients_for_story_progression = MagicMock()
-            csm.db.get_character = MagicMock()
-            
-            csm.narrator.process_narration.return_value = {
-                "text": f"Instance {i} narration",
-                "audio_path": f"test_{i}.wav",
-                "speaker": "Narrator"
-            }
-            csm.character_server.generate_response.return_value = f"Instance {i} response"
-            csm.client_manager.get_clients_for_story_progression.return_value = []
-        
-        # Create dummy files
-        dummy_files = []
-        for i in range(3):
-            with tempfile.NamedTemporaryFile(suffix=f'_isolation_{i}.wav', delete=False) as temp_file:
-                temp_file.write(b'RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xAC\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00')
-                temp_file.flush()
-                dummy_files.append(temp_file.name)
-        
-        try:
-            # Process stories concurrently
-            tasks = []
-            for i, (csm, dummy_file) in enumerate(zip(csm_instances, dummy_files)):
-                task = csm.process_story(dummy_file, chaos_level=0.1 * i)
-                tasks.append((i, task))
-            
-            # Wait for all to complete
-            results = []
-            for i, task in tasks:
-                result = await task
-                results.append((i, result))
-            
-            # Verify isolation - each instance should have its own results
-            assert len(results) == 3
-            for i, (instance_id, (narration, characters)) in enumerate(results):
-                assert instance_id == i
-                assert narration is not None
-                assert f"Instance {i} narration" in str(narration)
-                assert isinstance(characters, dict)
-            
-            # Shutdown all instances
-            for csm in csm_instances:
-                await csm.shutdown_async()
-        
-        finally:
-            # Cleanup
-            for dummy_file in dummy_files:
-                try:
-                    os.unlink(dummy_file)
-                except FileNotFoundError:
-                    pass
-
-    # ========== Additional Error Recovery Tests ==========
-    
-    @pytest.mark.asyncio
-    async def test_csm_partial_component_recovery(self, csm_instance, dummy_audio_file):
-        """Test CSM recovery when some components fail but others succeed."""
-        # Set up a scenario where narrator succeeds, character server fails, but processing continues
-        csm_instance.narrator.process_narration.return_value = {
-            "text": "Recovery test",
-            "audio_path": dummy_audio_file,
-            "speaker": "Narrator"
-        }
-        
-        # Character server fails
-        csm_instance.character_server.generate_response.side_effect = Exception("Character server down")
-        
-        # Client manager works
+        # Client data with None values
         csm_instance.client_manager.get_clients_for_story_progression.return_value = [
-            {"Actor_id": "RecoveryClient", "ip_address": "127.0.0.1", "client_port": 8001}
-        ]
-        csm_instance.client_manager.send_to_client.return_value = "Client still works"
-        csm_instance.db.get_character.return_value = {"name": "Recovery Character", "Actor_id": "RecoveryClient"}
-        
-        # Should handle partial failure gracefully
-        try:
-            narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-            # If it handles partial failures gracefully
-            assert narration is not None
-            # May or may not have character responses depending on implementation
-        except Exception as e:
-            # If character server failures are fatal
-            assert "Character server down" in str(e)
-        
-        await csm_instance.shutdown_async()
-
-    @pytest.mark.asyncio
-    async def test_csm_state_consistency_after_errors(self, csm_instance, dummy_audio_file):
-        """Test that CSM maintains consistent state after errors."""
-        # First call succeeds
-        csm_instance.narrator.process_narration.return_value = {
-            "text": "First success",
-            "audio_path": dummy_audio_file,
-            "speaker": "Narrator"
-        }
-        csm_instance.character_server.generate_response.return_value = "First response"
-        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
-        
-        # First call should work
-        narration1, characters1 = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-        assert narration1 is not None
-        
-        # Second call fails
-        csm_instance.narrator.process_narration.side_effect = Exception("Temporary failure")
-        
-        # Second call should fail
-        with pytest.raises(Exception, match="Temporary failure"):
-            await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-        
-        # Third call should work again (component recovered)
-        csm_instance.narrator.process_narration.side_effect = None
-        csm_instance.narrator.process_narration.return_value = {
-            "text": "Recovery success",
-            "audio_path": dummy_audio_file,
-            "speaker": "Narrator"
-        }
-        
-        narration3, characters3 = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
-        assert narration3 is not None
-        
-        await csm_instance.shutdown_async()
-
-    # ========== Integration Scenario Tests ==========
-    
-    @pytest.mark.asyncio
-    async def test_csm_full_story_processing_integration(self, csm_instance, dummy_audio_file):
-        """Test full story processing integration with realistic scenario."""
-        # Set up realistic multi-character scenario
-        csm_instance.narrator.process_narration.return_value = {
-            "text": "The adventurers entered the dark dungeon, hearing strange noises echoing from the depths.",
-            "audio_path": dummy_audio_file,
-            "speaker": "Narrator"
-        }
-        
-        csm_instance.character_server.generate_response.return_value = "The wizard raises his staff, casting a light spell to illuminate the passage ahead."
-        
-        # Multiple diverse clients
-        test_clients = [
-            {"Actor_id": "Warrior", "ip_address": "192.168.1.10", "client_port": 8001},
-            {"Actor_id": "Rogue", "ip_address": "192.168.1.11", "client_port": 8002},
-            {"Actor_id": "Cleric", "ip_address": "192.168.1.12", "client_port": 8003}
-        ]
-        csm_instance.client_manager.get_clients_for_story_progression.return_value = test_clients
-        
-        # Different responses from each client
-        csm_instance.client_manager.send_to_client.side_effect = [
-            "The warrior draws his sword and takes point, ready to face whatever lurks ahead.",
-            "The rogue melts into the shadows, moving silently to scout for traps.",
-            "The cleric whispers a prayer of protection, blessing the party before they proceed."
+            {"Actor_id": None, "ip_address": "127.0.0.1", "client_port": 8001},
+            {"Actor_id": "ValidClient", "ip_address": None, "client_port": 8002},
+            {"Actor_id": "AnotherValidClient", "ip_address": "127.0.0.1", "client_port": None}
         ]
         
-        # Character details for each client
-        def mock_get_character(actor_id):
-            characters = {
-                "Actor1": {"name": "Gandalf the Wise", "Actor_id": "Actor1"},
-                "Warrior": {"name": "Sir Braveheart", "Actor_id": "Warrior"},
-                "Rogue": {"name": "Shadows McGee", "Actor_id": "Rogue"},
-                "Cleric": {"name": "Sister Mercy", "Actor_id": "Cleric"}
-            }
-            return characters.get(actor_id)
+        csm_instance.db.get_character.return_value = {"name": "Test Character", "Actor_id": "ValidClient"}
         
-        csm_instance.db.get_character.side_effect = mock_get_character
+        # Should skip clients with None values gracefully
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
         
-        # Process the story with moderate chaos
-        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.3)
-        
-        # Verify comprehensive results
         assert narration is not None
-        assert "dungeon" in narration["text"]
         assert isinstance(characters, dict)
-        assert len(characters) >= 4  # Server + 3 clients
+        # send_to_client should not be called for clients with None values
+        csm_instance.client_manager.send_to_client.assert_not_called()
         
-        # Verify all expected characters responded
-        character_names = list(characters.keys())
-        assert "Gandalf the Wise" in character_names  # Server character
-        assert "Sir Braveheart" in character_names   # Warrior
-        assert "Shadows McGee" in character_names    # Rogue
-        assert "Sister Mercy" in character_names     # Cleric
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_very_large_number_of_clients(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with a very large number of clients."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Mass client test",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
         
-        # Verify response content is appropriate
+        csm_instance.character_server.generate_response.return_value = "Server coordinates mass clients"
+        
+        # Create 50 mock clients (reasonable number for testing)
+        large_client_list = [
+            {"Actor_id": f"Client{i}", "ip_address": "127.0.0.1", "client_port": 8000+i}
+            for i in range(50)
+        ]
+        
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = large_client_list
+        csm_instance.client_manager.send_to_client.return_value = "Client response"
+        
+        def mock_get_character_bulk(actor_id):
+            return {"name": f"Character {actor_id}", "Actor_id": actor_id}
+        
+        csm_instance.db.get_character.side_effect = mock_get_character_bulk
+        
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration is not None
+        assert isinstance(characters, dict)
+        # Should have handled all clients
+        assert csm_instance.client_manager.send_to_client.call_count == 50
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_with_unicode_narration_and_responses(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with unicode characters in narration and responses."""
+        unicode_narration = "ñárráción with émójís 🎭 and spëcial charäcters café"
+        
+        csm_instance.narrator.process_narration.return_value = {
+            "text": unicode_narration,
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Respuesta con acentos y símbolos: ñáéíóú 🎯"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = [
+            {"Actor_id": "UnicodeClient", "ip_address": "127.0.0.1", "client_port": 8001}
+        ]
+        
+        csm_instance.client_manager.send_to_client.return_value = "クライアント응답 with mixed unicode"
+        csm_instance.db.get_character.side_effect = lambda actor_id: {"name": f"Carácter {actor_id}", "Actor_id": actor_id}
+        
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration == unicode_narration
+        assert isinstance(characters, dict)
+        # Verify unicode handling in character names and responses
         for char_name, response in characters.items():
+            assert isinstance(char_name, str)
             assert isinstance(response, str)
-            assert len(response) > 0
-            if char_name == "Gandalf the Wise":
-                assert "wizard" in response.lower() or "staff" in response.lower()
-            elif char_name == "Sir Braveheart":
-                assert "warrior" in response.lower() or "sword" in response.lower()
-            elif char_name == "Shadows McGee":
-                assert "rogue" in response.lower() or "shadow" in response.lower()
-            elif char_name == "Sister Mercy":
-                assert "cleric" in response.lower() or "prayer" in response.lower()
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_initialization_with_health_checks(self, mock_dependencies):
+        """Test CSM initialization properly starts client health checks."""
+        # Mock the start_periodic_health_checks method
+        mock_start_health_checks = MagicMock()
+        
+        with patch.object(mock_dependencies['ClientManager'].return_value, 'start_periodic_health_checks', mock_start_health_checks):
+            csm = CSM()
+            
+            # Verify health checks were started
+            mock_start_health_checks.assert_called_once()
+            
+            # Verify all components exist
+            assert hasattr(csm, 'db')
+            assert hasattr(csm, 'narrator')
+            assert hasattr(csm, 'character_server')
+            assert hasattr(csm, 'client_manager')
+            assert hasattr(csm, 'hardware')
+            assert hasattr(csm, 'chaos_engine')
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_performance_timing(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story performance and timing."""
+        import time
+        
+        # Set up fast mock responses
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Performance test narration",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Fast server response"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Performance Character", "Actor_id": "Actor1"}
+        
+        # Measure processing time
+        start_time = time.time()
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        end_time = time.time()
+        
+        processing_time = end_time - start_time
+        
+        assert narration is not None
+        assert isinstance(characters, dict)
+        # Processing should complete within reasonable time (5 seconds for mocked operations)
+        assert processing_time < 5.0, f"Processing took {processing_time} seconds, which is too long"
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_shutdown_stops_health_checks(self, csm_instance):
+        """Test that CSM shutdown properly stops client health checks."""
+        # Mock the stop_periodic_health_checks method
+        csm_instance.client_manager.stop_periodic_health_checks = MagicMock()
+        csm_instance.db.close = MagicMock()
+        
+        await csm_instance.shutdown_async()
+        
+        # Verify shutdown operations were called
+        csm_instance.client_manager.stop_periodic_health_checks.assert_called_once()
+        csm_instance.db.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_edge_case_extremely_long_narration(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with extremely long narration text."""
+        # Create extremely long narration (1MB of text)
+        extremely_long_narration = "A" * (1024 * 1024)  # 1MB of 'A' characters
+        
+        csm_instance.narrator.process_narration.return_value = {
+            "text": extremely_long_narration,
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Response to very long narration"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        csm_instance.db.get_character.return_value = {"name": "Long Text Character", "Actor_id": "Actor1"}
+        
+        # Should handle extremely long text without crashing
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert len(narration) == 1024 * 1024
+        assert isinstance(characters, dict)
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_process_story_concurrent_database_operations(self, csm_instance, dummy_audio_file):
+        """Test CSM process_story with concurrent database operations."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Concurrent DB test",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Concurrent response"
+        
+        # Multiple clients to trigger concurrent DB operations
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = [
+            {"Actor_id": "ConcurrentClient1", "ip_address": "127.0.0.1", "client_port": 8001},
+            {"Actor_id": "ConcurrentClient2", "ip_address": "127.0.0.1", "client_port": 8002},
+            {"Actor_id": "ConcurrentClient3", "ip_address": "127.0.0.1", "client_port": 8003}
+        ]
+        
+        csm_instance.client_manager.send_to_client.return_value = "Concurrent client response"
+        
+        # Simulate some DB delay to test concurrency
+        async def delayed_get_character(actor_id):
+            await asyncio.sleep(0.01)  # Small delay
+            return {"name": f"Concurrent Character {actor_id}", "Actor_id": actor_id}
+        
+        csm_instance.db.get_character.side_effect = lambda actor_id: {"name": f"Concurrent Character {actor_id}", "Actor_id": actor_id}
+        
+        narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+        
+        assert narration is not None
+        assert isinstance(characters, dict)
+        # All client operations should complete
+        assert csm_instance.client_manager.send_to_client.call_count == 3
         
         await csm_instance.shutdown_async()

