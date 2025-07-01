@@ -1,165 +1,237 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, BitsAndBytesConfig, DataCollatorForLanguageModeling
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from datasets import Dataset # Using Hugging Face datasets library
+from transformers.models.auto.modeling_auto import AutoModelForCausalLM
+from transformers.models.auto.tokenization_auto import AutoTokenizer
+from transformers.training_args import TrainingArguments
+from transformers.trainer import Trainer
+from transformers.utils.quantization_config import BitsAndBytesConfig
+from transformers.data.data_collator import DataCollatorForLanguageModeling
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
+from datasets import Dataset
 import os
+import asyncio # Added asyncio
+
+from .config import ADAPTERS_PATH, MODELS_PATH # Ensure MODELS_PATH is available for base model caching
 
 class LLMEngine:
-    def __init__(self, model_name="TinyLLaMA", db=None):
-        self.db = db # Store the database instance
+    def __init__(self, model_name="TinyLlama/TinyLlama-1.1B-Chat-v1.0", db=None): # Updated default model
+        self.db = db
         self.model_name = model_name
-        # Define a specific path for PC1's adapters
-        # This assumes the LLMEngine instance in CharacterServer is for PC1
-        self.adapter_path = f"E:/DreamWeaver/data/models/adapters/{model_name}/PC1"
+        sane_model_name = self.model_name.replace("/", "_") # For path safety
+        self.adapter_path = os.path.join(ADAPTERS_PATH, sane_model_name, "Actor1") # Server LLM is for Actor1
+        self.base_model_cache_path = os.path.join(MODELS_PATH, "llm_base_models") # Centralized cache for base models
 
-        # Configure for 4-bit quantization for efficiency (requires bitsandbytes)
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=False,
-        )
+        os.makedirs(self.adapter_path, exist_ok=True)
+        os.makedirs(self.base_model_cache_path, exist_ok=True)
 
+        self.model = None
+        self.tokenizer = None
+        self.is_initialized = False # Flag to track initialization status
+        self._load_model() # Initial load attempt
+
+    def _load_model(self):
+        """Loads the model and tokenizer. This is a blocking operation."""
+        print(f"LLMEngine (Server/Actor1): Loading model '{self.model_name}'...")
         try:
-            # 1. Load base model and tokenizer
+            bnb_config = None
+            if torch.cuda.is_available():
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16,
+                    bnb_4bit_use_double_quant=False,
+                )
+                print("LLMEngine (Server/Actor1): CUDA available, using BitsAndBytes 4-bit quantization.")
+
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.model_name,
+                trust_remote_code=True,
+                cache_dir=self.base_model_cache_path
+            )
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
             self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                quantization_config=bnb_config,
-                device_map="auto", # Automatically maps model to available devices
-                trust_remote_code=True # Needed for some models, e.g., Llama-2
-            )
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            self.tokenizer.pad_token = self.tokenizer.eos_token # Set pad token for generation
-
-            # Prepare model for k-bit training (e.g., 4-bit)
-            self.model = prepare_model_for_kbit_training(self.model)
-
-            # Define LoRA configuration
-            lora_config = LoraConfig(
-                r=8, # LoRA attention dimension
-                lora_alpha=16, # Alpha parameter for LoRA scaling
-                target_modules=["q_proj", "v_proj"], # Common modules to apply LoRA to in attention blocks
-                lora_dropout=0.05, # Dropout probability for LoRA layers
-                bias="none", # Bias type for LoRA layers
-                task_type="CAUSAL_LM", # Task type for causal language modeling
+                self.model_name,
+                quantization_config=bnb_config if bnb_config else None, # Only if CUDA is available
+                device_map="auto",
+                trust_remote_code=True,
+                cache_dir=self.base_model_cache_path
             )
 
-            # Try to load existing adapters
-            if os.path.exists(self.adapter_path):
-                print(f"Loading existing LoRA adapters from {self.adapter_path}")
+            if torch.cuda.is_available(): # PEFT k-bit training prep only if CUDA
+                self.model = prepare_model_for_kbit_training(self.model)
+
+            # Try to load existing adapters for Actor1
+            adapter_config_file = os.path.join(self.adapter_path, "adapter_config.json")
+            if os.path.exists(adapter_config_file):
+                print(f"LLMEngine (Server/Actor1): Loading existing LoRA adapters from {self.adapter_path}")
                 self.model = PeftModel.from_pretrained(self.model, self.adapter_path)
             else:
-                print("No existing adapters found. Initializing new PEFT model.")
+                print(f"LLMEngine (Server/Actor1): No existing adapters found for Actor1 at {self.adapter_path}. Using base model or initializing new PEFT.")
+                # Optionally initialize with a default LoRA config for future fine-tuning
+                lora_config = LoraConfig(
+                    r=16, lora_alpha=32,
+                    target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], # Common for Llama-like models
+                    lora_dropout=0.1, bias="none", task_type="CAUSAL_LM"
+                )
                 self.model = get_peft_model(self.model, lora_config)
 
-            self.model.print_trainable_parameters() # Print trainable parameters for verification
+            self.model.eval() # Set to evaluation mode
+            self.is_initialized = True
+            print(f"LLMEngine (Server/Actor1): Model '{self.model_name}' loaded successfully. Device: {self.model.device}")
+            if hasattr(self.model, 'print_trainable_parameters'):
+                self.model.print_trainable_parameters()
 
         except Exception as e:
-            print(f"Error loading LLM model {model_name} or configuring PEFT: {e}")
-            # Fallback or raise error
+            print(f"LLMEngine (Server/Actor1): FATAL Error loading LLM model '{self.model_name}': {e}")
             self.model = None
             self.tokenizer = None
+            self.is_initialized = False
 
-    def generate(self, prompt, max_length=100): # Increased max_length for more meaningful responses
-        if not self.model or not self.tokenizer:
-            return "Error: LLM not loaded."
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device) # Move inputs to model device
-        # Ensure attention_mask is present for generation
-        if "attention_mask" not in inputs:
-            inputs["attention_mask"] = torch.ones(inputs["input_ids"].shape, dtype=torch.long, device=self.model.device)
-        output = self.model.generate(
-            **inputs,
-            max_length=max_length,
-            num_return_sequences=1,
-            do_sample=True, # Enable sampling for more varied responses
-            top_k=50,
-            top_p=0.95,
-            temperature=0.7,
-            pad_token_id=self.tokenizer.pad_token_id # Important for generation
-        )
-        return self.tokenizer.decode(output[0], skip_special_tokens=True).strip() # .strip() to clean up whitespace
 
-    def fine_tune(self, new_data_point, pc):
-        """
-        Fine-tunes the LLM using PEFT/LoRA by accumulating all data for the given PC
-        from the database.
-        """
-        if not self.model or not self.tokenizer:
-            print("LLM not loaded, cannot fine-tune.")
+    async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
+        if not self.is_initialized or not self.model or not self.tokenizer:
+            print("LLMEngine (Server/Actor1): Not initialized. Cannot generate text.")
+            return "[LLM_ERROR: NOT_INITIALIZED]"
+
+        def _blocking_generate():
+            if self.model is None or self.tokenizer is None:
+                return "[LLM_ERROR: MODEL_OR_TOKENIZER_NOT_INITIALIZED]"
+            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True,
+                                    max_length=self.tokenizer.model_max_length - max_new_tokens - 5).to(self.model.device)
+            with torch.no_grad():
+                output_sequences = self.model.generate(
+                    **inputs, max_new_tokens=max_new_tokens, num_return_sequences=1,
+                    do_sample=True, top_k=40, top_p=0.9, temperature=0.8,
+                    pad_token_id=self.tokenizer.pad_token_id, eos_token_id=self.tokenizer.eos_token_id
+                )
+            return self.tokenizer.decode(output_sequences[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
+
+        try:
+            # print(f"LLMEngine (Server/Actor1): Generating response for prompt (first 50 chars): '{prompt[:50]}...'")
+            response_text = await asyncio.to_thread(_blocking_generate)
+            # print(f"LLMEngine (Server/Actor1): Generated response (first 50 chars): '{response_text[:50]}...'")
+            return response_text
+        except Exception as e:
+            print(f"LLMEngine (Server/Actor1): Error during text generation: {e}")
+            return "[LLM_ERROR: GENERATION_FAILED]"
+
+    async def fine_tune(self, new_data_point: dict, Actor_id: str):
+        if not self.is_initialized or not self.model or not self.tokenizer:
+            print("LLMEngine (Server/Actor1): Not initialized. Cannot fine-tune.")
+            return
+        if Actor_id != "Actor1": # This engine instance is only for Actor1
+            print(f"LLMEngine (Server/Actor1): Fine-tuning attempt for '{Actor_id}' ignored (engine is for Actor1).")
+            return
+        if not self.db:
+            print("LLMEngine (Server/Actor1): Database not available. Cannot fetch full dataset for fine-tuning.")
+            # Could proceed with just new_data_point if desired, but batch is better
             return
 
-        if pc != "PC1":
-            print(f"Fine-tuning for PC {pc} should happen on the client side. Server LLM only fine-tunes PC1.")
-            return
+        print("LLMEngine (Server/Actor1): Initiating fine-tuning for Actor1...")
 
-        print(f"Server LLM initiating batch fine-tuning for PC {pc}...")
+        # For this example, we'll use a simplified batch fine-tuning approach with all data for Actor1
+        all_training_data = self.db.get_training_data_for_Actor("Actor1")
+        if not all_training_data: # Should include the new_data_point if already saved
+            print("LLMEngine (Server/Actor1): No training data found for Actor1. Adding current point.")
+            all_training_data = [new_data_point] # Use the new point if no history
+        elif new_data_point not in all_training_data : # Avoid duplicates if new_data_point is already in db
+             all_training_data.append(new_data_point)
 
-        # 1. Retrieve all relevant training data for this PC from the database
-        # Note: The `new_data_point` passed to this method is already saved to DB
-        # by character_server.py before calling fine_tune.
-        all_training_data = self.db.get_training_data_for_pc(pc)
 
         if not all_training_data:
-            print(f"No training data found for PC {pc}. Skipping fine-tuning.")
+            print("LLMEngine (Server/Actor1): No training data to fine-tune with for Actor1.")
             return
 
-        # 2. Prepare the dataset
-        # Combine input and output into a single text string for causal language modeling
-        training_examples = [{"text": f"{data['input']}{data['output']}"} for data in all_training_data]
+        def _blocking_fine_tune():
+            if self.model is None or self.tokenizer is None:
+                print("LLMEngine (Server/Actor1): Model or tokenizer not initialized. Cannot fine-tune.")
+                return
+            tokenizer = self.tokenizer  # Local reference for clarity
+            self.model.train() # Set model to training mode
 
-        # Convert to Hugging Face Dataset
-        raw_dataset = Dataset.from_list(training_examples)
+            formatted_texts = [f"{data['input']}{tokenizer.eos_token}{data['output']}{tokenizer.eos_token}" for data in all_training_data]
+            dataset = Dataset.from_list([{"text": text} for text in formatted_texts])
 
-        # Tokenize the dataset
-        def tokenize_function(examples):
-            # Ensure max_length is set to a reasonable value, e.g., tokenizer.model_max_length
-            # We concatenate input and output, so the model learns to generate output given input.
-            return self.tokenizer(examples["text"], truncation=True, max_length=self.tokenizer.model_max_length)
+            def tokenize_function(examples):
+                if tokenizer is None:
+                    raise RuntimeError("Tokenizer is not initialized.")
+                return tokenizer(examples["text"], truncation=True, padding="max_length",
+                                 max_length=tokenizer.model_max_length or 512) # Ensure max_length
 
-        tokenized_dataset = raw_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+            tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
 
-        # 3. Define TrainingArguments for batch training
-        # Adjust batch size and epochs for more substantial training
-        batch_size = 4 # Example batch size, adjust based on GPU memory
-        gradient_accumulation_steps = 1 # Adjust if batch_size is too small
-        num_train_epochs = 3 # Example number of epochs, adjust for desired learning
-        training_args = TrainingArguments(
-            output_dir=f"./results/{pc}", # Directory to save checkpoints and logs
-            per_device_train_batch_size=batch_size,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            num_train_epochs=num_train_epochs,
-            learning_rate=2e-4,
-            fp16=True,
-            logging_steps=len(tokenized_dataset) // batch_size // 2, # Log twice per epoch
-            save_steps=len(tokenized_dataset) // batch_size, # Save once per epoch
-            optim="paged_adamw_8bit",
-            report_to="none",
-            remove_unused_columns=False,
-            # For better performance and to avoid warnings, set a default data collator
-            # or ensure your dataset is correctly formatted for the Trainer.
-            # We'll use DataCollatorForLanguageModeling for causal LM.
-        )
+            # Adjust training arguments for potentially small datasets or single updates
+            # These are example values and should be tuned.
+            num_epochs = 1 if len(all_training_data) < 10 else 3
+            batch_size = 1 if len(all_training_data) < 4 else 4
+            ga_steps = max(1, 4 // batch_size)
 
-        # 4. Create Trainer
-        # Use DataCollatorForLanguageModeling to handle padding and masking for causal LM
-        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-        trainer = Trainer(
-            model=self.model,
-            args=training_args,
-            train_dataset=tokenized_dataset,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator,
-        )
 
-        # 5. Train the model
-        try:
+            training_args = TrainingArguments(
+                output_dir=os.path.join("./results_server_ft", Actor_id, self.model_name.replace("/", "_")),
+                per_device_train_batch_size=batch_size,
+                gradient_accumulation_steps=ga_steps,
+                num_train_epochs=num_epochs,
+                learning_rate=5e-5, # Common for LoRA
+                fp16=torch.cuda.is_available(), # True if CUDA, False otherwise
+                logging_steps=max(1, len(tokenized_dataset) // (batch_size * ga_steps) // 2 +1), # Log a few times
+                save_steps=max(1, len(tokenized_dataset) // (batch_size * ga_steps)), # Save once per effective epoch
+                optim="paged_adamw_8bit" if torch.cuda.is_available() else "adamw_torch",
+                report_to="none",
+                remove_unused_columns=False,
+            )
+
+            data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+            trainer = Trainer(model=self.model, args=training_args, train_dataset=tokenized_dataset,
+                              data_collator=data_collator)
+            trainer.tokenizer = tokenizer  # Set tokenizer attribute directly for save_model/push_to_hub compatibility
+
+            print(f"LLMEngine (Server/Actor1): Starting fine-tuning for Actor1 with {len(all_training_data)} data points...")
             trainer.train()
-            print(f"Fine-tuning completed for PC {pc}.")
 
-            # 6. Save the LoRA adapters
+            # Save LoRA adapters
             os.makedirs(self.adapter_path, exist_ok=True)
-            self.model.save_pretrained(self.adapter_path)
-            print(f"LoRA adapters saved to {self.adapter_path}")
+            if hasattr(self.model, 'save_pretrained'): # Check if it's a PeftModel
+                 self.model.save_pretrained(self.adapter_path)
+                 print(f"LLMEngine (Server/Actor1): LoRA adapters for Actor1 saved to {self.adapter_path}")
+            else:
+                 print("LLMEngine (Server/Actor1): Model is not a PeftModel, cannot save adapters with save_pretrained.")
 
+            self.model.eval() # Set model back to evaluation mode
+
+        try:
+            await asyncio.to_thread(_blocking_fine_tune)
+            print("LLMEngine (Server/Actor1): Fine-tuning process completed for Actor1.")
         except Exception as e:
-            print(f"Error during fine-tuning for PC {pc}: {e}")
+            print(f"LLMEngine (Server/Actor1): Error during fine-tuning for Actor1: {e}")
+            if self.model:
+                self.model.eval() # Ensure model is back in eval mode on error too
+
+    # batch_fine_tune_Actor1 can be removed or refactored if fine_tune now handles batching from DB
+    # For now, let's assume fine_tune is the primary async method.
+
+if __name__ == "__main__":
+    # Basic test (requires DB setup for fine-tuning part)
+    async def main_test():
+        print("LLMEngine (Server/Actor1) Test:")
+        # Dummy DB for testing generate, fine_tune would need a real one or mock
+        class DummyDB:
+            def get_training_data_for_Actor(self, Actor_id): return []
+
+        engine = LLMEngine(db=DummyDB()) # Provide a dummy DB
+        if engine.is_initialized:
+            prompt = "Hello, what is your purpose?"
+            print(f"Test Prompt: {prompt}")
+            response = await engine.generate(prompt, max_new_tokens=50)
+            print(f"Test Response: {response}")
+
+            # Test fine_tune (will just log with DummyDB or try to add to empty list)
+            # For a real test, you'd need a DB with some data.
+            # print("\nTesting fine_tune (placeholder)...")
+            # await engine.fine_tune({"input": "Test input", "output": "Test output"}, "Actor1")
+        else:
+            print("LLMEngine (Server/Actor1) failed to initialize for test.")
+
+    asyncio.run(main_test())
