@@ -8,6 +8,11 @@ import asyncio # Added asyncio
 
 class CharacterServer: # This is for Actor1, the server's own character
     def __init__(self, db):
+        """
+        Initialize the CharacterServer for "Actor1", loading character data from the database or creating a default if missing.
+        
+        If the character data for "Actor1" is not found in the database, a default character profile is created and saved. LLM and TTS engines are not initialized here and must be set up asynchronously.
+        """
         self.db = db
         self.character_Actor_id = "Actor1" # Explicitly for Actor1
         self.character = self.db.get_character(self.character_Actor_id)
@@ -30,11 +35,9 @@ class CharacterServer: # This is for Actor1, the server's own character
 
     async def async_init(self):
         """
-        Initialize LLM and TTS for Actor1.
-        LLMEngine init is blocking, TTSManager init is also blocking (model downloads).
-        These should ideally be loaded asynchronously or in a background thread at server startup,
-        not during CharacterServer init if it's on a critical path.
-        For now, keeping it here as an explicit async method as per best practice.
+        Asynchronously initializes the LLM and TTS engines for Actor1, preparing the character for text generation and audio synthesis.
+        
+        This method offloads blocking initialization tasks for the LLM and TTS engines to background threads to avoid blocking the event loop. It also ensures the pygame mixer is initialized for audio playback, handling errors if initialization fails.
         """
         loop = asyncio.get_event_loop()
         self.llm = await loop.run_in_executor(None, lambda: LLMEngine(model_name=self.character.get("llm_model") or "", db=self.db))
@@ -53,6 +56,16 @@ class CharacterServer: # This is for Actor1, the server's own character
                 print(f"CharacterServer (Actor1): Pygame mixer could not be initialized: {e}. Audio playback will fail.")
 
     async def generate_response(self, narration: str, other_texts: dict) -> str:
+        """
+        Asynchronously generates a text response for the character based on narration and other character inputs, then synthesizes and plays the response as audio.
+        
+        Parameters:
+            narration (str): The narration or prompt to which the character should respond.
+            other_texts (dict): A mapping of other character names to their spoken text for context.
+        
+        Returns:
+            str: The generated text response from the character, or an error string if generation fails.
+        """
         if not self.character:
             print("CharacterServer (Actor1): Character not loaded. Cannot generate response.")
             return ""
@@ -88,6 +101,11 @@ class CharacterServer: # This is for Actor1, the server's own character
         return text
 
     async def output_audio(self, text: str): # speaker_wav removed, TTSManager instance holds it for XTTS
+        """
+        Asynchronously synthesizes speech audio from the given text using the character's TTS engine and plays it back.
+        
+        If the character uses XTTSv2 and a reference audio file is available, it is used for voice cloning. The synthesized audio is saved to the character's audio directory and played using pygame's mixer if initialized. Logs warnings if TTS is not initialized, reference audio is missing, synthesis fails, or audio playback is unavailable.
+        """
         if not self.tts or not self.tts.is_initialized or not text or not self.character:
             if not self.tts or not self.tts.is_initialized:
                 print("CharacterServer (Actor1): TTS not initialized or text empty. No audio.")
@@ -127,6 +145,11 @@ class CharacterServer: # This is for Actor1, the server's own character
                 try:
                     # Pygame sound ops are blocking, run in thread
                     def play_sound():
+                        """
+                        Play an audio file located at `final_audio_path` using pygame's mixer.
+                        
+                        Assumes that the pygame mixer has been initialized and that `final_audio_path` points to a valid audio file.
+                        """
                         sound = pygame.mixer.Sound(final_audio_path)
                         sound.play()
                         # Need to ensure the sound has time to play if script exits or mixer quits.
@@ -147,15 +170,36 @@ if __name__ == '__main__':
     # This test requires a DB with Actor1 configured, and models.
     # It's more of an integration test component.
     async def test_character_server():
+        """
+        Asynchronously tests the CharacterServer class by initializing it with a dummy database and verifying LLM and TTS functionality.
+        
+        Runs an end-to-end integration test for the Actor1 character, including response generation and audio playback, and prints the results.
+        """
         print("Testing CharacterServer (Actor1)...")
         # Mock DB or ensure DB_PATH points to a test DB with Actor1
         class DummyDB:
             def get_character(self, Actor_id):
+                """
+                Retrieve character data for the specified actor ID.
+                
+                Parameters:
+                    Actor_id (str): The unique identifier for the actor.
+                
+                Returns:
+                    dict or None: A dictionary containing character attributes if the actor ID is "Actor1"; otherwise, None.
+                """
                 if Actor_id == "Actor1":
                     return {"name": "TestActor1", "personality": "tester", "tts": "gtts", "language":"en",
                             "reference_audio_filename": None, "Actor_id": "Actor1", "llm_model": None} # Use gTTS for no model download
                 return None
-            def save_training_data(self, data, Actor_id): print(f"DummyDB: Save training data for {Actor_id}: {data}")
+            def save_training_data(self, data, Actor_id): """
+Simulates saving training data for a specified actor in the dummy database.
+
+Parameters:
+    data: The training data to be saved.
+    Actor_id: Identifier for the actor associated with the training data.
+"""
+print(f"DummyDB: Save training data for {Actor_id}: {data}")
 
         # Ensure server config paths are valid for this test run
         # For example, CHARACTERS_AUDIO_PATH needs to be writable.
