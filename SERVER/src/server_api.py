@@ -107,10 +107,6 @@ class HandshakeResponseSubmit(BaseModel):
 
 # --- API Endpoints ---
 
-# TODO: Standardize all authentication to use ClientManager.authenticate_request_token (or validate_token for primary token endpoints)
-# Note: authenticate_request method does not exist; using authenticate_request_token as the standard for endpoints that accept either session or primary token.
-
-
 @app.get("/get_traits", summary="Fetch Character Traits")
 async def get_traits(
     Actor_id: str,
