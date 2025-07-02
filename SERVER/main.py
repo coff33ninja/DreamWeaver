@@ -4,7 +4,6 @@ from src.gradio_interface import launch_interface
 from src.server_api import app as server_api_app
 import uvicorn
 import multiprocessing
-import logging # Added for logging
 
 # Call this early, but it will be more effective if called inside each process's target function
 # if they don't inherit the main process's logging config correctly due to 'spawn'.
@@ -70,7 +69,7 @@ def main():
     logger.info(f"Gradio process started with PID: {gradio_process.pid}")
     logger.info(f"FastAPI process started with PID: {fastapi_process.pid}")
 
-    def shutdown_handler(signum, frame):
+    def shutdown_handler(signum, _frame):
         """
         Handles shutdown signals by terminating both the Gradio and FastAPI server processes and exiting the program.
 
@@ -85,7 +84,10 @@ def main():
 
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, shutdown_handler)
-    signal.signal(signal.SIGTERM, shutdown_handler)
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, shutdown_handler)
+    else:
+        logger.warning("SIGTERM signal not available on this platform. Graceful shutdown might be limited to Ctrl+C (SIGINT).")
 
     try:
         while True:

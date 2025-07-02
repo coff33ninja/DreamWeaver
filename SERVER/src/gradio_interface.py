@@ -424,15 +424,3 @@ def launch_interface(): # Renamed original launch_interface
 if __name__ == "__main__":
     logger.info("Launching Gradio interface directly (SERVER/src/gradio_interface.py)...")
     launch_interface() # Call the original launch_interface directly
-
-# Note: If launch_interface_with_all_tabs was intended to be the main one,
-# the __main__ block should call that. For now, assuming launch_interface is the entry.
-# To use the new tab, the call in __main__ should be launch_interface_with_all_tabs().
-# For this example, I will assume the original launch_interface is still the main entry point
-# and the add_dynamic_client_config_tab would be called from within it if desired.
-# For a clean application of the new tab, the __main__ should call launch_interface_with_all_tabs().
-# I will modify the __main__ to call the new function.
-
-if __name__ == "__main__":
-    logger.info("Launching Gradio interface with all tabs, including Dynamic Client Config.")
-    launch_interface_with_all_tabs()
