@@ -3,8 +3,8 @@ import asyncio
 import os
 from unittest.mock import patch, MagicMock
 
-# Ensure correct import path for TTSManager from SERVER/src/
-from SERVER.src.tts_manager import TTSManager
+# Ensure correct import path for TTSManager from src/
+from src.tts_manager import TTSManager
 from SERVER.src.config import MODELS_PATH, TTS_MODELS_PATH as SERVER_TTS_MODELS_PATH # Renamed to avoid clash if used directly
 import logging # Import logging for patching getLogger
 
@@ -16,7 +16,7 @@ def server_tts_manager_gtts_success(monkeypatch):
     """Fixture for server TTSManager with gTTS mocked for success."""
     mock_gtts_lib = MagicMock()
     monkeypatch.setattr("SERVER.src.tts_manager.gtts", mock_gtts_lib)
-    
+
     # Mock os.makedirs called during __init__
     with patch("os.makedirs") as mock_os_makedirs:
         # Mock os.environ if TTS_HOME is critical for gTTS part (it's more for Coqui)
@@ -85,7 +85,7 @@ class TestServerTTSManagerInitialization:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True # Simulate GPU
         monkeypatch.setattr("SERVER.src.tts_manager.torch", mock_torch)
-        
+
         with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
             with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="gpu_model_id"):
                 manager = TTSManager(tts_service_name="xttsv2", model_name="gpu_model_id")
@@ -104,7 +104,7 @@ class TestServerTTSManagerInitialization:
                     mock_log_instance.error.assert_any_call(
                         "Server TTSManager: Error - Coqui TTS library not available for XTTSv2."
                     )
-    
+
     def test_init_unsupported_service(self, monkeypatch):
         monkeypatch.setattr("SERVER.src.tts_manager.gtts", None)
         monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", None)
@@ -167,7 +167,7 @@ class TestServerTTSManagerSynthesizeAsync:
         manager.is_initialized = False
         manager.tts_instance = None
         manager.service_name = "test_service_server"
-        
+
         with patch.object(logging, "getLogger") as mock_get_logger:
             mock_log_instance = MagicMock()
             mock_get_logger.return_value = mock_log_instance
@@ -177,7 +177,7 @@ class TestServerTTSManagerSynthesizeAsync:
             mock_log_instance.error.assert_any_call(
                  f"Server TTSManager (test_service_server): Not initialized, cannot synthesize text: 'test'."
             )
-            
+
     @patch("SERVER.src.tts_manager.os.makedirs")
     @patch("SERVER.src.tts_manager.os.path.exists", return_value=False)
     @patch("SERVER.src.tts_manager.asyncio.to_thread")
@@ -192,7 +192,7 @@ class TestServerTTSManagerSynthesizeAsync:
             mock_log_instance.error.assert_any_call(
                 f"Server TTSManager: Synthesis completed but output file /server_tmp/output.mp3 is missing or empty."
             )
-            
+
     @patch("SERVER.src.tts_manager.os.makedirs")
     @patch("SERVER.src.tts_manager.os.path.exists")
     @patch("SERVER.src.tts_manager.os.remove")
@@ -272,4 +272,3 @@ class TestServerTTSManagerPrivateHelpers:
 
 # Basic logging setup for pytest output if needed
 logging.basicConfig(level=logging.DEBUG)
-```

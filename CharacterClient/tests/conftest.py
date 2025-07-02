@@ -1,9 +1,13 @@
 """Test configuration and fixtures for CharacterClient tests."""
 
 import pytest
+import sys
+import os
 from unittest.mock import Mock
 from typing import Dict, List, Any
 
+# Add the `src` directory to `sys.path`
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 # Test data fixtures
 @pytest.fixture
@@ -73,6 +77,8 @@ import asyncio
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+# Add the `src` directory to `sys.path`
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 @pytest.fixture(scope="session")
 def event_loop():

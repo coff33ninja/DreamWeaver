@@ -4,8 +4,8 @@ import os
 import logging
 from unittest.mock import patch, MagicMock, mock_open, AsyncMock, call
 
-# Ensure correct import path for LLMEngine from SERVER/src/
-from SERVER.src.llm_engine import LLMEngine
+# Ensure correct import path for LLMEngine from src/
+from src.llm_engine import LLMEngine
 from SERVER.src.config import ADAPTERS_PATH, MODELS_PATH
 
 # Mock PEFT and Transformers objects
@@ -103,4 +103,4 @@ class TestServerLLMEngineFineTune:
         engine = server_llm_engine_no_init
         engine.is_initialized = True
         engine.model = MockGetPeftModel.return_value # This is a PeftModel mock
-        engine.tokenizer = MagicMock(eos_token="<EOS>",
+        engine.tokenizer = MagicMock(eos_token="<EOS>")

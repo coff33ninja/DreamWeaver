@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from .chaos_engine import ChaosEngine
+from src.chaos_engine import ChaosEngine
 
 
 class TestChaosEngine(unittest.TestCase):

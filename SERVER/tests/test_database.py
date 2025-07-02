@@ -389,4 +389,3 @@ class TestDatabaseConnection:
     # We rely on the fact that close() is called by __del__.
     # A more complex test might involve weak PReferences or gc.collect(),
     # but that's often overkill for this kind of check.
-```

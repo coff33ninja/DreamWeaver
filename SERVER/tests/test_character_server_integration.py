@@ -28,8 +28,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# Import the mock from the main test file
-from test_character_server import MockCharacterServer
+# Fix the import path for MockCharacterServer
+from tests.test_character_server import MockCharacterServer
 
 
 class TestCharacterServerIntegrationScenarios:

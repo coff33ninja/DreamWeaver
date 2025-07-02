@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock, AsyncMock, call
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from character_server import CharacterServer
+from src.character_server import CharacterServer
 # Assuming config paths are needed for some mocks related to audio paths
 from config import REFERENCE_VOICES_AUDIO_PATH, CHARACTERS_AUDIO_PATH
 
@@ -33,7 +33,7 @@ def mock_pygame(monkeypatch):
 def mock_dependencies_cs(monkeypatch, mock_pygame): # Include mock_pygame here
     monkeypatch.setattr("character_server.LLMEngine", MockLLMEngineClass)
     monkeypatch.setattr("character_server.TTSManager", MockTTSManagerClass)
-    
+
     MockLLMEngineClass.reset_mock()
     MockTTSManagerClass.reset_mock()
     MockPygameMixer.reset_mock()
@@ -46,7 +46,7 @@ def mock_dependencies_cs(monkeypatch, mock_pygame): # Include mock_pygame here
     tts_instance_mock = MagicMock(is_initialized=True)
     MockLLMEngineClass.return_value = llm_instance_mock
     MockTTSManagerClass.return_value = tts_instance_mock
-    
+
     return llm_instance_mock, tts_instance_mock
 
 
@@ -78,7 +78,7 @@ async def character_server_initialized(character_server_bare, mock_db_cs, mock_d
         "tts_model": "en", "reference_audio_filename": None, "Actor_id": "Actor1",
         "llm_model": "db_llm", "language": "en"
     }
-    
+
     # Mock run_in_executor to control execution of LLM/TTS init
     # The lambda inside run_in_executor will call the mocked class constructors
     llm_mock, tts_mock = mock_dependencies_cs
@@ -92,9 +92,9 @@ async def character_server_initialized(character_server_bare, mock_db_cs, mock_d
         mock_loop = MagicMock()
         mock_loop.run_in_executor.side_effect = mock_run_in_executor
         mock_get_loop.return_value = mock_loop
-        
+
         await cs.async_init()
-    
+
     cs.llm = llm_mock # Ensure instances are the specific mocks
     cs.tts = tts_mock
     return cs
@@ -103,9 +103,9 @@ async def character_server_initialized(character_server_bare, mock_db_cs, mock_d
 class TestCharacterServerInitialization:
     def test_init_actor1_not_in_db(self, mock_db_cs, mock_dependencies_cs):
         mock_db_cs.get_character.return_value = None # Actor1 not in DB
-        
+
         cs = CharacterServer(db=mock_db_cs)
-        
+
         mock_db_cs.get_character.assert_called_once_with("Actor1")
         assert cs.character["name"] == "Actor1_Default"
         mock_db_cs.save_character.assert_called_once()
@@ -118,9 +118,9 @@ class TestCharacterServerInitialization:
     def test_init_actor1_exists_in_db(self, mock_db_cs, mock_dependencies_cs):
         db_char_data = {"name": "Actor1_DB", "Actor_id": "Actor1", "personality": "DB_pers"}
         mock_db_cs.get_character.return_value = db_char_data
-        
+
         cs = CharacterServer(db=mock_db_cs)
-        
+
         mock_db_cs.get_character.assert_called_once_with("Actor1")
         assert cs.character == db_char_data
         mock_db_cs.save_character.assert_not_called()
@@ -132,7 +132,7 @@ class TestCharacterServerAsyncInit:
     async def test_async_init_success_pygame_enabled(self, character_server_bare, mock_db_cs, mock_dependencies_cs):
         cs = character_server_bare
         llm_mock, tts_mock = mock_dependencies_cs
-        
+
         char_data_for_init = {
             "name": "TestInitActor1", "personality": "init_pers", "tts": "xttsv2",
             "tts_model": "xtts_model", "reference_audio_filename": "ref.wav",
@@ -402,4 +402,4 @@ async def test_main_block_execution(mock_logging_config, mock_asyncio_run, MockC
 
     assert True # Placeholder, direct testing of __main__ is involved.
 
-```
+# Ensure no stray backticks or invalid syntax

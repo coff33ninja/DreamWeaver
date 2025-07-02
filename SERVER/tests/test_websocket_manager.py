@@ -150,4 +150,3 @@ class TestWebSocketConnectionManager:
 
 # To run these tests, use pytest from the terminal in the SERVER directory (or project root)
 # Example: pytest tests/test_websocket_manager.py
-```
