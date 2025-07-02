@@ -1,11 +1,12 @@
 import gradio as gr
 from .csm import CSM
 from .database import Database
-from .tts_manager import TTSManager # Server's TTSManager
+from .tts_manager import TTSManager  # Server's TTSManager
 from .client_manager import ClientManager
 from .checkpoint_manager import CheckpointManager
 from . import env_manager
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
+
 # Import the global connection_manager
 from .websocket_manager import connection_manager as global_ws_connection_manager
 
@@ -26,11 +27,13 @@ csm_instance = None
 checkpoint_manager = None
 env_manager_instance = None
 
+
 # --- Helper Functions ---
 def update_model_dropdown(service_name: str):
     models = TTSManager.get_available_models(service_name)
     default_value = models[0] if models else None
-    return gr.update(choices=models, value=default_value) # Use gr.update
+    return gr.update(choices=models, value=default_value)  # Use gr.update
+
 
 async def get_story_playback_data_async():
     if db_instance is None:
@@ -48,11 +51,24 @@ async def get_story_playback_data_async():
         chatbot_messages.append({"role": role, "content": formatted_text})
     return chatbot_messages
 
+
 # --- Async Handlers (Existing ones condensed for brevity in this example) ---
-async def create_character_async(name, personality, goals, backstory, tts_service, tts_model, reference_audio_file, Actor_id, progress=gr.Progress(track_tqdm=True)):
+async def create_character_async(
+    name,
+    personality,
+    goals,
+    backstory,
+    tts_service,
+    tts_model,
+    reference_audio_file,
+    Actor_id,
+    progress=gr.Progress(track_tqdm=True),
+):
     # ... (implementation as before) ...
-    if db_instance is None: raise RuntimeError("Database instance not initialized.")
-    if client_manager_instance is None: raise RuntimeError("ClientManager instance not initialized.")
+    if db_instance is None:
+        raise RuntimeError("Database instance not initialized.")
+    if client_manager_instance is None:
+        raise RuntimeError("ClientManager instance not initialized.")
     progress(0, desc="Initializing character creation...")
     reference_audio_filename = None
     if tts_service == "xttsv2" and reference_audio_file:
@@ -62,49 +78,97 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
         original_filename = reference_audio_file.name
         _, ext = os.path.splitext(original_filename)
         reference_audio_filename = f"{sane_name}_{Actor_id}_{os.urandom(4).hex()}{ext}"
-        destination_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, reference_audio_filename)
+        destination_path = os.path.join(
+            REFERENCE_VOICES_AUDIO_PATH, reference_audio_filename
+        )
         try:
-            await asyncio.to_thread(shutil.copyfile, original_filename, destination_path)
-            logger.info(f"Saved reference audio for character {name} ({Actor_id}) to: {destination_path}")
+            await asyncio.to_thread(
+                shutil.copyfile, original_filename, destination_path
+            )
+            logger.info(
+                f"Saved reference audio for character {name} ({Actor_id}) to: {destination_path}"
+            )
             progress(0.5, desc="Reference audio saved.")
         except Exception as e:
-            logger.error(f"Error saving reference audio for character {name} ({Actor_id}): {e}", exc_info=True)
+            logger.error(
+                f"Error saving reference audio for character {name} ({Actor_id}): {e}",
+                exc_info=True,
+            )
             return f"Error saving reference audio: {e}"
     elif tts_service == "xttsv2":
-        logger.warning(f"XTTS-v2 selected for {name} ({Actor_id}) but no reference audio file uploaded.")
+        logger.warning(
+            f"XTTS-v2 selected for {name} ({Actor_id}) but no reference audio file uploaded."
+        )
         return "Error: XTTS-v2 selected but no reference audio file uploaded."
     progress(0.7, desc="Saving character details to database...")
-    await asyncio.to_thread(db_instance.save_character, name, personality, goals, backstory, tts_service, tts_model, reference_audio_filename, Actor_id, None)
+    await asyncio.to_thread(
+        db_instance.save_character,
+        name,
+        personality,
+        goals,
+        backstory,
+        tts_service,
+        tts_model,
+        reference_audio_filename,
+        Actor_id,
+        None,
+    )
     token_msg_part = ""
     if Actor_id != "Actor1":
-        token = await asyncio.to_thread(client_manager_instance.generate_token, Actor_id)
-        if token: token_msg_part = f" Token for {Actor_id}: {token}"; logger.info(f"Generated token for {Actor_id}.")
+        token = await asyncio.to_thread(
+            client_manager_instance.generate_token, Actor_id
+        )
+        if token:
+            token_msg_part = f" Token for {Actor_id}: {token}"
+            logger.info(f"Generated token for {Actor_id}.")
     progress(1, desc="Character created!")
-    logger.info(f"Character '{name}' for '{Actor_id}' created successfully. Token part: {token_msg_part}")
+    logger.info(
+        f"Character '{name}' for '{Actor_id}' created successfully. Token part: {token_msg_part}"
+    )
     return f"Character '{name}' for '{Actor_id}' created successfully.{token_msg_part}"
 
-async def story_interface_async(audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)):
+
+async def story_interface_async(
+    audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)
+):
     # ... (implementation as before) ...
-    if csm_instance is None: raise RuntimeError("CSM instance not initialized.")
-    if audio_input_path is None: return "No audio input. Record or upload narration.", {}, {}
+    if csm_instance is None:
+        raise RuntimeError("CSM instance not initialized.")
+    if audio_input_path is None:
+        return "No audio input. Record or upload narration.", {}, {}
     progress(0, desc="Starting story processing...")
     try:
-        narration, character_texts = await csm_instance.process_story(audio_input_path, chaos_level_value)
+        narration, character_texts = await csm_instance.process_story(
+            audio_input_path, chaos_level_value
+        )
         progress(1, desc="Story turn processed.")
-        if not isinstance(character_texts, dict): character_texts = {"error": "Invalid character text format from CSM"}
-        logger.info(f"Story processed with audio: {audio_input_path}, chaos: {chaos_level_value}.")
+        if not isinstance(character_texts, dict):
+            character_texts = {"error": "Invalid character text format from CSM"}
+        logger.info(
+            f"Story processed with audio: {audio_input_path}, chaos: {chaos_level_value}."
+        )
         return narration, character_texts
     except Exception as e:
-        logger.error(f"Error in story_interface_async with audio {audio_input_path}: {e}", exc_info=True)
+        logger.error(
+            f"Error in story_interface_async with audio {audio_input_path}: {e}",
+            exc_info=True,
+        )
         progress(1, desc="Error during story processing.")
         return f"Error: {e}", {}, {}
+
+
 # ... other existing async handlers ...
+
 
 async def save_correction_async(correction_text, progress=gr.Progress(track_tqdm=True)):
     progress(0, desc="Saving correction...")
     if csm_instance is not None:
-        logger.info(f"Attempting to save narration correction: {correction_text[:100]}...")
-        updated = await asyncio.to_thread(csm_instance.update_last_narration_text, correction_text)
+        logger.info(
+            f"Attempting to save narration correction: {correction_text[:100]}..."
+        )
+        updated = await asyncio.to_thread(
+            csm_instance.update_last_narration_text, correction_text
+        )
         if updated:
             progress(1, desc="Correction saved.")
             logger.info("Narration correction saved successfully.")
@@ -117,51 +181,92 @@ async def save_correction_async(correction_text, progress=gr.Progress(track_tqdm
     logger.error("CSM instance not initialized in save_correction_async.")
     return "CSM not initialized."
 
+
 async def refresh_story_async_wrapper(progress=gr.Progress()):
     progress(0, desc="Fetching history...")
     data = await get_story_playback_data_async()
     progress(1, desc="History loaded.")
     return data
 
+
 async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=True)):
-    if checkpoint_manager is None: logger.error("CheckpointManager instance not initialized in save_checkpoint_async."); raise RuntimeError("CheckpointManager instance not initialized.")
+    if checkpoint_manager is None:
+        logger.error(
+            "CheckpointManager instance not initialized in save_checkpoint_async."
+        )
+        raise RuntimeError("CheckpointManager instance not initialized.")
     progress(0, desc="Saving checkpoint...")
     logger.info(f"Attempting to save checkpoint with prefix: {name_prefix}")
-    status, new_choices = await asyncio.to_thread(checkpoint_manager.save_checkpoint, name_prefix)
+    status, new_choices = await asyncio.to_thread(
+        checkpoint_manager.save_checkpoint, name_prefix
+    )
     progress(1, desc="Checkpoint saved.")
     logger.info(f"Save checkpoint '{name_prefix}' result: {status}")
-    return status, gr.update(choices=new_choices, value=new_choices[0] if new_choices else None)
+    return status, gr.update(
+        choices=new_choices, value=new_choices[0] if new_choices else None
+    )
+
 
 async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm=True)):
-    if checkpoint_manager is None: logger.error("CheckpointManager instance not initialized in load_checkpoint_async."); raise RuntimeError("CheckpointManager instance not initialized.")
-    if not checkpoint_name: logger.warning("Load checkpoint attempted without selecting a checkpoint name."); return "Please select a checkpoint to load.", []
+    if checkpoint_manager is None:
+        logger.error(
+            "CheckpointManager instance not initialized in load_checkpoint_async."
+        )
+        raise RuntimeError("CheckpointManager instance not initialized.")
+    if not checkpoint_name:
+        logger.warning("Load checkpoint attempted without selecting a checkpoint name.")
+        return "Please select a checkpoint to load.", []
     progress(0, desc=f"Loading checkpoint '{checkpoint_name}'...")
     logger.info(f"Attempting to load checkpoint: {checkpoint_name}")
-    status = await asyncio.to_thread(checkpoint_manager.load_checkpoint, checkpoint_name)
+    status = await asyncio.to_thread(
+        checkpoint_manager.load_checkpoint, checkpoint_name
+    )
     new_story_data = []
     if status and "loaded" in status.lower() and "restart" not in status.lower():
-        logger.info(f"Checkpoint '{checkpoint_name}' loaded successfully. Refreshing story history.")
+        logger.info(
+            f"Checkpoint '{checkpoint_name}' loaded successfully. Refreshing story history."
+        )
         progress(0.8, desc="Refreshing story history...")
         new_story_data = await get_story_playback_data_async()
     else:
-        logger.warning(f"Checkpoint '{checkpoint_name}' load status: {status}. Story history not refreshed.")
+        logger.warning(
+            f"Checkpoint '{checkpoint_name}' load status: {status}. Story history not refreshed."
+        )
     progress(1, desc=f"Checkpoint '{checkpoint_name}' load attempt finished.")
     return status, new_story_data
 
+
 async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True)):
-    if checkpoint_manager is None: logger.error("CheckpointManager instance not initialized in export_story_async."); raise RuntimeError("CheckpointManager instance not initialized.")
+    if checkpoint_manager is None:
+        logger.error(
+            "CheckpointManager instance not initialized in export_story_async."
+        )
+        raise RuntimeError("CheckpointManager instance not initialized.")
     progress(0, desc=f"Exporting story as {export_format}...")
     logger.info(f"Attempting to export story as {export_format}.")
-    status, filename = await asyncio.to_thread(checkpoint_manager.export_story, export_format)
+    status, filename = await asyncio.to_thread(
+        checkpoint_manager.export_story, export_format
+    )
     progress(1, desc="Story export finished.")
-    logger.info(f"Export story as {export_format} result: {status}, filename: {filename}")
-    return status, gr.update(value=filename or "", visible=bool(filename)) # Use gr.update
+    logger.info(
+        f"Export story as {export_format} result: {status}, filename: {filename}"
+    )
+    return status, gr.update(
+        value=filename or "", visible=bool(filename)
+    )  # Use gr.update
+
 
 async def get_env_vars_async():
     status = await asyncio.to_thread(env_manager.get_env_file_status)
-    masked_vars = await asyncio.to_thread(env_manager.load_env_vars, mask_sensitive=True)
-    vars_display_str = "\n".join([f"{k}={v}" for k, v in masked_vars.items()]) or "# No variables found or .env file does not exist."
+    masked_vars = await asyncio.to_thread(
+        env_manager.load_env_vars, mask_sensitive=True
+    )
+    vars_display_str = (
+        "\n".join([f"{k}={v}" for k, v in masked_vars.items()])
+        or "# No variables found or .env file does not exist."
+    )
     return status, vars_display_str
+
 
 async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
     progress(0, desc="Saving .env file...")
@@ -171,6 +276,7 @@ async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
     logger.info(f".env file save result: {status_msg}")
     new_status, new_vars_display = await get_env_vars_async()
     return status_msg, new_status, new_vars_display
+
 
 async def set_api_provider_async(selected_provider, progress=gr.Progress()):
     progress(0, desc="Updating API provider...")
@@ -182,6 +288,7 @@ async def set_api_provider_async(selected_provider, progress=gr.Progress()):
     new_status, new_vars_display = await get_env_vars_async()
     return status_msg, new_status, new_vars_display, selected_provider
 
+
 async def restart_server_async(progress=gr.Progress()):
     progress(0, desc="Restarting server...")
     logger.info("Server restart requested via Gradio UI.")
@@ -191,71 +298,116 @@ async def restart_server_async(progress=gr.Progress()):
     os.execv(sys.executable, [sys.executable] + sys.argv)
     return "Server is restarting..."
 
+
 # --- Dynamic Client Config Tab ---
 def add_dynamic_client_config_tab():
     """Adds the dynamic client configuration tab to the Gradio interface."""
     with gr.TabItem("Dynamic Client Configuration"):
         gr.Markdown("## Update Client Configurations via WebSocket")
-        gr.Markdown("Select a connected client and update its configuration parameters. The client must be connected via WebSocket for changes to take effect.")
+        gr.Markdown(
+            "Select a connected client and update its configuration parameters. The client must be connected via WebSocket for changes to take effect."
+        )
 
         with gr.Row():
             # Using the global_ws_connection_manager imported at the top
-            connected_clients_dropdown = gr.Dropdown(label="Select Client Actor_ID", choices=global_ws_connection_manager.get_active_clients(), allow_custom_value=True)
+            connected_clients_dropdown = gr.Dropdown(
+                label="Select Client Actor_ID",
+                choices=global_ws_connection_manager.get_active_clients(),
+                allow_custom_value=True,
+            )
             refresh_clients_btn = gr.Button("Refresh Client List")
 
-            def update_client_list_ui(): # Renamed to avoid conflict if any
-                return gr.update(choices=global_ws_connection_manager.get_active_clients())
-            refresh_clients_btn.click(update_client_list_ui, outputs=[connected_clients_dropdown])
+            def update_client_list_ui():  # Renamed to avoid conflict if any
+                return gr.update(
+                    choices=global_ws_connection_manager.get_active_clients()
+                )
+
+            refresh_clients_btn.click(
+                update_client_list_ui, outputs=[connected_clients_dropdown]
+            )
 
         with gr.Row():
             with gr.Column():
                 gr.Markdown("### TTS Configuration")
-                new_tts_service = gr.Dropdown(choices=[""] + TTSManager.list_services(), label="New TTS Service (blank to skip)")
+                new_tts_service = gr.Dropdown(
+                    choices=[""] + TTSManager.list_services(),
+                    label="New TTS Service (blank to skip)",
+                )
                 new_tts_model = gr.Textbox(label="New TTS Model Name (blank to skip)")
-                new_tts_language = gr.Textbox(label="New TTS Language (e.g., 'en', 'es'; blank to skip)")
+                new_tts_language = gr.Textbox(
+                    label="New TTS Language (e.g., 'en', 'es'; blank to skip)"
+                )
             with gr.Column():
                 gr.Markdown("### Logging Configuration")
-                new_log_level = gr.Dropdown(choices=["", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], label="New Log Level (blank to skip)")
+                new_log_level = gr.Dropdown(
+                    choices=["", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                    label="New Log Level (blank to skip)",
+                )
 
-        send_config_update_btn = gr.Button("Send Configuration Update to Client", variant="primary")
+        send_config_update_btn = gr.Button(
+            "Send Configuration Update to Client", variant="primary"
+        )
         config_update_status = gr.Textbox(label="Update Status", interactive=False)
 
-        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_lang, log_level):
+        async def handle_send_config_update(
+            actor_id, tts_service, tts_model, tts_lang, log_level
+        ):
             if not actor_id:
                 logger.warning("Dynamic config update: No Actor_ID selected/entered.")
                 return "Error: No Actor_ID selected/entered."
 
             payload = {}
-            if tts_service: payload["tts_service_name"] = tts_service
-            if tts_model: payload["tts_model_name"] = tts_model
-            if tts_lang: payload["tts_language"] = tts_lang
-            if log_level: payload["log_level"] = log_level
+            if tts_service:
+                payload["tts_service_name"] = tts_service
+            if tts_model:
+                payload["tts_model_name"] = tts_model
+            if tts_lang:
+                payload["tts_language"] = tts_lang
+            if log_level:
+                payload["log_level"] = log_level
 
             if not payload:
-                logger.info("Dynamic config update: No configuration changes specified.")
+                logger.info(
+                    "Dynamic config update: No configuration changes specified."
+                )
                 return "No configuration changes specified."
 
             message_to_send = {"type": "config_update", "payload": payload}
 
-            logger.info(f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}")
+            logger.info(
+                f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}"
+            )
             # Use the global_ws_connection_manager
-            success = await global_ws_connection_manager.send_personal_message(message_to_send, actor_id)
+            success = await global_ws_connection_manager.send_personal_message(
+                message_to_send, actor_id
+            )
 
             if success:
-                logger.info(f"Configuration update WebSocket message sent to {actor_id}.")
+                logger.info(
+                    f"Configuration update WebSocket message sent to {actor_id}."
+                )
                 return f"Configuration update sent to {actor_id}."
             else:
-                logger.warning(f"Failed to send configuration update WebSocket message to {actor_id}.")
+                logger.warning(
+                    f"Failed to send configuration update WebSocket message to {actor_id}."
+                )
                 return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
 
         send_config_update_btn.click(
             handle_send_config_update,
-            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_language, new_log_level],
-            outputs=config_update_status
+            inputs=[
+                connected_clients_dropdown,
+                new_tts_service,
+                new_tts_model,
+                new_tts_language,
+                new_log_level,
+            ],
+            outputs=config_update_status,
         )
 
+
 # --- Gradio UI Launch ---
-def launch_interface(): # Renamed original launch_interface
+def launch_interface():  # Renamed original launch_interface
     global db_instance, client_manager_instance, csm_instance, checkpoint_manager, env_manager_instance
     db_instance = Database(DB_PATH)
     client_manager_instance = ClientManager(db_instance)
@@ -264,7 +416,12 @@ def launch_interface(): # Renamed original launch_interface
     env_manager_instance = env_manager
 
     import gradio.themes as themes
-    with gr.Blocks(theme=themes.Soft(primary_hue=themes.colors.indigo, secondary_hue=themes.colors.blue)) as demo:
+
+    with gr.Blocks(
+        theme=themes.Soft(
+            primary_hue=themes.colors.indigo, secondary_hue=themes.colors.blue
+        )
+    ) as demo:
         gr.Markdown("# Dream Weaver Interface")
 
         with gr.Tabs():
@@ -272,11 +429,23 @@ def launch_interface(): # Renamed original launch_interface
                 gr.Markdown("## Create or Update Characters")
                 with gr.Row():
                     with gr.Column(scale=2):
-                        char_name = gr.Textbox(label="Character Name", placeholder="E.g., 'Elara'")
-                        char_Actor_id = gr.Dropdown(["Actor1"] + [f"Actor{i}" for i in range(2, 11)], label="Assign to Actor ID", value="Actor1")
-                        char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service")
+                        char_name = gr.Textbox(
+                            label="Character Name", placeholder="E.g., 'Elara'"
+                        )
+                        char_Actor_id = gr.Dropdown(
+                            ["Actor1"] + [f"Actor{i}" for i in range(2, 11)],
+                            label="Assign to Actor ID",
+                            value="Actor1",
+                        )
+                        char_tts_service = gr.Dropdown(
+                            TTSManager.list_services(), label="TTS Service"
+                        )
                         char_tts_model = gr.Dropdown([], label="TTS Model")
-                        char_ref_audio = gr.File(label="Reference Audio (XTTSv2)", type="filepath", visible=False)
+                        char_ref_audio = gr.File(
+                            label="Reference Audio (XTTSv2)",
+                            type="filepath",
+                            visible=False,
+                        )
                     with gr.Column(scale=3):
                         char_personality = gr.Textbox(label="Personality", lines=2)
                         char_goals = gr.Textbox(label="Goals", lines=2)
@@ -284,56 +453,170 @@ def launch_interface(): # Renamed original launch_interface
                 create_char_btn = gr.Button("Save Character", variant="primary")
                 char_creation_status = gr.Textbox(label="Status", interactive=False)
                 with gr.Accordion("Client Configuration Download", open=False):
-                    client_config_server_url = gr.Textbox(label="Server URL for Client", placeholder="E.g., http://192.168.1.100:8000")
+                    client_config_server_url = gr.Textbox(
+                        label="Server URL for Client",
+                        placeholder="E.g., http://192.168.1.100:8000",
+                    )
                     download_client_config_btn = gr.Button("Download Client .env File")
-                    client_config_file_download = gr.File(label="Download Link", visible=False, interactive=False)
-                    client_config_download_status = gr.Textbox(label="Download Status", interactive=False, visible=False)
-                char_tts_service.change(fn=update_model_dropdown, inputs=char_tts_service, outputs=char_tts_model) # Use gr.update here
-                char_tts_service.change(lambda service: gr.update(visible=(service == "xttsv2")), inputs=char_tts_service, outputs=char_ref_audio) # Use gr.update
-                create_char_btn.click(create_character_async, inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_Actor_id], outputs=char_creation_status)
-                async def handle_download_client_config(actor_id, server_url_for_client, progress=gr.Progress()):
+                    client_config_file_download = gr.File(
+                        label="Download Link", visible=False, interactive=False
+                    )
+                    client_config_download_status = gr.Textbox(
+                        label="Download Status", interactive=False, visible=False
+                    )
+                char_tts_service.change(
+                    fn=update_model_dropdown,
+                    inputs=char_tts_service,
+                    outputs=char_tts_model,
+                )  # Use gr.update here
+                char_tts_service.change(
+                    lambda service: gr.update(visible=(service == "xttsv2")),
+                    inputs=char_tts_service,
+                    outputs=char_ref_audio,
+                )  # Use gr.update
+                create_char_btn.click(
+                    create_character_async,
+                    inputs=[
+                        char_name,
+                        char_personality,
+                        char_goals,
+                        char_backstory,
+                        char_tts_service,
+                        char_tts_model,
+                        char_ref_audio,
+                        char_Actor_id,
+                    ],
+                    outputs=char_creation_status,
+                )
+
+                async def handle_download_client_config(
+                    actor_id, server_url_for_client, progress=gr.Progress()
+                ):
                     # ... (implementation as before)
                     if not actor_id or actor_id == "Actor1":
-                        logger.warning(f"Client config download requested for invalid actor_id: {actor_id}")
-                        return {client_config_download_status: gr.update(value="Select a valid Client Actor ID (not Actor1).", visible=True), client_config_file_download: gr.update(visible=False)}
+                        logger.warning(
+                            f"Client config download requested for invalid actor_id: {actor_id}"
+                        )
+                        return {
+                            client_config_download_status: gr.update(
+                                value="Select a valid Client Actor ID (not Actor1).",
+                                visible=True,
+                            ),
+                            client_config_file_download: gr.update(visible=False),
+                        }
                     if not server_url_for_client:
-                        logger.warning(f"Client config download requested for actor_id: {actor_id} without server_url.")
-                        return {client_config_download_status: gr.update(value="Please enter the Server URL for the client.", visible=True), client_config_file_download: gr.update(visible=False)}
+                        logger.warning(
+                            f"Client config download requested for actor_id: {actor_id} without server_url."
+                        )
+                        return {
+                            client_config_download_status: gr.update(
+                                value="Please enter the Server URL for the client.",
+                                visible=True,
+                            ),
+                            client_config_file_download: gr.update(visible=False),
+                        }
                     progress(0, desc="Preparing download link...")
-                    logger.info(f"Preparing client config download for Actor_id: {actor_id} with server_url: {server_url_for_client}")
-                    encoded_server_url = quote(server_url_for_client, safe=':/')
+                    logger.info(
+                        f"Preparing client config download for Actor_id: {actor_id} with server_url: {server_url_for_client}"
+                    )
+                    encoded_server_url = quote(server_url_for_client, safe=":/")
                     fastapi_base_url = "http://localhost:8000"
                     download_url = f"{fastapi_base_url}/download_client_config/{actor_id}?server_url={encoded_server_url}"
                     progress(1, desc="Link generated. Starting download...")
-                    logger.info(f"Triggering download for {actor_id} with URL: {download_url}")
-                    return {client_config_download_status: gr.update(value=f"Preparing download for {actor_id}...", visible=True), client_config_file_download: gr.update(value=download_url, visible=True)}
+                    logger.info(
+                        f"Triggering download for {actor_id} with URL: {download_url}"
+                    )
+                    return {
+                        client_config_download_status: gr.update(
+                            value=f"Preparing download for {actor_id}...", visible=True
+                        ),
+                        client_config_file_download: gr.update(
+                            value=download_url, visible=True
+                        ),
+                    }
+
                 async def hide_download_link_after_trigger():
-                    logger.debug("Hiding client config download link elements after delay.")
+                    logger.debug(
+                        "Hiding client config download link elements after delay."
+                    )
                     await asyncio.sleep(2)
-                    return {client_config_file_download: gr.update(visible=False), client_config_download_status: gr.update(visible=False)}
-                download_client_config_btn.click(handle_download_client_config, inputs=[char_Actor_id, client_config_server_url], outputs=[client_config_download_status, client_config_file_download]).then(hide_download_link_after_trigger, inputs=[], outputs=[client_config_file_download, client_config_download_status])
+                    return {
+                        client_config_file_download: gr.update(visible=False),
+                        client_config_download_status: gr.update(visible=False),
+                    }
+
+                download_client_config_btn.click(
+                    handle_download_client_config,
+                    inputs=[char_Actor_id, client_config_server_url],
+                    outputs=[
+                        client_config_download_status,
+                        client_config_file_download,
+                    ],
+                ).then(
+                    hide_download_link_after_trigger,
+                    inputs=[],
+                    outputs=[
+                        client_config_file_download,
+                        client_config_download_status,
+                    ],
+                )
 
             with gr.TabItem("Story Progression"):
                 gr.Markdown("## Narrate the Story")
                 with gr.Row():
                     with gr.Column(scale=2):
-                        story_audio_input = gr.Audio(sources=["microphone"], type="filepath", label="Record Narration")
-                        story_chaos_slider = gr.Slider(minimum=0, maximum=10, value=1, step=1, label="Chaos Level")
-                        process_story_btn = gr.Button("Process Narration", variant="primary")
+                        story_audio_input = gr.Audio(
+                            sources=["microphone"],
+                            type="filepath",
+                            label="Record Narration",
+                        )
+                        story_chaos_slider = gr.Slider(
+                            minimum=0, maximum=10, value=1, step=1, label="Chaos Level"
+                        )
+                        process_story_btn = gr.Button(
+                            "Process Narration", variant="primary"
+                        )
                     with gr.Column(scale=3):
-                        narration_output_text = gr.Textbox(label="Narrator's Words", lines=3, interactive=True)
-                        save_correction_btn = gr.Button("Save Correction", variant="secondary")
-                        correction_status = gr.Textbox(label="Correction Status", interactive=False)
+                        narration_output_text = gr.Textbox(
+                            label="Narrator's Words", lines=3, interactive=True
+                        )
+                        save_correction_btn = gr.Button(
+                            "Save Correction", variant="secondary"
+                        )
+                        correction_status = gr.Textbox(
+                            label="Correction Status", interactive=False
+                        )
                         character_responses_json = gr.JSON(label="Character Dialogues")
-                process_story_btn.click(story_interface_async, inputs=[story_audio_input, story_chaos_slider], outputs=[narration_output_text, character_responses_json])
-                save_correction_btn.click(save_correction_async, inputs=[narration_output_text], outputs=[correction_status])
+                process_story_btn.click(
+                    story_interface_async,
+                    inputs=[story_audio_input, story_chaos_slider],
+                    outputs=[narration_output_text, character_responses_json],
+                )
+                save_correction_btn.click(
+                    save_correction_async,
+                    inputs=[narration_output_text],
+                    outputs=[correction_status],
+                )
 
             with gr.TabItem("Story Playback & History"):
                 gr.Markdown("## Review Story History")
-                story_playback_chatbot = gr.Chatbot(label="Full Story Log", height=600, show_copy_button=True, type="messages")
+                story_playback_chatbot = gr.Chatbot(
+                    label="Full Story Log",
+                    height=600,
+                    show_copy_button=True,
+                    type="messages",
+                )
                 refresh_story_btn = gr.Button("Refresh Story History")
-                refresh_story_btn.click(refresh_story_async_wrapper, inputs=[], outputs=[story_playback_chatbot])
-                demo.load(refresh_story_async_wrapper, inputs=[], outputs=[story_playback_chatbot])
+                refresh_story_btn.click(
+                    refresh_story_async_wrapper,
+                    inputs=[],
+                    outputs=[story_playback_chatbot],
+                )
+                demo.load(
+                    refresh_story_async_wrapper,
+                    inputs=[],
+                    outputs=[story_playback_chatbot],
+                )
 
             with gr.TabItem("System & Data Management"):
                 gr.Markdown("## Checkpoints & Export")
@@ -341,78 +624,215 @@ def launch_interface(): # Renamed original launch_interface
                 with gr.Row():
                     with gr.Column():
                         gr.Markdown("### Checkpoints")
-                        chkpt_name_prefix = gr.Textbox(label="Checkpoint Name Prefix", placeholder="E.g., 'AfterTheHeist'")
+                        chkpt_name_prefix = gr.Textbox(
+                            label="Checkpoint Name Prefix",
+                            placeholder="E.g., 'AfterTheHeist'",
+                        )
                         save_chkpt_btn = gr.Button("Save Checkpoint")
                         current_checkpoints = checkpoint_manager.list_checkpoints()
-                        chkpt_dropdown = gr.Dropdown(choices=current_checkpoints, label="Load Checkpoint", value=current_checkpoints[0] if current_checkpoints else None)
+                        chkpt_dropdown = gr.Dropdown(
+                            choices=current_checkpoints,
+                            label="Load Checkpoint",
+                            value=(
+                                current_checkpoints[0] if current_checkpoints else None
+                            ),
+                        )
                         load_chkpt_btn = gr.Button("Load Selected Checkpoint")
-                        chkpt_status = gr.Textbox(label="Checkpoint Status", interactive=False)
-                        save_chkpt_btn.click(save_checkpoint_async, inputs=[chkpt_name_prefix], outputs=[chkpt_status, chkpt_dropdown])
-                        load_chkpt_btn.click(load_checkpoint_async, inputs=[chkpt_dropdown], outputs=[chkpt_status, story_playback_chatbot])
+                        chkpt_status = gr.Textbox(
+                            label="Checkpoint Status", interactive=False
+                        )
+                        save_chkpt_btn.click(
+                            save_checkpoint_async,
+                            inputs=[chkpt_name_prefix],
+                            outputs=[chkpt_status, chkpt_dropdown],
+                        )
+                        load_chkpt_btn.click(
+                            load_checkpoint_async,
+                            inputs=[chkpt_dropdown],
+                            outputs=[chkpt_status, story_playback_chatbot],
+                        )
                     with gr.Column():
                         gr.Markdown("### Export Story")
-                        export_format_radio = gr.Radio(["text", "json"], label="Export Format", value="text")
+                        export_format_radio = gr.Radio(
+                            ["text", "json"], label="Export Format", value="text"
+                        )
                         export_story_btn = gr.Button("Export Full Story")
                         export_status_text = gr.Textbox(label="Export Status")
-                        export_filename_display = gr.Textbox(label="Exported To") # Changed to Textbox
-                        export_story_btn.click(export_story_async, inputs=[export_format_radio], outputs=[export_status_text, export_filename_display])
+                        export_filename_display = gr.Textbox(
+                            label="Exported To"
+                        )  # Changed to Textbox
+                        export_story_btn.click(
+                            export_story_async,
+                            inputs=[export_format_radio],
+                            outputs=[export_status_text, export_filename_display],
+                        )
 
-            add_dynamic_client_config_tab() # Add the new tab here
+            add_dynamic_client_config_tab()  # Add the new tab here
 
             with gr.TabItem("API Keys & .env"):
                 gr.Markdown("## Manage Environment Variables (.env)")
                 # ... (condensed UI as before)
-                gr.Markdown("Add or update environment variables here... **Restart required...**")
-                env_status_text = gr.Textbox(label=".env File Status", interactive=False)
+                gr.Markdown(
+                    "Add or update environment variables here... **Restart required...**"
+                )
+                env_status_text = gr.Textbox(
+                    label=".env File Status", interactive=False
+                )
                 api_providers = ["huggingface", "openai", "google", "custom"]
-                provider_token_vars = {"huggingface": ("HUGGING_FACE_HUB_TOKEN", "HF Token", "hf_..."), "openai": ("OPENAI_API_KEY", "OpenAI Key", "sk-..."), "google": ("GOOGLE_API_KEY", "Google Key", "AIza..."), "custom": ("CUSTOM_API_TOKEN", "Custom Token", "token...")}
-                def get_current_provider(): env_vars = env_manager.load_env_vars(mask_sensitive=False); return env_vars.get("API_PROVIDER", api_providers[0])
-                api_provider_dropdown = gr.Dropdown(api_providers, label="API Provider", value=get_current_provider())
-                api_provider_status = gr.Textbox(label="API Provider Status", interactive=False)
-                token_input = gr.Textbox(label="API Token", visible=True, placeholder="token...")
-                def update_token_field(provider): var, label, placeholder = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token...")); return gr.update(visible=True, label=label, placeholder=placeholder, value="")
-                api_provider_dropdown.change(update_token_field, inputs=[api_provider_dropdown], outputs=[token_input])
+                provider_token_vars = {
+                    "huggingface": ("HUGGING_FACE_HUB_TOKEN", "HF Token", "hf_..."),
+                    "openai": ("OPENAI_API_KEY", "OpenAI Key", "sk-..."),
+                    "google": ("GOOGLE_API_KEY", "Google Key", "AIza..."),
+                    "custom": ("CUSTOM_API_TOKEN", "Custom Token", "token..."),
+                }
+
+                def get_current_provider():
+                    env_vars = env_manager.load_env_vars(mask_sensitive=False)
+                    return env_vars.get("API_PROVIDER", api_providers[0])
+
+                api_provider_dropdown = gr.Dropdown(
+                    api_providers, label="API Provider", value=get_current_provider()
+                )
+                api_provider_status = gr.Textbox(
+                    label="API Provider Status", interactive=False
+                )
+                token_input = gr.Textbox(
+                    label="API Token", visible=True, placeholder="token..."
+                )
+
+                def update_token_field(provider):
+                    var, label, placeholder = provider_token_vars.get(
+                        provider, ("API_TOKEN", "API Token", "token...")
+                    )
+                    return gr.update(
+                        visible=True, label=label, placeholder=placeholder, value=""
+                    )
+
+                api_provider_dropdown.change(
+                    update_token_field,
+                    inputs=[api_provider_dropdown],
+                    outputs=[token_input],
+                )
+
                 async def save_token_async(provider, token, progress=gr.Progress()):
                     progress(0, desc="Saving token...")
-                    var, _, _ = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
+                    var, _, _ = provider_token_vars.get(
+                        provider, ("API_TOKEN", "API Token", "token...")
+                    )
                     new_var = f"{var}={token}"
-                    logger.info(f"Attempting to save token for provider: {provider} (variable: {var})")
-                    status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
+                    logger.info(
+                        f"Attempting to save token for provider: {provider} (variable: {var})"
+                    )
+                    status_msg = await asyncio.to_thread(
+                        env_manager.save_env_vars, new_var
+                    )
                     progress(1, desc="Token saved.")
                     logger.info(f"Save token for {provider} result: {status_msg}")
                     new_status, new_vars_display = await get_env_vars_async()
                     return status_msg, new_status, new_vars_display, ""
+
                 save_token_btn = gr.Button("Save API Token", variant="primary")
-                save_token_status = gr.Textbox(label="Token Save Status", interactive=False)
+                save_token_status = gr.Textbox(
+                    label="Token Save Status", interactive=False
+                )
                 with gr.Row():
-                    with gr.Column(): current_env_vars_display = gr.Textbox(label="Current .env Content", lines=10, interactive=False, placeholder="# .env content...")
-                    with gr.Column(): new_env_vars_input = gr.Textbox(label="New/Updated Variables", lines=10, placeholder="KEY=value...")
-                save_env_btn = gr.Button("Save to .env", variant="primary"); save_status_text = gr.Textbox(label="Save Status", interactive=False)
-                restart_required_text = gr.Markdown("**Restart required...**", visible=False); restart_btn = gr.Button("Restart Server", variant="stop", visible=False)
-                def show_restart(): return gr.update(visible=True), gr.update(visible=True)
-                demo.load(get_env_vars_async, inputs=[], outputs=[env_status_text, current_env_vars_display])
-                save_env_btn.click(save_env_vars_async, inputs=[new_env_vars_input], outputs=[save_status_text, env_status_text, current_env_vars_display]).then(show_restart, inputs=[], outputs=[restart_required_text, restart_btn])
-                api_provider_dropdown.change(set_api_provider_async, inputs=[api_provider_dropdown], outputs=[api_provider_status, env_status_text, current_env_vars_display, api_provider_dropdown])
-                save_token_btn.click(save_token_async, inputs=[api_provider_dropdown, token_input], outputs=[save_token_status, env_status_text, current_env_vars_display, token_input]).then(show_restart, inputs=[], outputs=[restart_required_text, restart_btn])
+                    with gr.Column():
+                        current_env_vars_display = gr.Textbox(
+                            label="Current .env Content",
+                            lines=10,
+                            interactive=False,
+                            placeholder="# .env content...",
+                        )
+                    with gr.Column():
+                        new_env_vars_input = gr.Textbox(
+                            label="New/Updated Variables",
+                            lines=10,
+                            placeholder="KEY=value...",
+                        )
+                save_env_btn = gr.Button("Save to .env", variant="primary")
+                save_status_text = gr.Textbox(label="Save Status", interactive=False)
+                restart_required_text = gr.Markdown(
+                    "**Restart required...**", visible=False
+                )
+                restart_btn = gr.Button("Restart Server", variant="stop", visible=False)
+
+                def show_restart():
+                    return gr.update(visible=True), gr.update(visible=True)
+
+                demo.load(
+                    get_env_vars_async,
+                    inputs=[],
+                    outputs=[env_status_text, current_env_vars_display],
+                )
+                save_env_btn.click(
+                    save_env_vars_async,
+                    inputs=[new_env_vars_input],
+                    outputs=[
+                        save_status_text,
+                        env_status_text,
+                        current_env_vars_display,
+                    ],
+                ).then(
+                    show_restart,
+                    inputs=[],
+                    outputs=[restart_required_text, restart_btn],
+                )
+                api_provider_dropdown.change(
+                    set_api_provider_async,
+                    inputs=[api_provider_dropdown],
+                    outputs=[
+                        api_provider_status,
+                        env_status_text,
+                        current_env_vars_display,
+                        api_provider_dropdown,
+                    ],
+                )
+                save_token_btn.click(
+                    save_token_async,
+                    inputs=[api_provider_dropdown, token_input],
+                    outputs=[
+                        save_token_status,
+                        env_status_text,
+                        current_env_vars_display,
+                        token_input,
+                    ],
+                ).then(
+                    show_restart,
+                    inputs=[],
+                    outputs=[restart_required_text, restart_btn],
+                )
                 restart_btn.click(restart_server_async, inputs=[], outputs=[])
 
             with gr.TabItem("Config & Model Options"):
                 gr.Markdown("## Edit Config & Model Options")
                 # ... (condensed UI as before)
                 from .config import EDITABLE_CONFIG_OPTIONS
+
                 config_keys = list(EDITABLE_CONFIG_OPTIONS.keys())
                 config_values = [str(EDITABLE_CONFIG_OPTIONS[k]) for k in config_keys]
-                config_inputs = [gr.Textbox(label=k, value=v) for k, v in zip(config_keys, config_values)]
+                config_inputs = [
+                    gr.Textbox(label=k, value=v)
+                    for k, v in zip(config_keys, config_values)
+                ]
                 save_config_btn = gr.Button("Save Config Changes", variant="primary")
-                config_status = gr.Textbox(label="Config Save Status", interactive=False)
+                config_status = gr.Textbox(
+                    label="Config Save Status", interactive=False
+                )
+
                 async def save_config_async(*new_values):
                     lines = []
-                    for k, v in zip(config_keys, new_values): lines.append(f"{k}={v}")
+                    for k, v in zip(config_keys, new_values):
+                        lines.append(f"{k}={v}")
                     logger.info(f"Attempting to save config changes to .env: {lines}")
-                    status_msg = await asyncio.to_thread(env_manager.save_env_vars, "\n".join(lines))
+                    status_msg = await asyncio.to_thread(
+                        env_manager.save_env_vars, "\n".join(lines)
+                    )
                     logger.info(f"Save config changes result: {status_msg}")
                     return status_msg
-                save_config_btn.click(save_config_async, inputs=config_inputs, outputs=[config_status])
+
+                save_config_btn.click(
+                    save_config_async, inputs=config_inputs, outputs=[config_status]
+                )
 
         gr.Markdown("---")
         gr.Markdown("View [Server Dashboard](/dashboard) (Server Perf & Client Status)")
@@ -421,5 +841,7 @@ def launch_interface(): # Renamed original launch_interface
 
 
 if __name__ == "__main__":
-    logger.info("Launching Gradio interface directly (SERVER/src/gradio_interface.py)...")
-    launch_interface() # Call the original launch_interface directly
+    logger.info(
+        "Launching Gradio interface directly (SERVER/src/gradio_interface.py)..."
+    )
+    launch_interface()  # Call the original launch_interface directly

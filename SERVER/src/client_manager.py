@@ -6,7 +6,7 @@ import os
 import base64
 from datetime import datetime, timezone, timedelta
 import threading
-import asyncio # Added asyncio
+import asyncio  # Added asyncio
 import logging
 
 from .config import CHARACTERS_AUDIO_PATH
@@ -19,7 +19,7 @@ CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS = 5
 # Retry settings for send_to_client
 SEND_TO_CLIENT_MAX_RETRIES = 2
 SEND_TO_CLIENT_BASE_DELAY_SECONDS = 1
-SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS = 15 # Timeout for the actual /character request
+SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS = 15  # Timeout for the actual /character request
 
 
 class ClientManager:
@@ -34,13 +34,17 @@ class ClientManager:
             try:
                 pygame.mixer.init()
             except pygame.error as e:
-                logger.warning(f"ClientManager: Pygame mixer could not be initialized: {e}.", exc_info=True)
+                logger.warning(
+                    f"ClientManager: Pygame mixer could not be initialized: {e}.",
+                    exc_info=True,
+                )
 
         self.health_check_thread = None
         self.stop_health_check_event = threading.Event()
-        self.active_challenges: dict[str, dict[str, any]] = {} # Actor_id -> {"challenge": str, "timestamp": datetime}
+        self.active_challenges: dict[str, dict[str, any]] = (
+            {}
+        )  # Actor_id -> {"challenge": str, "timestamp": datetime}
         self.CHALLENGE_EXPIRY_SECONDS = 60
-
 
     def generate_token(self, Actor_id: str) -> str:
         """
@@ -56,13 +60,30 @@ class ClientManager:
         """
         token = secrets.token_hex(24)
         char = self.db.get_character(Actor_id)
-        if not char and Actor_id == "Actor1": # Should Actor1 even have a token generated this way?
-            logger.info(f"Actor1 character not found, creating default server character for token generation.")
-            self.db.save_character(name="ServerChar_Actor1", personality="Host", goals="Manage", backstory="Server internal char",
-                                   tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, Actor_id="Actor1", llm_model=None)
+        if (
+            not char and Actor_id == "Actor1"
+        ):  # Should Actor1 even have a token generated this way?
+            logger.info(
+                f"Actor1 character not found, creating default server character for token generation."
+            )
+            self.db.save_character(
+                name="ServerChar_Actor1",
+                personality="Host",
+                goals="Manage",
+                backstory="Server internal char",
+                tts="piper",
+                tts_model="en_US-ryan-high",
+                reference_audio_filename=None,
+                Actor_id="Actor1",
+                llm_model=None,
+            )
         elif not char:
-            logger.warning(f"ClientManager: Generating token for '{Actor_id}' but character does not exist in DB.")
-        self.db.save_client_token(Actor_id, token) # This also clears any existing session token
+            logger.warning(
+                f"ClientManager: Generating token for '{Actor_id}' but character does not exist in DB."
+            )
+        self.db.save_client_token(
+            Actor_id, token
+        )  # This also clears any existing session token
         logger.info(f"Generated and saved primary token for Actor_id: {Actor_id}")
         return token
 
@@ -72,7 +93,10 @@ class ClientManager:
         and returns the challenge string.
         """
         challenge = secrets.token_urlsafe(32)
-        self.active_challenges[Actor_id] = {"challenge": challenge, "timestamp": datetime.now(timezone.utc)}
+        self.active_challenges[Actor_id] = {
+            "challenge": challenge,
+            "timestamp": datetime.now(timezone.utc),
+        }
         logger.info(f"Generated handshake challenge for Actor_id: {Actor_id}")
         return challenge
 
@@ -83,13 +107,19 @@ class ClientManager:
         """
         challenge_data = self.active_challenges.get(Actor_id)
         if not challenge_data:
-            logger.warning(f"No active handshake challenge found for Actor_id: {Actor_id}")
+            logger.warning(
+                f"No active handshake challenge found for Actor_id: {Actor_id}"
+            )
             return None
 
         issue_time = challenge_data["timestamp"]
-        if datetime.now(timezone.utc) - issue_time > timedelta(seconds=self.CHALLENGE_EXPIRY_SECONDS):
-            logger.warning(f"Handshake challenge expired for Actor_id: {Actor_id}. Issued at: {issue_time}")
-            del self.active_challenges[Actor_id] # Clean up expired challenge
+        if datetime.now(timezone.utc) - issue_time > timedelta(
+            seconds=self.CHALLENGE_EXPIRY_SECONDS
+        ):
+            logger.warning(
+                f"Handshake challenge expired for Actor_id: {Actor_id}. Issued at: {issue_time}"
+            )
+            del self.active_challenges[Actor_id]  # Clean up expired challenge
             return None
 
         # Challenge is valid and will be consumed now
@@ -101,7 +131,6 @@ class ClientManager:
         if Actor_id in self.active_challenges:
             del self.active_challenges[Actor_id]
             logger.info(f"Cleared handshake challenge for Actor_id: {Actor_id}")
-
 
     def get_clients_for_story_progression(self):
         """
@@ -120,9 +149,15 @@ class ClientManager:
             bool: True if the token is valid and the client is active; otherwise, False.
         """
         client_details = self.db.get_client_token_details(Actor_id)
-        is_valid = bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
+        is_valid = bool(
+            client_details
+            and client_details.get("token") == token
+            and client_details.get("status") != "Deactivated"
+        )
         if not is_valid:
-            logger.warning(f"Primary token validation failed for Actor_id: {Actor_id}. Provided token: {'***' if token else 'None'}.")
+            logger.warning(
+                f"Primary token validation failed for Actor_id: {Actor_id}. Provided token: {'***' if token else 'None'}."
+            )
         return is_valid
 
     def authenticate_request_token(self, Actor_id: str, provided_token: str) -> bool:
@@ -136,38 +171,49 @@ class ClientManager:
 
         client_details = self.db.get_client_token_details(Actor_id)
         if not client_details:
-            logger.warning(f"No client details found for Actor_id: {Actor_id} during token authentication.")
+            logger.warning(
+                f"No client details found for Actor_id: {Actor_id} during token authentication."
+            )
             return False
 
         # 1. Check for valid session token
-        session_token = client_details.get('session_token')
-        session_token_expiry_iso = client_details.get('session_token_expiry')
+        session_token = client_details.get("session_token")
+        session_token_expiry_iso = client_details.get("session_token_expiry")
 
         if session_token and session_token == provided_token:
             if session_token_expiry_iso:
                 try:
                     expiry_dt = datetime.fromisoformat(session_token_expiry_iso)
                     if datetime.now(timezone.utc) < expiry_dt:
-                        logger.debug(f"Authenticated Actor_id: {Actor_id} using valid session token.")
+                        logger.debug(
+                            f"Authenticated Actor_id: {Actor_id} using valid session token."
+                        )
                         return True
                     else:
-                        logger.warning(f"Session token expired for Actor_id: {Actor_id}. Expiry: {session_token_expiry_iso}. Clearing it.")
+                        logger.warning(
+                            f"Session token expired for Actor_id: {Actor_id}. Expiry: {session_token_expiry_iso}. Clearing it."
+                        )
                         # Clear the expired session token from DB
                         self.db.update_client_session_token(Actor_id, None, None)
                         # Do not proceed to check primary token if an expired session token was provided.
                         # Client should re-handshake.
                         return False
                 except ValueError:
-                    logger.error(f"Invalid session_token_expiry format for Actor_id: {Actor_id}: {session_token_expiry_iso}", exc_info=True)
+                    logger.error(
+                        f"Invalid session_token_expiry format for Actor_id: {Actor_id}: {session_token_expiry_iso}",
+                        exc_info=True,
+                    )
                     # Treat as expired or invalid session token
-                    return False # Or perhaps clear it and then check primary, but safer to fail here.
+                    return False  # Or perhaps clear it and then check primary, but safer to fail here.
             else:
                 # Session token exists but no expiry - treat as invalid or an issue.
-                logger.warning(f"Session token found for Actor_id: {Actor_id} but has no expiry. Treating as invalid.")
-                return False # Safer to require expiry
+                logger.warning(
+                    f"Session token found for Actor_id: {Actor_id} but has no expiry. Treating as invalid."
+                )
+                return False  # Safer to require expiry
 
         # 2. If not a valid session token, check primary token
-        primary_token = client_details.get('token')
+        primary_token = client_details.get("token")
         if primary_token and primary_token == provided_token:
             # This means the client is using its primary token.
             # This could be allowed, or we might want to enforce session tokens after first handshake.
@@ -175,9 +221,10 @@ class ClientManager:
             logger.debug(f"Authenticated Actor_id: {Actor_id} using primary token.")
             return True
 
-        logger.warning(f"Authentication failed for Actor_id: {Actor_id}. Provided token did not match session or primary token.")
+        logger.warning(
+            f"Authentication failed for Actor_id: {Actor_id}. Provided token did not match session or primary token."
+        )
         return False
-
 
     def _perform_single_health_check_blocking(self, client_info: dict):
         """
@@ -191,36 +238,51 @@ class ClientManager:
         client_port = client_info.get("client_port")
 
         if not all([Actor_id, ip_address, client_port]):
-            logger.warning(f"Attempted health check with incomplete client_info: {client_info}")
+            logger.warning(
+                f"Attempted health check with incomplete client_info: {client_info}"
+            )
             return
 
         health_url = f"http://{ip_address}:{client_port}/health"
-        new_status = "Error_API" # Default to error if checks fail
+        new_status = "Error_API"  # Default to error if checks fail
         try:
             # logger.debug(f"Performing health check for {Actor_id} at {health_url}")
-            response = requests.get(health_url, timeout=CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS)
-            response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+            response = requests.get(
+                health_url, timeout=CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS
+            )
+            response.raise_for_status()  # Raises HTTPError for bad responses (4xx or 5xx)
             health_data = response.json()
 
             if health_data.get("status") == "ok":
                 new_status = "Online_Responsive"
             elif health_data.get("status") == "degraded":
                 new_status = "Error_API_Degraded"
-                logger.warning(f"Health Check ({Actor_id}): Client reported degraded status. Health data: {health_data}")
+                logger.warning(
+                    f"Health Check ({Actor_id}): Client reported degraded status. Health data: {health_data}"
+                )
             else:
-                logger.warning(f"Health Check ({Actor_id}): Unexpected health status '{health_data.get('status')}' from {health_url}. Data: {health_data}")
+                logger.warning(
+                    f"Health Check ({Actor_id}): Unexpected health status '{health_data.get('status')}' from {health_url}. Data: {health_data}"
+                )
 
         except requests.exceptions.Timeout:
             logger.warning(f"Health Check ({Actor_id}): Timeout at {health_url}")
             new_status = "Error_API"
         except requests.exceptions.ConnectionError:
-            logger.warning(f"Health Check ({Actor_id}): Connection error at {health_url}")
+            logger.warning(
+                f"Health Check ({Actor_id}): Connection error at {health_url}"
+            )
             new_status = "Error_Unreachable"
-        except requests.exceptions.RequestException as e: # Includes HTTPError
-            logger.warning(f"Health Check ({Actor_id}): Request error at {health_url}: {e}")
+        except requests.exceptions.RequestException as e:  # Includes HTTPError
+            logger.warning(
+                f"Health Check ({Actor_id}): Request error at {health_url}: {e}"
+            )
             new_status = "Error_API"
-        except Exception as e: # Catch any other unexpected error, like JSONDecodeError
-            logger.error(f"Health Check ({Actor_id}): Unexpected error during health check for {health_url}: {e}", exc_info=True)
+        except Exception as e:  # Catch any other unexpected error, like JSONDecodeError
+            logger.error(
+                f"Health Check ({Actor_id}): Unexpected error during health check for {health_url}: {e}",
+                exc_info=True,
+            )
             new_status = "Error_API"
 
         # logger.debug(f"Health check for {Actor_id} completed. New status: {new_status}")
@@ -238,13 +300,19 @@ class ClientManager:
                 clients_to_check = self.db.get_all_client_statuses()
                 if clients_to_check:
                     for client_data in clients_to_check:
-                        if self.stop_health_check_event.is_set(): break # Exit early if stopped
+                        if self.stop_health_check_event.is_set():
+                            break  # Exit early if stopped
 
                         current_status = client_data.get("status")
                         actor_id = client_data.get("Actor_id")
                         # logger.debug(f"Health Check Loop: Evaluating client {actor_id} with status {current_status}")
 
-                        if current_status in ["Online_Heartbeat", "Error_API", "Error_API_Degraded", "Error_Unreachable"]:
+                        if current_status in [
+                            "Online_Heartbeat",
+                            "Error_API",
+                            "Error_API_Degraded",
+                            "Error_Unreachable",
+                        ]:
                             # logger.debug(f"Health Check Loop: Performing direct health check for {actor_id} (Status: {current_status})")
                             self._perform_single_health_check_blocking(client_data)
                         elif current_status == "Online_Responsive":
@@ -252,13 +320,27 @@ class ClientManager:
                             if last_seen_iso:
                                 try:
                                     last_seen_dt = datetime.fromisoformat(last_seen_iso)
-                                    if datetime.now(timezone.utc) - last_seen_dt > timedelta(seconds=CLIENT_HEALTH_CHECK_INTERVAL_SECONDS * 2.5):
-                                        logger.warning(f"Health Check: Client {actor_id} unresponsive (stale heartbeat while Online_Responsive). Marking Offline.")
-                                        self.db.update_client_status(actor_id, "Offline")
+                                    if datetime.now(
+                                        timezone.utc
+                                    ) - last_seen_dt > timedelta(
+                                        seconds=CLIENT_HEALTH_CHECK_INTERVAL_SECONDS
+                                        * 2.5
+                                    ):
+                                        logger.warning(
+                                            f"Health Check: Client {actor_id} unresponsive (stale heartbeat while Online_Responsive). Marking Offline."
+                                        )
+                                        self.db.update_client_status(
+                                            actor_id, "Offline"
+                                        )
                                 except ValueError:
-                                    logger.error(f"Health Check: Could not parse last_seen timestamp '{last_seen_iso}' for client {actor_id}", exc_info=True)
+                                    logger.error(
+                                        f"Health Check: Could not parse last_seen timestamp '{last_seen_iso}' for client {actor_id}",
+                                        exc_info=True,
+                                    )
             except Exception as e:
-                logger.error(f"ClientManager: Error in health check loop: {e}", exc_info=True)
+                logger.error(
+                    f"ClientManager: Error in health check loop: {e}", exc_info=True
+                )
 
             # Wait for the interval or until stop event is set
             # Use wait with a timeout to make the loop check self.stop_health_check_event more frequently
@@ -274,12 +356,13 @@ class ClientManager:
         """
         if self.health_check_thread is None or not self.health_check_thread.is_alive():
             self.stop_health_check_event.clear()
-            self.health_check_thread = threading.Thread(target=self._periodic_health_check_loop, daemon=True)
+            self.health_check_thread = threading.Thread(
+                target=self._periodic_health_check_loop, daemon=True
+            )
             self.health_check_thread.start()
             logger.info("Periodic health check thread initiated.")
         else:
             logger.info("Periodic health check thread already running.")
-
 
     def stop_periodic_health_checks(self):
         """
@@ -290,7 +373,9 @@ class ClientManager:
         logger.info("Stopping periodic health checks...")
         self.stop_health_check_event.set()
         if self.health_check_thread and self.health_check_thread.is_alive():
-            self.health_check_thread.join(timeout=max(1, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS + 1))
+            self.health_check_thread.join(
+                timeout=max(1, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS + 1)
+            )
             if self.health_check_thread.is_alive():
                 logger.warning("Health check thread did not join in time.")
             else:
@@ -298,8 +383,14 @@ class ClientManager:
         else:
             logger.info("Health check thread was not running or already stopped.")
 
-
-    async def send_to_client(self, client_Actor_id: str, client_ip: str, client_port: int, narration: str, character_texts: dict) -> str:
+    async def send_to_client(
+        self,
+        client_Actor_id: str,
+        client_ip: str,
+        client_port: int,
+        narration: str,
+        character_texts: dict,
+    ) -> str:
         """
         Asynchronously sends narration and character texts to a client, handling retries, audio playback, and client status updates.
 
@@ -315,20 +406,28 @@ class ClientManager:
         Returns:
             str: The text response from the client, or an empty string if the request fails.
         """
-        character = self.db.get_character(client_Actor_id) # Blocking DB call
+        character = self.db.get_character(client_Actor_id)  # Blocking DB call
         if not character:
-            logger.warning(f"send_to_client: No character data for {client_Actor_id}. Cannot send.")
+            logger.warning(
+                f"send_to_client: No character data for {client_Actor_id}. Cannot send."
+            )
             self.db.update_client_status(client_Actor_id, "Error_API")
             return ""
 
-        token = self.db.get_token(client_Actor_id) # Blocking DB call
+        token = self.db.get_token(client_Actor_id)  # Blocking DB call
         if not token:
-            logger.warning(f"send_to_client: No token for {client_Actor_id}. Cannot send.")
+            logger.warning(
+                f"send_to_client: No token for {client_Actor_id}. Cannot send."
+            )
             self.db.update_client_status(client_Actor_id, "Error_API")
             return ""
 
         url = f"http://{client_ip}:{client_port}/character"
-        request_payload = {"narration": narration, "character_texts": character_texts, "token": token}
+        request_payload = {
+            "narration": narration,
+            "character_texts": character_texts,
+            "token": token,
+        }
 
         def _blocking_post_request():
             """
@@ -337,18 +436,25 @@ class ClientManager:
             Returns:
                 Response: The HTTP response object from the POST request.
             """
-            return requests.post(url, json=request_payload, timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS)
+            return requests.post(
+                url,
+                json=request_payload,
+                timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS,
+            )
 
         for attempt in range(SEND_TO_CLIENT_MAX_RETRIES + 1):
             try:
-                logger.info(f"send_to_client (Attempt {attempt+1}/{SEND_TO_CLIENT_MAX_RETRIES+1}): Sending to {client_Actor_id} at {url}")
+                logger.info(
+                    f"send_to_client (Attempt {attempt+1}/{SEND_TO_CLIENT_MAX_RETRIES+1}): Sending to {client_Actor_id} at {url}"
+                )
                 response = await asyncio.to_thread(_blocking_post_request)
-                response.raise_for_status() # Raises HTTPError for 4xx/5xx status
+                response.raise_for_status()  # Raises HTTPError for 4xx/5xx status
                 response_data = response.json()
                 client_text_response = response_data.get("text")
                 encoded_audio_data = response_data.get("audio_data")
-                logger.info(f"send_to_client: Received response from {client_Actor_id}. Text: '{str(client_text_response)[:50]}...', Audio present: {bool(encoded_audio_data)}")
-
+                logger.info(
+                    f"send_to_client: Received response from {client_Actor_id}. Text: '{str(client_text_response)[:50]}...', Audio present: {bool(encoded_audio_data)}"
+                )
 
                 if encoded_audio_data and pygame.mixer.get_init():
                     # This part (decode, save, play) is also blocking
@@ -358,7 +464,10 @@ class ClientManager:
 
                         The audio file is named using the client Actor ID and a unique identifier to avoid collisions.
                         """
-                        sane_char_name = "".join(c if c.isalnum() else "_" for c in character.get('name', client_Actor_id))
+                        sane_char_name = "".join(
+                            c if c.isalnum() else "_"
+                            for c in character.get("name", client_Actor_id)
+                        )
                         audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
                         os.makedirs(audio_dir, exist_ok=True)
                         audio_filename = f"{client_Actor_id}_{uuid.uuid4()}.wav"
@@ -367,43 +476,73 @@ class ClientManager:
                             decoded_audio_data = base64.b64decode(encoded_audio_data)
                             with open(audio_path, "wb") as f:
                                 f.write(decoded_audio_data)
-                            logger.info(f"Saved client audio for {client_Actor_id} to {audio_path}")
+                            logger.info(
+                                f"Saved client audio for {client_Actor_id} to {audio_path}"
+                            )
                             pygame.mixer.Sound(audio_path).play()
-                            logger.info(f"Playing audio for {client_Actor_id} from {audio_path}")
+                            logger.info(
+                                f"Playing audio for {client_Actor_id} from {audio_path}"
+                            )
                         except Exception as e_audio:
-                            logger.error(f"Error handling audio for {client_Actor_id} (path: {audio_path}): {e_audio}", exc_info=True)
+                            logger.error(
+                                f"Error handling audio for {client_Actor_id} (path: {audio_path}): {e_audio}",
+                                exc_info=True,
+                            )
 
                     await asyncio.to_thread(_handle_audio)
 
-                self.db.update_client_status(client_Actor_id, "Online_Responsive") # Blocking DB call
+                self.db.update_client_status(
+                    client_Actor_id, "Online_Responsive"
+                )  # Blocking DB call
                 return client_text_response
 
             except requests.exceptions.Timeout:
-                logger.warning(f"send_to_client (Attempt {attempt+1}): Timeout for {client_Actor_id} at {url}.")
+                logger.warning(
+                    f"send_to_client (Attempt {attempt+1}): Timeout for {client_Actor_id} at {url}."
+                )
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
-                    self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
+                    self.db.update_client_status(
+                        client_Actor_id, "Error_API"
+                    )  # Blocking
             except requests.exceptions.ConnectionError:
-                logger.warning(f"send_to_client (Attempt {attempt+1}): Connection error for {client_Actor_id} at {url}.")
+                logger.warning(
+                    f"send_to_client (Attempt {attempt+1}): Connection error for {client_Actor_id} at {url}."
+                )
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
-                    self.db.update_client_status(client_Actor_id, "Error_Unreachable") # Blocking
-            except requests.exceptions.RequestException as e: # Includes HTTPError
-                logger.warning(f"send_to_client (Attempt {attempt+1}): Request error for {client_Actor_id} at {url}: {e}")
+                    self.db.update_client_status(
+                        client_Actor_id, "Error_Unreachable"
+                    )  # Blocking
+            except requests.exceptions.RequestException as e:  # Includes HTTPError
+                logger.warning(
+                    f"send_to_client (Attempt {attempt+1}): Request error for {client_Actor_id} at {url}: {e}"
+                )
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
-                    self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
-            except Exception as e: # Catch other errors like JSONDecodeError from response.json()
-                logger.error(f"send_to_client (Attempt {attempt+1}): Unexpected error for {client_Actor_id} at {url}: {e}", exc_info=True)
+                    self.db.update_client_status(
+                        client_Actor_id, "Error_API"
+                    )  # Blocking
+            except (
+                Exception
+            ) as e:  # Catch other errors like JSONDecodeError from response.json()
+                logger.error(
+                    f"send_to_client (Attempt {attempt+1}): Unexpected error for {client_Actor_id} at {url}: {e}",
+                    exc_info=True,
+                )
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
-                    self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
+                    self.db.update_client_status(
+                        client_Actor_id, "Error_API"
+                    )  # Blocking
 
             if attempt < SEND_TO_CLIENT_MAX_RETRIES:
-                delay = SEND_TO_CLIENT_BASE_DELAY_SECONDS * (2 ** attempt)
-                logger.info(f"send_to_client: Waiting {delay}s before retry for {client_Actor_id}...")
-                await asyncio.sleep(delay) # Use asyncio.sleep for async context
+                delay = SEND_TO_CLIENT_BASE_DELAY_SECONDS * (2**attempt)
+                logger.info(
+                    f"send_to_client: Waiting {delay}s before retry for {client_Actor_id}..."
+                )
+                await asyncio.sleep(delay)  # Use asyncio.sleep for async context
 
         logger.error(f"send_to_client for {client_Actor_id} failed after all retries.")
-        return "" # Return empty if all retries fail
+        return ""  # Return empty if all retries fail
 
-    def deactivate_client_Actor(self, Actor_id: str): # Blocking DB call
+    def deactivate_client_Actor(self, Actor_id: str):  # Blocking DB call
         """
         Mark the specified client as deactivated in the database.
 

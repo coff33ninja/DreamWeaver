@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
-from .database import Database # Assuming Database class is in database.py
+from .database import Database  # Assuming Database class is in database.py
 from .config import DB_PATH
 import psutil
 from datetime import datetime, timezone  # Removed unused timedelta
 
 router = APIRouter()
 
+
 # Dependency to get a database instance
 def get_db():
     """
     Yield a database connection for use in FastAPI dependencies, ensuring it is properly closed after use.
-    
+
     Yields:
         Database: An instance of the Database connected to the configured path.
     """
@@ -19,22 +20,25 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() # Important to close the connection
+        db.close()  # Important to close the connection
 
-@router.get("/dashboard/status", tags=["dashboard"], summary="Get System and Client Status")
+
+@router.get(
+    "/dashboard/status", tags=["dashboard"], summary="Get System and Client Status"
+)
 async def get_system_status(db: Database = Depends(get_db)):
     """
     Returns server performance metrics and a list of detailed client statuses for the monitoring dashboard.
-    
+
     The response includes current CPU and memory usage statistics, as well as a list of clients with their actor ID, IP address (and port if available), last seen timestamp (formatted in UTC), and status. Client statuses may include: 'Registered', 'Offline', 'Online_Heartbeat', 'Online_Responsive', 'Error_API', 'Error_Unreachable', and 'Deactivated'.
-    
+
     Returns:
         dict: A dictionary containing:
             - server_performance: CPU and memory usage statistics.
             - client_statuses: List of client status dictionaries with actor ID, IP/port, last seen time, and status.
     """
     # Server Performance
-    cpu_usage = psutil.cpu_percent(interval=0.1) # Non-blocking
+    cpu_usage = psutil.cpu_percent(interval=0.1)  # Non-blocking
     memory_info = psutil.virtual_memory()
 
     # Client Statuses from database
@@ -42,7 +46,7 @@ async def get_system_status(db: Database = Depends(get_db)):
     raw_clients = db.get_all_client_statuses()
 
     processed_clients = []
-    if raw_clients: # Check if raw_clients is not None and not empty
+    if raw_clients:  # Check if raw_clients is not None and not empty
         for client_data in raw_clients:
             # Convert Row object to dict if necessary, or access by attribute/key
             # Assuming client_data is already a dict-like object from db.get_all_client_statuses()
@@ -50,24 +54,32 @@ async def get_system_status(db: Database = Depends(get_db)):
             ip_addr = client_data.get("ip_address", "N/A")
             port = client_data.get("client_port", "N/A")
             last_seen_iso = client_data.get("last_seen")
-            current_status = client_data.get("status", "Unknown") # Get status from DB
+            current_status = client_data.get("status", "Unknown")  # Get status from DB
 
             # Optional: Format last_seen timestamp for better readability
             last_seen_display = "Never"
             if last_seen_iso:
                 try:
-                    last_seen_dt = datetime.fromisoformat(last_seen_iso).astimezone(timezone.utc)
+                    last_seen_dt = datetime.fromisoformat(last_seen_iso).astimezone(
+                        timezone.utc
+                    )
                     # Format for display, e.g., "YYYY-MM-DD HH:MM:SS UTC"
                     last_seen_display = last_seen_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
                 except (ValueError, TypeError):
-                    last_seen_display = last_seen_iso # Show raw if parsing fails
+                    last_seen_display = last_seen_iso  # Show raw if parsing fails
 
-            processed_clients.append({
-                "Actor_id": actor_id,
-                "ip_address": f"{ip_addr}:{port}" if ip_addr != "N/A" and port != "N/A" else ip_addr,
-                "last_seen": last_seen_display,
-                "status": current_status # Directly use the status from DB
-            })
+            processed_clients.append(
+                {
+                    "Actor_id": actor_id,
+                    "ip_address": (
+                        f"{ip_addr}:{port}"
+                        if ip_addr != "N/A" and port != "N/A"
+                        else ip_addr
+                    ),
+                    "last_seen": last_seen_display,
+                    "status": current_status,  # Directly use the status from DB
+                }
+            )
 
     return {
         "server_performance": {
@@ -76,14 +88,20 @@ async def get_system_status(db: Database = Depends(get_db)):
             "memory_used_gb": round(memory_info.used / (1024**3), 2),
             "memory_total_gb": round(memory_info.total / (1024**3), 2),
         },
-        "client_statuses": processed_clients
+        "client_statuses": processed_clients,
     }
 
-@router.get("/dashboard", response_class=HTMLResponse, tags=["dashboard"], summary="View Hive Dashboard")
+
+@router.get(
+    "/dashboard",
+    response_class=HTMLResponse,
+    tags=["dashboard"],
+    summary="View Hive Dashboard",
+)
 async def get_dashboard_page():
     """
     Serves the HTML frontend for the monitoring dashboard.
-    
+
     Returns:
         HTMLResponse: The dashboard page, which includes embedded JavaScript to dynamically fetch and display server performance and client status data.
     """

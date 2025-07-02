@@ -16,11 +16,15 @@ CHARACTERS_AUDIO_PATH = os.path.join(AUDIO_PATH, "characters")
 REFERENCE_VOICES_AUDIO_PATH = os.path.join(AUDIO_PATH, "reference_voices")
 
 # Models paths
-MODELS_PATH = os.getenv("DREAMWEAVER_MODEL_PATH", os.path.join(BASE_DATA_PATH, "models"))
+MODELS_PATH = os.getenv(
+    "DREAMWEAVER_MODEL_PATH", os.path.join(BASE_DATA_PATH, "models")
+)
 ADAPTERS_PATH = os.path.join(MODELS_PATH, "adapters")
 
 # Checkpoints path
-BASE_CHECKPOINT_PATH = os.getenv("DREAMWEAVER_CHECKPOINT_PATH", os.path.join(PROJECT_ROOT, "checkpoints"))
+BASE_CHECKPOINT_PATH = os.getenv(
+    "DREAMWEAVER_CHECKPOINT_PATH", os.path.join(PROJECT_ROOT, "checkpoints")
+)
 
 # --- DreamWeaver Configurable Options ---
 DEFAULT_WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")

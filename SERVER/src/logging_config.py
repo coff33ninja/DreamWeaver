@@ -3,11 +3,14 @@ import logging.handlers
 import os
 
 # Define the root path for logs within the SERVER directory
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs") # SERVER/logs/
+LOGS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "logs"
+)  # SERVER/logs/
 SERVER_LOG_FILE = os.path.join(LOGS_DIR, "server.log")
 
 DEFAULT_LOG_LEVEL = logging.INFO
 LOGGER_NAME = "dreamweaver_server"
+
 
 def setup_logging(log_level=DEFAULT_LOG_LEVEL):
     """
@@ -39,22 +42,30 @@ def setup_logging(log_level=DEFAULT_LOG_LEVEL):
     # Rotating File Handler
     try:
         file_handler = logging.handlers.RotatingFileHandler(
-            SERVER_LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding='utf-8' # 5MB per file, 3 backups
+            SERVER_LOG_FILE,
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",  # 5MB per file, 3 backups
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:
         # If file handler fails (e.g. permissions), log to console and continue
-        logger.error(f"Failed to set up file logging for {SERVER_LOG_FILE}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to set up file logging for {SERVER_LOG_FILE}: {e}", exc_info=True
+        )
 
+    logger.info(
+        f"Logging configured for {LOGGER_NAME}. Level: {logging.getLevelName(log_level)}. Output to console and {SERVER_LOG_FILE}"
+    )
 
-    logger.info(f"Logging configured for {LOGGER_NAME}. Level: {logging.getLevelName(log_level)}. Output to console and {SERVER_LOG_FILE}")
 
 def get_logger(name=LOGGER_NAME):
     """
     Returns the configured application logger.
     """
     return logging.getLogger(name)
+
 
 if __name__ == "__main__":
     # Example usage:

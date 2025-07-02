@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock
 from typing import Dict, List, Any
 
+
 # Test data fixtures
 @pytest.fixture
 def sample_character():
@@ -21,27 +22,31 @@ def sample_character():
             "intelligence": 12,
             "wisdom": 16,
             "constitution": 17,
-            "charisma": 15
+            "charisma": 15,
         },
         "equipment": {
             "weapon": "Holy Sword",
             "armor": "Plate Mail",
-            "accessories": ["Ring of Protection", "Amulet of Health"]
+            "accessories": ["Ring of Protection", "Amulet of Health"],
         },
         "skills": ["Divine Strike", "Heal", "Turn Undead"],
         "created_at": "2023-01-01T00:00:00Z",
-        "updated_at": "2023-01-01T00:00:00Z"
+        "updated_at": "2023-01-01T00:00:00Z",
     }
+
 
 @pytest.fixture
 def character_client():
     """CharacterClient instance for testing."""
     from CharacterClient.character_client import CharacterClient
+
     return CharacterClient(base_url="https://test.api.com", api_key="test_key")
+
 
 @pytest.fixture
 def mock_api_response():
     """Mock API response helper."""
+
     def _mock_response(status_code=200, json_data=None, headers=None):
         mock_response = Mock()
         mock_response.status_code = status_code
@@ -49,7 +54,9 @@ def mock_api_response():
         mock_response.headers = headers or {}
         mock_response.text = str(json_data) if json_data else ""
         return mock_response
+
     return _mock_response
+
 
 # Test markers
 pytest.mark.unit = pytest.mark.unit
@@ -82,17 +89,17 @@ def temp_test_dir():
         yield temp_dir
 
 
-@pytest.fixture(scope="function") 
+@pytest.fixture(scope="function")
 def clean_temp_files():
     """Clean up temporary files after each test."""
     temp_files = []
-    
+
     def track_temp_file(filepath):
         temp_files.append(filepath)
         return filepath
-    
+
     yield track_temp_file
-    
+
     # Cleanup
     for filepath in temp_files:
         try:
@@ -106,25 +113,25 @@ def clean_temp_files():
 def setup_test_environment():
     """Set up the test environment."""
     # Set test environment variables
-    os.environ['TTS_TEST_MODE'] = '1'
-    os.environ['TTS_CACHE_DISABLED'] = '1'
-    
+    os.environ["TTS_TEST_MODE"] = "1"
+    os.environ["TTS_CACHE_DISABLED"] = "1"
+
     yield
-    
+
     # Cleanup
-    os.environ.pop('TTS_TEST_MODE', None)
-    os.environ.pop('TTS_CACHE_DISABLED', None)
+    os.environ.pop("TTS_TEST_MODE", None)
+    os.environ.pop("TTS_CACHE_DISABLED", None)
 
 
 @pytest.fixture
 def mock_audio_file():
     """Create a mock audio file for testing."""
-    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-        temp_file.write(b'fake_audio_data')
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+        temp_file.write(b"fake_audio_data")
         temp_path = temp_file.name
-    
+
     yield temp_path
-    
+
     if os.path.exists(temp_path):
         os.unlink(temp_path)
 
@@ -133,32 +140,22 @@ def mock_audio_file():
 def mock_tts_config():
     """Provide a mock TTS configuration for testing."""
     return {
-        'voice': 'en-US-AriaNeural',
-        'speed': 1.0,
-        'pitch': 1.0,
-        'volume': 0.8,
-        'format': 'wav'
+        "voice": "en-US-AriaNeural",
+        "speed": 1.0,
+        "pitch": 1.0,
+        "volume": 0.8,
+        "format": "wav",
     }
 
 
 # Performance test markers
 def pytest_configure(config):
     """Configure pytest markers."""
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"  
-    )
-    config.addinivalue_line(
-        "markers", "performance: mark test as performance test"
-    )
-    config.addinivalue_line(
-        "markers", "security: mark test as security test"
-    )
-    config.addinivalue_line(
-        "markers", "unit: mark test as unit test"
-    )
+    config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "performance: mark test as performance test")
+    config.addinivalue_line("markers", "security: mark test as security test")
+    config.addinivalue_line("markers", "unit: mark test as unit test")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -168,25 +165,27 @@ def pytest_collection_modifyitems(config, items):
         if "performance" in item.name.lower() or "stress" in item.name.lower():
             item.add_marker(pytest.mark.slow)
             item.add_marker(pytest.mark.performance)
-        
-        # Mark security tests  
+
+        # Mark security tests
         if "security" in item.name.lower() or "malicious" in item.name.lower():
             item.add_marker(pytest.mark.security)
-        
+
         # Mark integration tests
         if "integration" in item.name.lower() or "concurrent" in item.name.lower():
             item.add_marker(pytest.mark.integration)
-        
+
         # Mark unit tests (default)
-        if not any(marker.name in ['slow', 'integration', 'performance', 'security'] 
-                  for marker in item.iter_markers()):
+        if not any(
+            marker.name in ["slow", "integration", "performance", "security"]
+            for marker in item.iter_markers()
+        ):
             item.add_marker(pytest.mark.unit)
 
 
 @pytest.fixture
 def mock_logger():
     """Provide a mock logger for testing logging functionality."""
-    with patch('logging.getLogger') as mock_get_logger:
+    with patch("logging.getLogger") as mock_get_logger:
         mock_logger_instance = Mock()
         mock_get_logger.return_value = mock_logger_instance
         yield mock_logger_instance

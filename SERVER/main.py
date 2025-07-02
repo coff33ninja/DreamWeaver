@@ -15,23 +15,26 @@ import multiprocessing
 # if they don't inherit the main process's logging config correctly due to 'spawn'.
 from src.logging_config import setup_logging, get_logger
 
+
 def run_gradio():
     """
     Starts the Gradio server by launching the Gradio interface in a separate process.
     """
-    setup_logging() # Setup logging for the Gradio process
+    setup_logging()  # Setup logging for the Gradio process
     logger = get_logger()
     logger.info("Starting Gradio interface process...")
     launch_interface()
+
 
 def run_fastapi() -> None:
     """
     Starts the FastAPI server using Uvicorn on host 0.0.0.0 and port 8000 with info-level logging.
     """
-    setup_logging() # Setup logging for the FastAPI process
+    setup_logging()  # Setup logging for the FastAPI process
     logger = get_logger()
     logger.info("Starting FastAPI server process...")
     uvicorn.run(server_api_app, host="0.0.0.0", port=8000, log_level="info")
+
 
 def terminate_process(proc: multiprocessing.Process, name: str) -> None:
     """
@@ -52,6 +55,7 @@ def terminate_process(proc: multiprocessing.Process, name: str) -> None:
         else:
             logger.info(f"{name} terminated.")
 
+
 def main():
     # Call setup_logging here for the main process
     setup_logging()
@@ -63,7 +67,7 @@ def main():
 
     This function initializes multiprocessing with the 'spawn' method for cross-platform compatibility, launches the Gradio and FastAPI servers in independent processes, and monitors their status. It registers signal handlers to ensure both servers are terminated gracefully on SIGINT or SIGTERM, and handles unexpected process exits or exceptions by shutting down both servers before exiting.
     """
-    multiprocessing.set_start_method("spawn", force=True) # Must be called only once
+    multiprocessing.set_start_method("spawn", force=True)  # Must be called only once
     logger.info("Starting Gradio and FastAPI servers in separate processes...")
 
     gradio_process = multiprocessing.Process(target=run_gradio, name="GradioInterface")
@@ -90,30 +94,36 @@ def main():
 
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, shutdown_handler)
-    if hasattr(signal, 'SIGTERM'):
+    if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, shutdown_handler)
     else:
-        logger.warning("SIGTERM signal not available on this platform. Graceful shutdown might be limited to Ctrl+C (SIGINT).")
+        logger.warning(
+            "SIGTERM signal not available on this platform. Graceful shutdown might be limited to Ctrl+C (SIGINT)."
+        )
 
     try:
         while True:
             if not gradio_process.is_alive():
-                logger.error("Gradio process exited unexpectedly. Shutting down FastAPI.")
+                logger.error(
+                    "Gradio process exited unexpectedly. Shutting down FastAPI."
+                )
                 terminate_process(fastapi_process, "FastAPIServer")
                 break
             if not fastapi_process.is_alive():
-                logger.error("FastAPI process exited unexpectedly. Shutting down Gradio.")
+                logger.error(
+                    "FastAPI process exited unexpectedly. Shutting down Gradio."
+                )
                 terminate_process(gradio_process, "GradioInterface")
                 break
             # Using join with a timeout acts like a non-blocking check combined with sleep
-            gradio_process.join(timeout=0.5) # Check every 0.5 seconds
-            fastapi_process.join(timeout=0.5) # Check every 0.5 seconds
+            gradio_process.join(timeout=0.5)  # Check every 0.5 seconds
+            fastapi_process.join(timeout=0.5)  # Check every 0.5 seconds
 
             # If both are still alive, loop will continue. If one exited, the other join will timeout
             # and the is_alive() check at the start of the loop will catch it.
             # This also makes the loop more responsive to signals than long joins.
             if not gradio_process.is_alive() or not fastapi_process.is_alive():
-                break # Exit if any process has died
+                break  # Exit if any process has died
 
     except KeyboardInterrupt:
         logger.info("\nKeyboardInterrupt received. Shutting down servers.")
@@ -122,9 +132,14 @@ def main():
         logger.error(f"Unexpected error in main loop: {e}", exc_info=True)
     finally:
         logger.info("Attempting final shutdown of server processes...")
-        terminate_process(gradio_process, "GradioInterface") # Ensure termination on any exit
-        terminate_process(fastapi_process, "FastAPIServer") # Ensure termination on any exit
+        terminate_process(
+            gradio_process, "GradioInterface"
+        )  # Ensure termination on any exit
+        terminate_process(
+            fastapi_process, "FastAPIServer"
+        )  # Ensure termination on any exit
         logger.info("Servers shut down procedure complete.")
+
 
 if __name__ == "__main__":
     main()

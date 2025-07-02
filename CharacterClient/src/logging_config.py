@@ -1,13 +1,14 @@
 import logging
 import logging.handlers
 import os
-from .config import CLIENT_LOGS_PATH # Use the path from client's config
+from .config import CLIENT_LOGS_PATH  # Use the path from client's config
 
 # Define the log file path using the imported CLIENT_LOGS_PATH
 CLIENT_LOG_FILE = os.path.join(CLIENT_LOGS_PATH, "client.log")
 
 DEFAULT_LOG_LEVEL = logging.INFO
 LOGGER_NAME = "dreamweaver_client"
+
 
 def setup_client_logging(log_level=DEFAULT_LOG_LEVEL):
     """
@@ -44,14 +45,22 @@ def setup_client_logging(log_level=DEFAULT_LOG_LEVEL):
         os.makedirs(os.path.dirname(CLIENT_LOG_FILE), exist_ok=True)
 
         file_handler = logging.handlers.RotatingFileHandler(
-            CLIENT_LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8' # 2MB per file, 3 backups
+            CLIENT_LOG_FILE,
+            maxBytes=2 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",  # 2MB per file, 3 backups
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     except Exception as e:
-        logger.error(f"Failed to set up file logging for {CLIENT_LOG_FILE}: {e}", exc_info=True)
+        logger.error(
+            f"Failed to set up file logging for {CLIENT_LOG_FILE}: {e}", exc_info=True
+        )
 
-    logger.info(f"Client logging configured for {LOGGER_NAME}. Level: {logging.getLevelName(log_level)}. Output to console and {CLIENT_LOG_FILE}")
+    logger.info(
+        f"Client logging configured for {LOGGER_NAME}. Level: {logging.getLevelName(log_level)}. Output to console and {CLIENT_LOG_FILE}"
+    )
+
 
 def get_logger(name=LOGGER_NAME):
     """
@@ -59,11 +68,14 @@ def get_logger(name=LOGGER_NAME):
     """
     return logging.getLogger(name)
 
+
 if __name__ == "__main__":
     # This part is for testing the logging_config.py itself.
     # It requires config.py to be available in the path.
     # To run this directly for testing, you might need to adjust Python's path or run as a module.
-    print(f"Attempting to set up client logging for testing (log file: {CLIENT_LOG_FILE})...")
+    print(
+        f"Attempting to set up client logging for testing (log file: {CLIENT_LOG_FILE})..."
+    )
     setup_client_logging(logging.DEBUG)
     logger_test = get_logger()
     logger_test.debug("This is a client debug message.")
