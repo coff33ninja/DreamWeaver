@@ -167,12 +167,22 @@ async def create_character_async(
 async def story_interface_async(
     audio_input_path, chaos_level_value, progress=gr.Progress(track_tqdm=True)
 ):
-    # ... (implementation as before) ...
     if csm_instance is None:
         raise RuntimeError("CSM instance not initialized.")
     if audio_input_path is None:
         return "No audio input. Record or upload narration.", {}, {}
-    progress(0, desc="Starting story processing...")
+    progress(0, desc="Transcribing narration audio...")
+    try:
+        # Always use the narrator's process_narration method for transcription
+        if hasattr(csm_instance, "narrator") and hasattr(csm_instance.narrator, "process_narration"):
+            narration_result = await csm_instance.narrator.process_narration(audio_input_path)
+            transcription_text = narration_result.get("text", "")
+        else:
+            transcription_text = "[Narrator STT not available]"
+    except Exception as e:
+        logger.error(f"Error transcribing audio: {e}", exc_info=True)
+        transcription_text = f"[Transcription error: {e}]"
+    progress(0.5, desc="Processing story turn...")
     try:
         narration, character_texts = await csm_instance.process_story(
             audio_input_path, chaos_level_value
@@ -183,7 +193,8 @@ async def story_interface_async(
         logger.info(
             f"Story processed with audio: {audio_input_path}, chaos: {chaos_level_value}."
         )
-        return narration, character_texts
+        # Return transcription in the narrator's words textbox
+        return transcription_text, character_texts
     except Exception as e:
         logger.error(
             f"Error in story_interface_async with audio {audio_input_path}: {e}",
