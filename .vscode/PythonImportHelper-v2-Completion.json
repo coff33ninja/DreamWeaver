@@ -11950,7 +11950,7 @@
         "kind": 6,
         "importPath": "SERVER.src.narrator",
         "description": "SERVER.src.narrator",
-        "peekOfCode": "class Narrator:\n    def __init__(self, model_size=None):\n        \"\"\"\n        Initialize the Narrator with a Whisper speech-to-text model and optionally a Pyannote diarization pipeline.\n        Loads the specified or default Whisper model for speech transcription. If diarization is enabled, attempts to load the Pyannote diarization pipeline with retry logic and user prompts for required actions (such as accepting terms or logging in). Sets up internal state for default speaker naming and last transcription storage.\n        \"\"\"\n        if model_size is None:\n            model_size = DEFAULT_WHISPER_MODEL_SIZE\n        logger.info(f\"Narrator: Loading Whisper STT model '{model_size}'...\")\n        try:",
+        "peekOfCode": "class Narrator:\n    def __init__(self, model_size=None):\n        self.reload_config()\n        if model_size is not None:\n            self.model_size = model_size\n        logger.info(f\"Narrator: Loading Whisper STT model '{self.model_size}'...\")\n        try:\n            from whisper import load_model\n            self.stt_model = load_model(self.model_size)\n            logger.info(\"Narrator: Whisper STT model loaded successfully.\")",
         "detail": "SERVER.src.narrator",
         "documentation": {}
     },
@@ -11959,7 +11959,7 @@
         "kind": 5,
         "importPath": "SERVER.src.narrator",
         "description": "SERVER.src.narrator",
-        "peekOfCode": "logger = logging.getLogger(\"dreamweaver_server\")\nclass Narrator:\n    def __init__(self, model_size=None):\n        \"\"\"\n        Initialize the Narrator with a Whisper speech-to-text model and optionally a Pyannote diarization pipeline.\n        Loads the specified or default Whisper model for speech transcription. If diarization is enabled, attempts to load the Pyannote diarization pipeline with retry logic and user prompts for required actions (such as accepting terms or logging in). Sets up internal state for default speaker naming and last transcription storage.\n        \"\"\"\n        if model_size is None:\n            model_size = DEFAULT_WHISPER_MODEL_SIZE\n        logger.info(f\"Narrator: Loading Whisper STT model '{model_size}'...\")",
+        "peekOfCode": "logger = logging.getLogger(\"dreamweaver_server\")\nclass Narrator:\n    def __init__(self, model_size=None):\n        self.reload_config()\n        if model_size is not None:\n            self.model_size = model_size\n        logger.info(f\"Narrator: Loading Whisper STT model '{self.model_size}'...\")\n        try:\n            from whisper import load_model\n            self.stt_model = load_model(self.model_size)",
         "detail": "SERVER.src.narrator",
         "documentation": {}
     },

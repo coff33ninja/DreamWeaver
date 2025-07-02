@@ -3,13 +3,6 @@ from pyannote.audio import Pipeline
 import asyncio  # Added asyncio
 import re
 import webbrowser
-from .config import (
-    NARRATOR_AUDIO_PATH,
-    DEFAULT_WHISPER_MODEL_SIZE,
-    DIARIZATION_ENABLED,
-    DIARIZATION_MODEL,
-    MAX_DIARIZATION_RETRIES,
-)
 import uuid
 import logging
 
@@ -18,36 +11,32 @@ logger = logging.getLogger("dreamweaver_server")
 
 class Narrator:
     def __init__(self, model_size=None):
-        """
-        Initialize the Narrator with a Whisper speech-to-text model and optionally a Pyannote diarization pipeline.
-
-        Loads the specified or default Whisper model for speech transcription. If diarization is enabled, attempts to load the Pyannote diarization pipeline with retry logic and user prompts for required actions (such as accepting terms or logging in). Sets up internal state for default speaker naming and last transcription storage.
-        """
-        if model_size is None:
-            model_size = DEFAULT_WHISPER_MODEL_SIZE
-        logger.info(f"Narrator: Loading Whisper STT model '{model_size}'...")
+        self.reload_config()
+        if model_size is not None:
+            self.model_size = model_size
+        logger.info(f"Narrator: Loading Whisper STT model '{self.model_size}'...")
         try:
             from whisper import load_model
-            self.stt_model = load_model(model_size)
+            self.stt_model = load_model(self.model_size)
             logger.info("Narrator: Whisper STT model loaded successfully.")
         except Exception as e:
             logger.error(
-                f"Narrator: Error loading Whisper STT model '{model_size}': {e}",
+                f"Narrator: Error loading Whisper STT model '{self.model_size}': {e}",
                 exc_info=True,
             )
             self.stt_model = None
 
         self.diarization_pipeline = None
-        if DIARIZATION_ENABLED:
-            max_retries = MAX_DIARIZATION_RETRIES
+        if self.diarization_enabled:
+            max_retries = self.max_diarization_retries
             retry_count = 0
             while retry_count < max_retries:
                 try:
                     logger.info(
-                        f"Narrator: Loading Pyannote Diarization pipeline ({DIARIZATION_MODEL})..."
+                        f"Narrator: Loading Pyannote Diarization pipeline ({self.diarization_model})..."
                     )
                     self.diarization_pipeline = Pipeline.from_pretrained(
-                        DIARIZATION_MODEL
+                        self.diarization_model
                     )
                     logger.info(
                         "Narrator: Pyannote Diarization pipeline loaded successfully."
@@ -72,35 +61,23 @@ class Narrator:
                         logger.info(
                             "[Narrator] No actionable URLs found in the diarization error message."
                         )
-
-                    # Allowing auto-retry without input for server environment, or could make this configurable
                     logger.info(
                         f"Retrying diarization pipeline load in a moment (attempt {retry_count+1})..."
                     )
-                    # For a server, direct input isn't ideal. We might log and retry, or skip.
-                    # For now, let's assume it might be run interactively during setup, or we rely on pre-configuration.
-                    # If running headless, this input prompt should be removed or handled differently.
-                    # For simplicity in this refactor, I'll keep the retry logic but note that interactive input
-                    # is problematic for a server. A better approach might be to fail diarization setup if not pre-configured.
-                    # user_input = input("Type 'r' to retry, 's' to skip diarization, or just press Enter to retry: ").strip().lower()
-                    # if user_input == 's':
-                    # logger.info("[Narrator] Skipping diarization pipeline setup based on configuration or error.")
-                    # self.diarization_pipeline = None
-                    # break
                     retry_count += 1
                     if retry_count < max_retries:
                         asyncio.run(
                             asyncio.sleep(5)
-                        )  # Non-blocking sleep if in async context, but __init__ is sync
+                        )
                     else:
                         logger.error(
                             "[Narrator] Maximum retries reached for diarization pipeline. Diarization will be skipped."
                         )
                         self.diarization_pipeline = None
-                        break  # Exit loop
+                        break
             if (
                 retry_count >= max_retries and self.diarization_pipeline is None
-            ):  # Ensure it's None if all retries failed
+            ):
                 logger.error(
                     "[Narrator] Maximum retries reached. Diarization will be skipped."
                 )
@@ -108,6 +85,14 @@ class Narrator:
 
         self.default_speaker_name = "Narrator"
         self.last_transcription = None  # Store last transcription for correction
+
+    def reload_config(self):
+        from . import config
+        self.narrator_audio_path = config.NARRATOR_AUDIO_PATH
+        self.model_size = config.DEFAULT_WHISPER_MODEL_SIZE
+        self.diarization_enabled = config.DIARIZATION_ENABLED
+        self.diarization_model = config.DIARIZATION_MODEL
+        self.max_diarization_retries = config.MAX_DIARIZATION_RETRIES
 
     async def process_narration(self, audio_filepath: str) -> dict:
         """
@@ -134,10 +119,10 @@ class Narrator:
 
         dest_path = audio_filepath  # Default if copy fails
         try:
-            os.makedirs(NARRATOR_AUDIO_PATH, exist_ok=True)
+            os.makedirs(self.narrator_audio_path, exist_ok=True)
             ext = os.path.splitext(audio_filepath)[1]
             unique_name = f"narration_{uuid.uuid4().hex}{ext}"
-            dest_path = os.path.join(NARRATOR_AUDIO_PATH, unique_name)
+            dest_path = os.path.join(self.narrator_audio_path, unique_name)
             with open(audio_filepath, "rb") as src, open(dest_path, "wb") as dst:
                 dst.write(src.read())
             logger.info(f"Narrator: Saved a copy of the input audio to {dest_path}")
