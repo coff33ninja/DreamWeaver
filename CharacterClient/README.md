@@ -18,13 +18,14 @@ This directory contains the `CharacterClient` application, which allows an AI-dr
 ## Directory Structure
 
 *   **`src/`**: Contains the core client source code.
-    *   **`config.py`**: Manages client-specific paths for data, models, logs, and temporary files. Paths are configurable via environment variables.
-    *   **`character_client.py`**: Main client logic, including the `CharacterClient` class and the FastAPI application that receives requests from the server.
-    *   **`llm_engine.py`**: Manages the client's local LLM, including model loading (with quantization), adapter management (loading, placeholder for saving), and text generation.
-    *   **`tts_manager.py`**: Manages the client's local TTS engine, supporting services like Piper, Coqui XTTSv2, and gTTS. Handles model downloading and speech synthesis.
-    *   **`requirements.txt`**: Python dependencies for the client.
-*   **`main.py`**: Entry point for launching the client. Handles command-line argument parsing for configuration.
-*   **`data/`** (Default location, created automatically if it doesn't exist. Path configurable via `DREAMWEAVER_CLIENT_DATA_PATH` env var):
+    *   **`src/config.py`**: Manages client-specific paths for data, models, logs, and temporary files, and ensures these directories are created. Paths are configurable via environment variables.
+    *   **`src/character_client.py`**: Main client logic, including the `CharacterClient` class (handles registration, handshake, heartbeats, LLM/TTS interaction, WebSocket communication) and the FastAPI application that receives requests from the server.
+    *   **`src/llm_engine.py`**: Manages the client's local LLM, including model loading (with quantization), adapter management (loading, placeholder for saving), and text generation.
+    *   **`src/tts_manager.py`**: Manages the client's local TTS engine, supporting services like gTTS and Coqui XTTSv2. Handles model downloading and speech synthesis.
+    *   **`src/logging_config.py`**: Manages the setup of client-side logging (console and file).
+    *   **`requirements.txt`**: Python dependencies for the client (Note: this is typically at the root of the CharacterClient, not in `src/`).
+*   **`main.py`**: Entry point for launching the client. Handles command-line argument parsing, loads `.env` configurations, and initializes the client.
+*   **`data/`** (Default location, created by `src/config.py` if it doesn't exist. Path configurable via `DREAMWEAVER_CLIENT_DATA_PATH` env var):
     *   **`models/`**: Root directory for all models used by this client. (Path configurable via `DREAMWEAVER_CLIENT_MODELS_PATH` env var).
         *   `llm/base_models/`: Cached base LLM models.
         *   `llm/adapters/[Actor_id]/[model_name]/`: LoRA adapters for fine-tuned LLMs.
@@ -103,16 +104,16 @@ The client now implements structured logging:
 
 5.  **Operation:**
     Once launched, the client will:
-    1.  Attempt to register with the central server using its primary `Actor_id` and `token` (from configuration), and its `client_port`.
-    2.  If registration is successful, it will perform a handshake with the server to obtain a short-lived session token.
-    3.  Establish a WebSocket connection to the server (e.g., `ws://server_ip:port/ws/{Actor_id}?session_token=xxx`) using the obtained session token. This connection is used for receiving dynamic configuration updates.
-    4.  Use the session token for subsequent authenticated HTTP operations like fetching traits and sending heartbeats. If the session token expires, it will fall back to using the primary token for HTTP calls (and may attempt a re-handshake if server interactions indicate the need).
+    1.  Attempt to register with the central server using its primary `Actor_id` and `token` (from `.env`, environment variables, or CLI arguments), along with its `client_port`.
+    2.  If registration is successful, it performs an authenticated handshake with the server (using the primary `token`) to obtain a short-lived session token.
+    3.  Establish a WebSocket connection to the server (e.g., `ws://server_ip:port/ws/{Actor_id}?session_token=<session_token>`) using the obtained session token. This connection is used for receiving dynamic configuration updates from the server.
+    4.  For other authenticated HTTP operations (like fetching traits, sending heartbeats, saving training data), the client will use the active session token. If the session token is expired or becomes invalid, the client will typically fall back to using its primary `token` for these HTTP calls. The client may attempt a re-handshake if server interactions indicate the session is no longer valid.
     5.  Fetch its character traits (personality, voice settings, LLM model if specified) from the server.
-    6.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (`CharacterClient/data/models/`).
-    7.  Start sending periodic heartbeats to the server.
-    8.  Listen for incoming messages on the WebSocket (e.g., configuration updates) and apply them as needed (e.g., re-initializing TTS, changing log level).
-    9.  Listen for HTTP requests on its `/character` endpoint from the server (these requests are authenticated by a token provided by the main server, not the client's own session/primary token).
-    10. Expose a `/health` endpoint for the server to check its API responsiveness.
+    6.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (default: `CharacterClient/data/models/`).
+    7.  Start sending periodic heartbeats to the server to maintain its "online" status.
+    8.  Listen for incoming messages on the WebSocket (e.g., configuration updates for TTS, log level) and apply them dynamically.
+    9.  Listen for HTTP requests on its `/character` endpoint from the server. These requests (for generating response and audio) are authenticated by a separate token that the server includes in its request to the client (this token is the client's primary token, acting as a shared secret for this specific communication).
+    10. Expose a `/health` endpoint for the server to check its API responsiveness and the status of its LLM/TTS components.
 
 ## Dynamically Configurable Parameters
 
@@ -124,8 +125,8 @@ Via WebSocket messages from the server, the following client parameters can be u
 
 ## Development Notes
 
-*   **LLM Fine-Tuning:** The `LLMEngine.fine_tune()` method is currently a placeholder. It saves training data locally but does not yet implement the actual model fine-tuning process.
-*   **Logging:** The client now uses a structured logging system, outputting to both the console and a rotating file (`client.log` in the client's `data/logs` directory). See the "Logging" section above for more details.
-*   **Error Handling:** Error handling for server communication and internal operations has been improved with more detailed logging and specific exception handling where appropriate. Retry mechanisms are in place for critical operations like registration and heartbeats.
+*   **LLM Fine-Tuning:** The `LLMEngine.fine_tune_async()` method saves training data locally and can perform fine-tuning using LoRA adapters. The synchronous `fine_tune()` is a placeholder.
+*   **Logging:** The client uses a structured logging system configured by `src/logging_config.py`, outputting to both the console and a rotating file (`client.log` in the client's `data/logs` directory by default). See the "Logging" section above for more details.
+*   **Error Handling:** Error handling for server communication and internal operations includes detailed logging and specific exception handling. Retry mechanisms with exponential backoff are implemented for critical operations like server registration and heartbeats. WebSocket connections also have a retry mechanism.
 
 This README provides a guide to setting up and running an individual Character Client. Refer to the main project README for details on the DreamWeaver server and overall system architecture.
