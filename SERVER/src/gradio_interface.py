@@ -488,6 +488,7 @@ def launch_interface():  # Renamed original launch_interface
                             TTSManager.list_services(), label="TTS Service"
                         )
                         char_tts_model = gr.Dropdown([], label="TTS Model")
+                        char_tts_voice = gr.Dropdown([], label="TTS Voice/Language")
                         char_ref_audio = gr.File(
                             label="Reference Audio (XTTSv2)",
                             type="filepath",
@@ -527,11 +528,25 @@ def launch_interface():  # Renamed original launch_interface
                     inputs=char_tts_service,
                     outputs=char_tts_model,
                 )  # Use gr.update here
+                def update_voice_dropdown(service, model):
+                    voices = TTSManager.get_available_voices(service, model)
+                    default = voices[0] if voices else None
+                    return gr.update(choices=voices, value=default)
                 char_tts_service.change(
                     lambda service: gr.update(visible=(service == "xttsv2")),
                     inputs=char_tts_service,
                     outputs=char_ref_audio,
                 )  # Use gr.update
+                char_tts_service.change(
+                    lambda service: update_voice_dropdown(service, None),
+                    inputs=char_tts_service,
+                    outputs=char_tts_voice,
+                )
+                char_tts_model.change(
+                    lambda model, service: update_voice_dropdown(service, model),
+                    inputs=[char_tts_model, char_tts_service],
+                    outputs=char_tts_voice,
+                )
                 create_char_btn.click(
                     create_character_async,
                     inputs=[
@@ -541,6 +556,7 @@ def launch_interface():  # Renamed original launch_interface
                         char_backstory,
                         char_tts_service,
                         char_tts_model,
+                        char_tts_voice,
                         char_ref_audio,
                         char_Actor_id,
                         adapter_ip_dropdown,  # Pass selected IP to async handler
