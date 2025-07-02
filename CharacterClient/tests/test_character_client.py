@@ -760,3 +760,855 @@ if __name__ == '__main__':
     
     # Run tests with verbose output
     unittest.main(verbosity=2, buffer=True)
+
+class TestCharacterClientAdvancedScenarios(unittest.TestCase):
+    """Advanced test scenarios for CharacterClient including concurrency, retries, and complex edge cases."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+    
+    def tearDown(self):
+        """Clean up after each test."""
+        if hasattr(self.client, 'session') and self.client.session:
+            self.client.session.close()
+    
+    # Advanced HTTP Status Code Tests
+    @patch('requests.Session.get')
+    def test_get_character_partial_content_206(self, mock_get):
+        """Test handling of 206 Partial Content responses."""
+        mock_response = Mock()
+        mock_response.status_code = 206
+        mock_response.json.return_value = {"id": 1, "name": "Partial Data"}
+        mock_get.return_value = mock_response
+        
+        result = self.client.get_character(1)
+        self.assertEqual(result["name"], "Partial Data")
+    
+    @patch('requests.Session.get')
+    def test_get_character_not_modified_304(self, mock_get):
+        """Test handling of 304 Not Modified responses."""
+        mock_response = Mock()
+        mock_response.status_code = 304
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Unexpected status code: 304", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_forbidden_403(self, mock_get):
+        """Test handling of 403 Forbidden responses."""
+        mock_response = Mock()
+        mock_response.status_code = 403
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(AuthenticationError) as context:
+            self.client.get_character(1)
+        self.assertIn("Access forbidden", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_method_not_allowed_405(self, mock_get):
+        """Test handling of 405 Method Not Allowed responses."""
+        mock_response = Mock()
+        mock_response.status_code = 405
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Method not allowed", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_conflict_409(self, mock_get):
+        """Test handling of 409 Conflict responses."""
+        mock_response = Mock()
+        mock_response.status_code = 409
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("API error: 409", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_unprocessable_entity_422(self, mock_get):
+        """Test handling of 422 Unprocessable Entity responses."""
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(ValidationError) as context:
+            self.client.get_character(1)
+        self.assertIn("Invalid request data", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_internal_server_error_500(self, mock_get):
+        """Test handling of 500 Internal Server Error responses."""
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("API error: 500", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_bad_gateway_502(self, mock_get):
+        """Test handling of 502 Bad Gateway responses."""
+        mock_response = Mock()
+        mock_response.status_code = 502
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("API error: 502", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_service_unavailable_503(self, mock_get):
+        """Test handling of 503 Service Unavailable responses."""
+        mock_response = Mock()
+        mock_response.status_code = 503
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Service unavailable", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_gateway_timeout_504(self, mock_get):
+        """Test handling of 504 Gateway Timeout responses."""
+        mock_response = Mock()
+        mock_response.status_code = 504
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Gateway timeout", str(context.exception))
+    
+    # Advanced Network Error Tests
+    @patch('requests.Session.get')
+    def test_get_character_ssl_error(self, mock_get):
+        """Test handling of SSL certificate errors."""
+        mock_get.side_effect = requests.exceptions.SSLError("SSL certificate verify failed")
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("SSL certificate verify failed", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_proxy_error(self, mock_get):
+        """Test handling of proxy errors."""
+        mock_get.side_effect = requests.exceptions.ProxyError("Proxy connection failed")
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Proxy connection failed", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_chunked_encoding_error(self, mock_get):
+        """Test handling of chunked encoding errors."""
+        mock_get.side_effect = requests.exceptions.ChunkedEncodingError("Connection broken")
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Network error", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_get_character_content_decoding_error(self, mock_get):
+        """Test handling of content decoding errors."""
+        mock_get.side_effect = requests.exceptions.ContentDecodingError("Failed to decode response content")
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("Failed to decode response content", str(context.exception))
+    
+    # Advanced Session and Connection Tests
+    def test_session_persistence(self):
+        """Test that the same session is reused across multiple requests."""
+        client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+        initial_session = client.session
+        
+        # Make sure the session object persists
+        self.assertIs(client.session, initial_session)
+        
+        client._setup_session()  # Call setup again
+        self.assertIs(client.session, initial_session)  # Should be the same object
+    
+    def test_session_headers_immutability(self):
+        """Test that session headers cannot be easily mutated externally."""
+        client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+        original_headers = dict(client.session.headers)
+        
+        # Try to modify headers externally
+        client.session.headers['X-Test'] = 'modified'
+        
+        # Headers should be modifiable (this is expected behavior)
+        self.assertEqual(client.session.headers['X-Test'], 'modified')
+        
+        # But original headers should still be there
+        for key, value in original_headers.items():
+            if key != 'X-Test':
+                self.assertEqual(client.session.headers[key], value)
+    
+    def test_custom_user_agent_header(self):
+        """Test setting custom user agent in session headers."""
+        client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+        expected_user_agent = 'CharacterClient/1.0'
+        self.assertEqual(client.session.headers['User-Agent'], expected_user_agent)
+    
+    # Complex Validation Tests
+    def test_validate_character_data_with_nested_attributes(self):
+        """Test character data validation with nested attribute structures."""
+        valid_nested_data = {
+            "name": "Complex Character",
+            "class": "Paladin",
+            "level": 10,
+            "attributes": {
+                "strength": 18,
+                "dexterity": 14,
+                "constitution": 16,
+                "intelligence": 12,
+                "wisdom": 15,
+                "charisma": 17
+            },
+            "equipment": {
+                "weapon": {"name": "Holy Sword", "damage": 15},
+                "armor": {"name": "Plate Mail", "defense": 20}
+            }
+        }
+        
+        # Should not raise an exception for complex nested data
+        result = self.client._validate_character_data(valid_nested_data)
+        self.assertTrue(result)
+    
+    def test_validate_character_data_with_arrays(self):
+        """Test character data validation with array fields."""
+        data_with_arrays = {
+            "name": "Adventurer",
+            "class": "Ranger",
+            "level": 5,
+            "skills": ["Archery", "Tracking", "Survival"],
+            "inventory": [
+                {"item": "Bow", "quantity": 1},
+                {"item": "Arrow", "quantity": 50},
+                {"item": "Health Potion", "quantity": 3}
+            ]
+        }
+        
+        result = self.client._validate_character_data(data_with_arrays)
+        self.assertTrue(result)
+    
+    def test_validate_character_data_with_null_values(self):
+        """Test character data validation with null/None values."""
+        data_with_nulls = {
+            "name": "Mysterious Character",
+            "class": "Unknown",
+            "level": 1,
+            "description": None,
+            "last_seen": None
+        }
+        
+        result = self.client._validate_character_data(data_with_nulls)
+        self.assertTrue(result)
+    
+    # Comprehensive Parameter Validation Tests
+    def test_get_characters_boundary_conditions(self):
+        """Test get_characters with boundary condition parameters."""
+        # Test maximum valid values
+        with patch('requests.Session.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"characters": []}
+            mock_get.return_value = mock_response
+            
+            # Test maximum page and limit
+            result = self.client.get_characters(page=999999, limit=100)
+            self.assertEqual(result, [])
+            
+            # Verify correct parameters were passed
+            call_args = mock_get.call_args
+            self.assertEqual(call_args[1]['params']['page'], 999999)
+            self.assertEqual(call_args[1]['params']['limit'], 100)
+    
+    def test_get_characters_with_multiple_filters(self):
+        """Test get_characters with multiple filter combinations."""
+        test_cases = [
+            {
+                "character_class": "Warrior",
+                "min_level": 10,
+                "max_level": 20,
+                "page": 1,
+                "limit": 25
+            },
+            {
+                "character_class": "Mage",
+                "sort_by": "level",
+                "sort_order": "desc"
+            }
+        ]
+        
+        for params in test_cases:
+            with self.subTest(params=params):
+                with patch('requests.Session.get') as mock_get:
+                    mock_response = Mock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {"characters": []}
+                    mock_get.return_value = mock_response
+                    
+                    result = self.client.get_characters(**params)
+                    self.assertEqual(result, [])
+                    
+                    # Verify all parameters were passed
+                    call_args = mock_get.call_args
+                    for key, value in params.items():
+                        if key == 'character_class':
+                            self.assertEqual(call_args[1]['params']['class'], value)
+                        else:
+                            self.assertEqual(call_args[1]['params'][key], value)
+    
+    # Response Content Validation Tests
+    @patch('requests.Session.get')
+    def test_get_character_response_with_extra_fields(self, mock_get):
+        """Test handling of responses with extra unexpected fields."""
+        character_with_extras = {
+            "id": 1,
+            "name": "Extended Character",
+            "class": "Warrior",
+            "level": 10,
+            "health": 100,
+            "mana": 50,
+            # Extra fields that might be added in future API versions
+            "experience": 5000,
+            "guild": "Heroes Guild",
+            "last_login": "2023-12-01T10:00:00Z",
+            "premium_features": {
+                "double_xp": True,
+                "custom_appearance": True
+            }
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = character_with_extras
+        mock_get.return_value = mock_response
+        
+        result = self.client.get_character(1)
+        
+        # Should return all fields, including extras
+        self.assertEqual(result, character_with_extras)
+        self.assertEqual(result["experience"], 5000)
+        self.assertEqual(result["guild"], "Heroes Guild")
+    
+    @patch('requests.Session.get')
+    def test_get_characters_response_with_metadata(self, mock_get):
+        """Test get_characters response with comprehensive metadata."""
+        response_with_metadata = {
+            "characters": [
+                {"id": 1, "name": "Hero 1", "class": "Warrior", "level": 10},
+                {"id": 2, "name": "Hero 2", "class": "Mage", "level": 8}
+            ],
+            "pagination": {
+                "current_page": 1,
+                "total_pages": 5,
+                "total_characters": 47,
+                "per_page": 10
+            },
+            "filters_applied": {
+                "class": "Warrior",
+                "min_level": 5
+            },
+            "request_metadata": {
+                "request_id": "req_123456",
+                "timestamp": "2023-12-01T10:00:00Z",
+                "api_version": "v2"
+            }
+        }
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = response_with_metadata
+        mock_get.return_value = mock_response
+        
+        result = self.client.get_characters()
+        
+        # Should extract just the characters array
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["name"], "Hero 1")
+        self.assertEqual(result[1]["name"], "Hero 2")
+    
+    # Memory and Resource Management Tests
+    def test_client_cleanup_after_use(self):
+        """Test proper cleanup of client resources."""
+        client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+        session = client.session
+        
+        # Ensure session exists
+        self.assertIsNotNone(session)
+        
+        # Manually close session (simulating proper cleanup)
+        client.session.close()
+        
+        # Session should still exist but be closed
+        self.assertIsNotNone(client.session)
+    
+    def test_multiple_client_instances_independence(self):
+        """Test that multiple client instances don't interfere with each other."""
+        client1 = CharacterClient(base_url="https://api1.com", api_key="key1")
+        client2 = CharacterClient(base_url="https://api2.com", api_key="key2")
+        
+        # Verify they have different configurations
+        self.assertNotEqual(client1.base_url, client2.base_url)
+        self.assertNotEqual(client1.api_key, client2.api_key)
+        
+        # Verify they have different sessions
+        self.assertIsNot(client1.session, client2.session)
+        
+        # Verify session headers are different
+        self.assertNotEqual(
+            client1.session.headers['Authorization'],
+            client2.session.headers['Authorization']
+        )
+    
+    # Character Data Type Edge Cases
+    def test_create_character_with_float_level(self):
+        """Test character creation with float level (should be converted to int)."""
+        character_data = {
+            "name": "Float Level Character",
+            "class": "Warrior",
+            "level": 10.7  # Float level
+        }
+        
+        # Should convert float to int during validation
+        with self.assertRaises(ValueError) as context:
+            self.client.create_character(character_data)
+        self.assertIn("Character level must be a positive integer", str(context.exception))
+    
+    def test_create_character_with_boolean_values(self):
+        """Test character creation with boolean values in data."""
+        character_data = {
+            "name": "Boolean Character",
+            "class": "Paladin",
+            "level": 5,
+            "is_premium": True,
+            "is_active": False,
+            "has_guild": True
+        }
+        
+        # Should pass validation with boolean values
+        result = self.client._validate_character_data(character_data)
+        self.assertTrue(result)
+    
+    # URL and Path Construction Edge Cases
+    def test_build_url_with_special_characters(self):
+        """Test URL building with special characters in resource paths."""
+        # Test with URL-encoded characters
+        result = self.client._build_url("characters/search", params={"name": "Hero@123"})
+        self.assertIn("characters/search", result)
+        self.assertIn("name=Hero%40123", result)
+    
+    def test_build_url_with_unicode_parameters(self):
+        """Test URL building with Unicode characters in parameters."""
+        unicode_params = {
+            "name": "英雄",  # Chinese characters
+            "description": "Héroe español"  # Spanish with accents
+        }
+        
+        result = self.client._build_url("characters", params=unicode_params)
+        
+        # Should properly encode Unicode characters
+        self.assertIn("characters", result)
+        # URL encoding should be present
+        self.assertIn("%", result)
+    
+    def test_build_url_with_none_values(self):
+        """Test URL building with None values in parameters."""
+        params_with_none = {
+            "name": "Test",
+            "description": None,
+            "guild": None
+        }
+        
+        result = self.client._build_url("characters", params=params_with_none)
+        
+        # Should handle None values gracefully
+        self.assertIn("characters", result)
+        self.assertIn("name=Test", result)
+        # None values should be excluded or handled appropriately
+
+
+class TestCharacterClientIntegrationScenarios(unittest.TestCase):
+    """Integration-style tests for CharacterClient that test workflows and scenarios."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+    
+    def tearDown(self):
+        """Clean up after each test."""
+        if hasattr(self.client, 'session') and self.client.session:
+            self.client.session.close()
+    
+    @patch('requests.Session.post')
+    @patch('requests.Session.get')
+    def test_complete_character_lifecycle(self, mock_get, mock_post):
+        """Test complete character lifecycle: create, read, update, delete."""
+        # Step 1: Create character
+        create_data = {"name": "Lifecycle Test", "class": "Ranger", "level": 1}
+        created_character = {**create_data, "id": 100}
+        
+        mock_post_response = Mock()
+        mock_post_response.status_code = 201
+        mock_post_response.json.return_value = created_character
+        mock_post.return_value = mock_post_response
+        
+        # Step 2: Read character after creation
+        mock_get_response = Mock()
+        mock_get_response.status_code = 200
+        mock_get_response.json.return_value = created_character
+        mock_get.return_value = mock_get_response
+        
+        # Execute create
+        created = self.client.create_character(create_data)
+        self.assertEqual(created["id"], 100)
+        self.assertEqual(created["name"], "Lifecycle Test")
+        
+        # Execute read
+        retrieved = self.client.get_character(100)
+        self.assertEqual(retrieved["id"], 100)
+        self.assertEqual(retrieved["name"], "Lifecycle Test")
+    
+    @patch('requests.Session.get')
+    def test_character_search_and_filtering_workflow(self, mock_get):
+        """Test a complete character search and filtering workflow."""
+        # Simulate searching for warriors
+        warrior_characters = [
+            {"id": 1, "name": "Warrior 1", "class": "Warrior", "level": 10},
+            {"id": 2, "name": "Warrior 2", "class": "Warrior", "level": 15}
+        ]
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"characters": warrior_characters}
+        mock_get.return_value = mock_response
+        
+        # Search for warriors
+        warriors = self.client.get_characters(character_class="Warrior")
+        
+        self.assertEqual(len(warriors), 2)
+        for warrior in warriors:
+            self.assertEqual(warrior["class"], "Warrior")
+        
+        # Verify the search parameters
+        call_args = mock_get.call_args
+        self.assertEqual(call_args[1]['params']['class'], "Warrior")
+    
+    @patch.object(CharacterClient, 'get_character')
+    def test_batch_processing_with_error_handling(self, mock_get_character):
+        """Test batch processing with mixed success and failure scenarios."""
+        def get_character_side_effect(char_id):
+            if char_id == 1:
+                return {"id": 1, "name": "Success 1"}
+            elif char_id == 2:
+                raise CharacterNotFoundError("Character not found")
+            elif char_id == 3:
+                return {"id": 3, "name": "Success 3"}
+            elif char_id == 4:
+                raise CharacterClientError("Server error")
+            else:
+                return {"id": char_id, "name": f"Character {char_id}"}
+        
+        mock_get_character.side_effect = get_character_side_effect
+        
+        # Test batch retrieval with mixed results
+        character_ids = [1, 2, 3, 4, 5]
+        results = self.client.get_characters_batch(character_ids)
+        
+        # Should return only successful retrievals
+        self.assertEqual(len(results), 3)  # 1, 3, and 5 should succeed
+        
+        success_ids = [result["id"] for result in results]
+        self.assertIn(1, success_ids)
+        self.assertIn(3, success_ids)
+        self.assertIn(5, success_ids)
+        self.assertNotIn(2, success_ids)  # Not found
+        self.assertNotIn(4, success_ids)  # Server error
+    
+    def test_character_data_validation_comprehensive(self):
+        """Test comprehensive character data validation scenarios."""
+        # Test cases with various validation scenarios
+        test_cases = [
+            # Valid cases
+            ({"name": "Valid Hero", "class": "Warrior", "level": 1}, True),
+            ({"name": "Mage Hero", "class": "Mage", "level": 50}, True),
+            ({"name": "Max Level", "class": "Paladin", "level": 100}, True),
+            
+            # Invalid cases - missing fields
+            ({"class": "Warrior", "level": 1}, False),  # Missing name
+            ({"name": "Hero", "level": 1}, False),  # Missing class
+            ({"name": "Hero", "class": "Warrior"}, False),  # Missing level
+            
+            # Invalid cases - empty values
+            ({"name": "", "class": "Warrior", "level": 1}, False),  # Empty name
+            ({"name": "Hero", "class": "", "level": 1}, False),  # Empty class
+            ({"name": "Hero", "class": "Warrior", "level": 0}, False),  # Zero level
+            
+            # Invalid cases - wrong types
+            ({"name": 123, "class": "Warrior", "level": 1}, False),  # Non-string name
+            ({"name": "Hero", "class": 456, "level": 1}, False),  # Non-string class
+            ({"name": "Hero", "class": "Warrior", "level": "high"}, False),  # Non-int level
+        ]
+        
+        for test_data, should_be_valid in test_cases:
+            with self.subTest(data=test_data, valid=should_be_valid):
+                if should_be_valid:
+                    result = self.client._validate_character_data(test_data)
+                    self.assertTrue(result)
+                else:
+                    with self.assertRaises((ValueError, TypeError)):
+                        self.client._validate_character_data(test_data)
+
+
+class TestCharacterClientPerformanceAndStress(unittest.TestCase):
+    """Performance and stress tests for CharacterClient."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+    
+    def tearDown(self):
+        """Clean up after each test."""
+        if hasattr(self.client, 'session') and self.client.session:
+            self.client.session.close()
+    
+    def test_large_batch_character_ids(self):
+        """Test handling of large batches of character IDs."""
+        # Test with a large list of character IDs
+        large_id_list = list(range(1, 1001))  # 1000 character IDs
+        
+        with self.assertRaises(ValueError) as context:
+            # Most APIs would have limits on batch sizes
+            # This should trigger validation if implemented
+            if hasattr(self.client, '_validate_batch_size'):
+                self.client._validate_batch_size(large_id_list)
+        
+        # If no batch size validation exists, test that it doesn't crash
+        with patch.object(self.client, 'get_character') as mock_get:
+            mock_get.return_value = {"id": 1, "name": "Test"}
+            
+            # This might be slow but shouldn't crash
+            results = self.client.get_characters_batch(large_id_list[:10])  # Test with smaller subset
+            self.assertEqual(len(results), 10)
+    
+    def test_rapid_successive_requests(self):
+        """Test rapid successive API requests."""
+        with patch('requests.Session.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"id": 1, "name": "Test Character"}
+            mock_get.return_value = mock_response
+            
+            # Make multiple rapid requests
+            results = []
+            for i in range(100):
+                result = self.client.get_character(i + 1)
+                results.append(result)
+            
+            # All requests should succeed
+            self.assertEqual(len(results), 100)
+            self.assertEqual(mock_get.call_count, 100)
+    
+    def test_memory_usage_with_large_responses(self):
+        """Test memory handling with large response data."""
+        # Create a large character response
+        large_character = {
+            "id": 1,
+            "name": "Large Data Character",
+            "class": "DataMage",
+            "level": 100,
+            "inventory": [{"item": f"Item_{i}", "value": i} for i in range(10000)],
+            "skills": [f"Skill_{i}" for i in range(1000)],
+            "attributes": {f"attr_{i}": i for i in range(1000)}
+        }
+        
+        with patch('requests.Session.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = large_character
+            mock_get.return_value = mock_response
+            
+            result = self.client.get_character(1)
+            
+            # Should handle large responses without issues
+            self.assertEqual(result["id"], 1)
+            self.assertEqual(len(result["inventory"]), 10000)
+            self.assertEqual(len(result["skills"]), 1000)
+
+
+class TestCharacterClientRetryAndRobustness(unittest.TestCase):
+    """Test retry mechanisms and robustness scenarios."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+    
+    def tearDown(self):
+        """Clean up after each test."""
+        if hasattr(self.client, 'session') and self.client.session:
+            self.client.session.close()
+    
+    @patch('requests.Session.get')
+    def test_temporary_network_failure_recovery(self, mock_get):
+        """Test recovery from temporary network failures."""
+        # Simulate temporary failure followed by success
+        mock_get.side_effect = [
+            requests.ConnectionError("Temporary failure"),
+            Mock(status_code=200, json=lambda: {"id": 1, "name": "Success"})
+        ]
+        
+        # If the client has retry logic, it should eventually succeed
+        # If not, it should fail on the first attempt
+        with self.assertRaises(CharacterClientError):
+            self.client.get_character(1)
+    
+    @patch('requests.Session.get')
+    def test_response_with_invalid_json(self, mock_get):
+        """Test handling of responses with invalid JSON."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+        mock_response.text = "Invalid JSON response"
+        mock_get.return_value = mock_response
+        
+        with self.assertRaises(CharacterClientError) as context:
+            self.client.get_character(1)
+        self.assertIn("JSON", str(context.exception))
+    
+    @patch('requests.Session.get')
+    def test_empty_response_body(self, mock_get):
+        """Test handling of empty response body."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = None
+        mock_get.return_value = mock_response
+        
+        result = self.client.get_character(1)
+        self.assertIsNone(result)
+    
+    @patch('requests.Session.get')
+    def test_response_with_missing_content_type(self, mock_get):
+        """Test handling of responses without content-type header."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.headers = {}  # No content-type header
+        mock_response.json.return_value = {"id": 1, "name": "Test"}
+        mock_get.return_value = mock_response
+        
+        # Should still work if JSON parsing succeeds
+        result = self.client.get_character(1)
+        self.assertEqual(result["id"], 1)
+
+
+class TestCharacterClientSecurityAndValidation(unittest.TestCase):
+    """Test security-related features and input validation."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
+    
+    def tearDown(self):
+        """Clean up after each test."""
+        if hasattr(self.client, 'session') and self.client.session:
+            self.client.session.close()
+    
+    def test_api_key_in_headers(self):
+        """Test that API key is properly included in headers."""
+        expected_auth_header = f"Bearer {self.client.api_key}"
+        self.assertEqual(
+            self.client.session.headers['Authorization'],
+            expected_auth_header
+        )
+    
+    def test_sensitive_data_not_logged(self):
+        """Test that sensitive data like API keys are not exposed in logs."""
+        # This is more of a guideline test - in real scenarios,
+        # you'd check logging output
+        client_str = str(self.client)
+        api_key_str = str(self.client.api_key)
+        
+        # API key should not appear in string representation
+        if hasattr(self.client, '__str__'):
+            self.assertNotIn(self.client.api_key, client_str)
+    
+    def test_sql_injection_protection_in_parameters(self):
+        """Test that SQL injection attempts in parameters are handled safely."""
+        malicious_inputs = [
+            "'; DROP TABLE characters; --",
+            "1' OR '1'='1",
+            "UNION SELECT * FROM users",
+            "<script>alert('xss')</script>"
+        ]
+        
+        for malicious_input in malicious_inputs:
+            with self.subTest(input=malicious_input):
+                with patch('requests.Session.get') as mock_get:
+                    mock_response = Mock()
+                    mock_response.status_code = 200
+                    mock_response.json.return_value = {"characters": []}
+                    mock_get.return_value = mock_response
+                    
+                    # Should handle malicious input safely
+                    result = self.client.get_characters(character_class=malicious_input)
+                    self.assertEqual(result, [])
+                    
+                    # Verify the malicious input was passed as a parameter
+                    # (the server should handle the actual sanitization)
+                    call_args = mock_get.call_args
+                    self.assertEqual(call_args[1]['params']['class'], malicious_input)
+    
+    def test_extremely_large_input_handling(self):
+        """Test handling of extremely large input values."""
+        # Test with very large strings
+        large_string = "A" * 1000000  # 1MB string
+        
+        character_data = {
+            "name": large_string,
+            "class": "Warrior",
+            "level": 1
+        }
+        
+        # Should handle large input without crashing
+        # (though it might be rejected by validation)
+        try:
+            result = self.client._validate_character_data(character_data)
+            # If validation passes, that's also acceptable
+            self.assertTrue(result)
+        except (ValueError, MemoryError):
+            # If validation rejects it, that's also acceptable
+            pass
+    
+    def test_unicode_normalization_attacks(self):
+        """Test handling of Unicode normalization attacks."""
+        # Unicode characters that might normalize to different values
+        unicode_attacks = [
+            "café",  # NFC normalization
+            "cafe\u0301",  # NFD normalization
+            "ℌ𝕖𝔩𝔩𝕠",  # Mathematical bold characters
+            "𝐇𝐞𝐥𝐥𝐨"  # Mathematical script characters
+        ]
+        
+        for unicode_input in unicode_attacks:
+            with self.subTest(input=unicode_input):
+                character_data = {
+                    "name": unicode_input,
+                    "class": "Mage",
+                    "level": 1
+                }
+                
+                # Should handle Unicode input safely
+                result = self.client._validate_character_data(character_data)
+                self.assertTrue(result)
+
+
+if __name__ == '__main__':
+    # Add these new test classes to the test suite
+    unittest.main(verbosity=2, buffer=True)

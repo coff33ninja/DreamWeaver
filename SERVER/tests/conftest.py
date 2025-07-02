@@ -1,192 +1,123 @@
 """
-Pytest configuration and fixtures for Server API tests.
-Testing Framework: pytest with unittest compatibility
+Pytest configuration for character server tests.
+Provides additional fixtures and configuration for comprehensive testing.
 """
+
 import pytest
-import tempfile
-import os
-import json
-import asyncio
-from unittest.mock import Mock, patch
+import time
+import random
+from typing import Dict, List, Any
 
 
-@pytest.fixture
-def server_config():
-    """Fixture providing standard server configuration for tests."""
+@pytest.fixture(scope="session")
+def test_configuration():
+    """Session-scoped fixture providing test configuration."""
     return {
-        'host': 'localhost',
-        'port': 8080,
-        'debug': True,
-        'max_connections': 100,
-        'timeout': 30,
-        'workers': 1
+        'max_test_characters': 10000,
+        'performance_threshold_ms': 10,
+        'stress_test_iterations': 1000,
+        'concurrent_operation_batches': 5,
+        'large_dataset_size': 500,
     }
 
 
 @pytest.fixture
-def temp_config_file(server_config):
-    """Fixture providing a temporary configuration file."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        json.dump(server_config, f)
-        temp_file = f.name
+def performance_monitor():
+    """Fixture for monitoring test performance."""
+    class PerformanceMonitor:
+        def __init__(self):
+            self.start_time = None
+            self.measurements = []
+        
+        def start(self):
+            self.start_time = time.time()
+        
+        def stop(self, operation_name: str):
+            if self.start_time:
+                duration = time.time() - self.start_time
+                self.measurements.append({
+                    'operation': operation_name,
+                    'duration_ms': duration * 1000
+                })
+                self.start_time = None
+                return duration
+        
+        def get_average_duration(self) -> float:
+            if not self.measurements:
+                return 0.0
+            return sum(m['duration_ms'] for m in self.measurements) / len(self.measurements)
     
-    yield temp_file
-    
-    # Cleanup
-    if os.path.exists(temp_file):
-        os.unlink(temp_file)
+    return PerformanceMonitor()
 
 
 @pytest.fixture
-def mock_server_environment(monkeypatch):
-    """Fixture for mocking server environment variables."""
-    test_env = {
-        'SERVER_HOST': 'test.localhost',
-        'SERVER_PORT': '9999',
-        'SERVER_DEBUG': 'true',
-        'SERVER_MAX_CONNECTIONS': '50'
-    }
+def stress_test_data_generator():
+    """Fixture for generating stress test data."""
+    def generate_character_data(count: int, prefix: str = "StressTest") -> List[Dict[str, Any]]:
+        characters = []
+        for i in range(count):
+            characters.append({
+                'name': f'{prefix}Hero_{i}',
+                'class': random.choice(['Warrior', 'Mage', 'Rogue', 'Cleric', 'Paladin']),
+                'level': random.randint(1, 100),
+                'hp': random.randint(50, 500),
+                'mp': random.randint(20, 300),
+                'strength': random.randint(5, 25),
+                'dexterity': random.randint(5, 25),
+                'intelligence': random.randint(5, 25),
+                'equipment': [f'item_{j}' for j in range(random.randint(1, 10))],
+                'skills': [f'skill_{j}' for j in range(random.randint(1, 5))],
+            })
+        return characters
     
-    for key, value in test_env.items():
-        monkeypatch.setenv(key, value)
-    
-    return test_env
+    return generate_character_data
 
 
 @pytest.fixture
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture
-async def running_server(server_config):
-    """Fixture providing a running server instance."""
-    from test_server_api import ServerAPI, ServerConfig
+def character_server_populated(character_server, stress_test_data_generator):
+    """Fixture providing a character server pre-populated with test data."""
+    # Generate and create test characters
+    test_characters = stress_test_data_generator(50, "PrePopulated")
+    created_characters = []
     
-    config = ServerConfig(server_config)
-    server = ServerAPI(config)
+    for char_data in test_characters:
+        char = character_server.create_character(char_data)
+        created_characters.append(char)
     
-    await server.start()
-    yield server
+    # Attach the created characters to the server for reference
+    character_server._test_characters = created_characters
     
-    try:
-        await server.stop()
-    except:
-        pass
+    return character_server
 
 
-@pytest.fixture
-def mock_request_data():
-    """Fixture providing mock request data for testing."""
-    return {
-        'action': 'test_action',
-        'data': {
-            'key1': 'value1',
-            'key2': 'value2',
-            'nested': {
-                'inner_key': 'inner_value'
-            }
-        },
-        'metadata': {
-            'timestamp': '2024-01-01T00:00:00Z',
-            'user_id': 'test_user',
-            'request_id': 'test_request_123'
-        }
-    }
+# Custom pytest markers for different test categories
+def pytest_configure(config):
+    """Configure custom pytest markers."""
+    config.addinivalue_line("markers", "slow: marks tests as slow (may take several seconds)")
+    config.addinivalue_line("markers", "stress: marks tests as stress tests (high resource usage)")
+    config.addinivalue_line("markers", "performance: marks tests as performance benchmarks")
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
+    config.addinivalue_line("markers", "security: marks tests as security-related tests")
+    config.addinivalue_line("markers", "compatibility: marks tests as compatibility tests")
 
 
-@pytest.fixture
-def mock_database():
-    """Fixture providing a mock database for testing."""
-    database = Mock()
-    database.connect.return_value = True
-    database.disconnect.return_value = True
-    database.query.return_value = {'result': 'success'}
-    database.insert.return_value = {'id': 1, 'created': True}
-    database.update.return_value = {'updated': True}
-    database.delete.return_value = {'deleted': True}
-    
-    return database
-
-
-@pytest.fixture
-def mock_external_api():
-    """Fixture providing a mock external API for testing."""
-    api = Mock()
-    api.get.return_value = {'status': 'success', 'data': 'mock_data'}
-    api.post.return_value = {'status': 'created', 'id': 'mock_id'}
-    api.put.return_value = {'status': 'updated'}
-    api.delete.return_value = {'status': 'deleted'}
-    
-    return api
-
-
-# Pytest-specific test classes
-class TestServerAPIPytest:
-    """Pytest-style tests for Server API."""
-    
-    @pytest.mark.asyncio
-    async def test_server_startup_with_fixture(self, server_config):
-        """Test server startup using pytest fixtures."""
-        from test_server_api import ServerAPI, ServerConfig
+# Test collection hooks
+def pytest_collection_modifyitems(config, items):
+    """Modify collected test items to add markers based on test names."""
+    for item in items:
+        # Mark performance tests
+        if "performance" in item.name.lower() or "benchmark" in item.name.lower():
+            item.add_marker(pytest.mark.performance)
         
-        config = ServerConfig(server_config)
-        server = ServerAPI(config)
+        # Mark stress tests
+        if "stress" in item.name.lower() or "large" in item.name.lower():
+            item.add_marker(pytest.mark.stress)
+            item.add_marker(pytest.mark.slow)
         
-        result = await server.start()
-        assert result is True
-        assert server.is_running is True
+        # Mark security tests
+        if "security" in item.name.lower() or "injection" in item.name.lower():
+            item.add_marker(pytest.mark.security)
         
-        await server.stop()
-    
-    @pytest.mark.asyncio
-    async def test_request_processing_with_mock_data(self, running_server, mock_request_data):
-        """Test request processing with mock data."""
-        response = await running_server.process_request(mock_request_data)
-        
-        assert response.status_code == 200
-        assert response.data is not None
-    
-    @pytest.mark.parametrize("port,expected_valid", [
-        (80, True),
-        (8080, True),
-        (65535, True),
-        (0, False),
-        (-1, False),
-        (65536, False)
-    ])
-    def test_port_validation(self, port, expected_valid):
-        """Test port validation with parametrized values."""
-        from test_server_api import ServerConfig
-        
-        if expected_valid:
-            config = ServerConfig({'port': port})
-            assert config.get('port') == port
-        else:
-            # In a real implementation, this might raise an exception
-            # For now, we just test that the config is created
-            config = ServerConfig({'port': port})
-            assert isinstance(config, ServerConfig)
-    
-    @pytest.mark.slow
-    @pytest.mark.asyncio
-    async def test_high_load_performance(self, running_server):
-        """Test server performance under high load."""
-        import asyncio
-        
-        # Create many concurrent requests
-        tasks = []
-        for i in range(100):
-            request_data = {'action': 'load_test', 'id': i}
-            task = running_server.process_request(request_data)
-            tasks.append(task)
-        
-        # Process all requests
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Check that most requests succeeded
-        successful = [r for r in responses if not isinstance(r, Exception)]
-        assert len(successful) >= 90  # Allow for some failures under load
+        # Mark compatibility tests
+        if "compatibility" in item.name.lower() or "interoperability" in item.name.lower():
+            item.add_marker(pytest.mark.compatibility)

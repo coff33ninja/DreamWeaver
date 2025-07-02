@@ -1207,3 +1207,839 @@ if __name__ == '__main__':
         '--cov-report=html',
         '--cov-report=term-missing'
     ])
+
+class TestCharacterServerAdvancedValidation:
+    """Advanced validation test suite for character server functionality."""
+    
+    def test_character_name_length_boundaries(self, character_server):
+        """Test character name length at various boundary conditions."""
+        # Test minimum valid length (1 character)
+        min_name_data = {
+            'name': 'X',
+            'class': 'Warrior',
+            'level': 1
+        }
+        result = character_server.create_character(min_name_data)
+        assert result['name'] == 'X'
+        
+        # Test various length boundaries
+        length_test_cases = [10, 50, 100, 255, 512, 1024]
+        for length in length_test_cases:
+            long_name = 'A' * length
+            char_data = {
+                'name': long_name,
+                'class': f'Length{length}',
+                'level': 1
+            }
+            result = character_server.create_character(char_data)
+            assert len(result['name']) == length
+    
+    def test_character_class_validation_comprehensive(self, character_server):
+        """Test comprehensive character class validation scenarios."""
+        valid_classes = [
+            'Warrior', 'Mage', 'Cleric', 'Rogue', 'Paladin', 'Barbarian',
+            'Ranger', 'Bard', 'Sorcerer', 'Warlock', 'Druid', 'Monk',
+            'WARRIOR', 'warrior', 'WaRrIoR',  # Case variations
+            'Dark Knight', 'Battle Mage', 'Holy Priest',  # Multi-word classes
+            'Warrior-Mage', 'Rogue/Assassin',  # Special characters
+        ]
+        
+        for i, char_class in enumerate(valid_classes):
+            char_data = {
+                'name': f'ClassTest{i}',
+                'class': char_class,
+                'level': 1
+            }
+            result = character_server.create_character(char_data)
+            assert result['class'] == char_class
+    
+    def test_character_level_progressive_validation(self, character_server):
+        """Test character level validation with progressive scenarios."""
+        # Test level progression scenarios
+        char_data = {
+            'name': 'ProgressiveHero',
+            'class': 'Adventurer',
+            'level': 1
+        }
+        char = character_server.create_character(char_data)
+        
+        # Test progressive level increases
+        for new_level in [2, 5, 10, 25, 50, 75, 100]:
+            updated = character_server.update_character(char['id'], {'level': new_level})
+            assert updated['level'] == new_level
+            
+            # Verify retrieval maintains level
+            retrieved = character_server.get_character(char['id'])
+            assert retrieved['level'] == new_level
+    
+    def test_character_complex_nested_updates(self, character_server, valid_character_data):
+        """Test complex nested data structure updates."""
+        # Create character with complex nested data
+        complex_data = {
+            **valid_character_data,
+            'stats': {
+                'combat': {'strength': 10, 'dexterity': 8, 'constitution': 12},
+                'mental': {'intelligence': 14, 'wisdom': 11, 'charisma': 9}
+            },
+            'inventory': {
+                'weapons': [
+                    {'name': 'sword', 'damage': 10, 'durability': 100},
+                    {'name': 'bow', 'damage': 8, 'durability': 95}
+                ],
+                'armor': {'head': None, 'chest': 'chainmail', 'legs': 'leather'}
+            }
+        }
+        
+        char = character_server.create_character(complex_data)
+        
+        # Test deep nested updates
+        nested_update = {
+            'stats': {
+                'combat': {'strength': 15, 'constitution': 14},
+                'mental': {'intelligence': 16}
+            },
+            'inventory': {
+                'weapons': [
+                    {'name': 'magic_sword', 'damage': 15, 'durability': 100, 'enchantment': 'fire'}
+                ],
+                'armor': {'head': 'helmet', 'chest': 'platemail'}
+            }
+        }
+        
+        updated = character_server.update_character(char['id'], nested_update)
+        assert updated['stats']['combat']['strength'] == 15
+        assert updated['stats']['mental']['intelligence'] == 16
+        assert updated['inventory']['weapons'][0]['name'] == 'magic_sword'
+        assert updated['inventory']['armor']['head'] == 'helmet'
+
+
+class TestCharacterServerTransactionIntegrity:
+    """Test suite for transaction-like integrity scenarios."""
+    
+    def test_character_state_consistency_during_failures(self, character_server, valid_character_data):
+        """Test character state remains consistent during operation failures."""
+        char = character_server.create_character(valid_character_data)
+        original_state = character_server.get_character(char['id']).copy()
+        
+        # Attempt various operations that might fail
+        try:
+            character_server.update_character(char['id'], {'invalid_field': None})
+        except Exception:
+            pass
+        
+        # Verify character state unchanged after failed operation
+        current_state = character_server.get_character(char['id'])
+        assert current_state['name'] == original_state['name']
+        assert current_state['level'] == original_state['level']
+        assert current_state['class'] == original_state['class']
+    
+    def test_character_rollback_scenarios(self, character_server, valid_character_data):
+        """Test rollback-like scenarios for character operations."""
+        char = character_server.create_character(valid_character_data)
+        original_level = char['level']
+        
+        # Perform a series of updates
+        updates = [
+            {'level': 10, 'hp': 150},
+            {'level': 20, 'mp': 100},
+            {'level': 30, 'strength': 20}
+        ]
+        
+        for update in updates:
+            character_server.update_character(char['id'], update)
+        
+        # Verify final state
+        final_char = character_server.get_character(char['id'])
+        assert final_char['level'] == 30
+        
+        # Simulate rollback by updating back to original values
+        rollback_data = {key: value for key, value in valid_character_data.items() 
+                        if key in ['level', 'hp', 'mp', 'strength']}
+        character_server.update_character(char['id'], rollback_data)
+        
+        rolled_back = character_server.get_character(char['id'])
+        assert rolled_back['level'] == original_level
+
+
+class TestCharacterServerConcurrencySimulation:
+    """Test suite simulating concurrent access patterns."""
+    
+    def test_simulated_concurrent_character_creation(self, character_server, valid_character_data):
+        """Simulate concurrent character creation scenarios."""
+        # Simulate rapid concurrent creation
+        created_characters = []
+        
+        for batch in range(5):  # 5 batches of concurrent operations
+            batch_chars = []
+            for i in range(20):  # 20 characters per batch
+                char_data = {
+                    **valid_character_data,
+                    'name': f'ConcurrentHero_B{batch}_C{i}'
+                }
+                char = character_server.create_character(char_data)
+                batch_chars.append(char)
+            
+            created_characters.extend(batch_chars)
+            
+            # Verify batch integrity
+            assert len(batch_chars) == 20
+            batch_ids = [char['id'] for char in batch_chars]
+            assert len(set(batch_ids)) == len(batch_ids)  # All unique IDs
+        
+        # Verify overall integrity
+        assert len(created_characters) == 100
+        all_ids = [char['id'] for char in created_characters]
+        assert len(set(all_ids)) == len(all_ids)  # All globally unique
+    
+    def test_interleaved_read_write_operations(self, character_server, valid_character_data):
+        """Test interleaved read and write operations for data consistency."""
+        # Create initial set of characters
+        characters = []
+        for i in range(10):
+            char_data = {**valid_character_data, 'name': f'InterleavedHero{i}'}
+            char = character_server.create_character(char_data)
+            characters.append(char)
+        
+        # Perform interleaved operations
+        for iteration in range(100):
+            char_idx = iteration % len(characters)
+            char = characters[char_idx]
+            
+            if iteration % 3 == 0:  # Read operation
+                retrieved = character_server.get_character(char['id'])
+                assert retrieved is not None
+                assert retrieved['name'] == char['name']
+            
+            elif iteration % 3 == 1:  # Write operation
+                new_level = (iteration % 50) + 1
+                character_server.update_character(char['id'], {'level': new_level})
+                
+                # Immediately verify the write
+                updated = character_server.get_character(char['id'])
+                assert updated['level'] == new_level
+            
+            else:  # List operation
+                all_chars = character_server.list_characters()
+                assert len(all_chars) >= len(characters)
+
+
+class TestCharacterServerDataMigrationScenarios:
+    """Test suite for data migration and transformation scenarios."""
+    
+    def test_character_schema_evolution_simulation(self, character_server, valid_character_data):
+        """Simulate character schema evolution scenarios."""
+        # Create character with original schema
+        original_char = character_server.create_character(valid_character_data)
+        
+        # Simulate schema migration by adding new fields
+        migration_data = {
+            'version': 2.0,
+            'created_timestamp': '2023-01-01T00:00:00Z',
+            'last_modified': '2023-01-01T00:00:00Z',
+            'metadata': {
+                'source': 'migration_test',
+                'migrated': True
+            }
+        }
+        
+        migrated_char = character_server.update_character(original_char['id'], migration_data)
+        
+        # Verify backward compatibility
+        assert migrated_char['name'] == valid_character_data['name']
+        assert migrated_char['level'] == valid_character_data['level']
+        
+        # Verify new fields
+        assert migrated_char['version'] == 2.0
+        assert migrated_char['metadata']['migrated'] is True
+    
+    def test_bulk_character_data_transformation(self, character_server, valid_character_data):
+        """Test bulk character data transformation scenarios."""
+        # Create batch of characters with old format
+        characters = []
+        for i in range(20):
+            char_data = {
+                **valid_character_data,
+                'name': f'TransformHero{i}',
+                'old_stat_format': f'stat_{i}'
+            }
+            char = character_server.create_character(char_data)
+            characters.append(char)
+        
+        # Simulate bulk transformation
+        for char in characters:
+            transformation_data = {
+                'new_stat_format': {
+                    'converted_from': char.get('old_stat_format', ''),
+                    'conversion_date': '2023-01-01',
+                    'format_version': 'v2'
+                }
+            }
+            character_server.update_character(char['id'], transformation_data)
+        
+        # Verify transformations
+        for i, char in enumerate(characters):
+            updated_char = character_server.get_character(char['id'])
+            assert 'new_stat_format' in updated_char
+            assert updated_char['new_stat_format']['converted_from'] == f'stat_{i}'
+
+
+class TestCharacterServerAdvancedErrorRecovery:
+    """Test suite for advanced error recovery scenarios."""
+    
+    def test_character_recovery_after_corruption_simulation(self, character_server, valid_character_data):
+        """Simulate character data corruption and recovery."""
+        char = character_server.create_character(valid_character_data)
+        original_data = character_server.get_character(char['id']).copy()
+        
+        # Simulate data corruption by updating with problematic data
+        corrupted_updates = [
+            {'level': 0},  # Invalid level
+            {'name': ''},  # Invalid name
+            {'class': None},  # Invalid class
+        ]
+        
+        for corrupt_data in corrupted_updates:
+            try:
+                character_server.update_character(char['id'], corrupt_data)
+            except ValueError:
+                # Expected to fail
+                pass
+        
+        # Verify character data integrity maintained
+        current_data = character_server.get_character(char['id'])
+        assert current_data['name'] == original_data['name']
+        assert current_data['level'] == original_data['level']
+        assert current_data['class'] == original_data['class']
+        
+        # Test recovery with valid data
+        recovery_data = {'level': 50, 'status': 'recovered'}
+        recovered_char = character_server.update_character(char['id'], recovery_data)
+        assert recovered_char['level'] == 50
+        assert recovered_char['status'] == 'recovered'
+    
+    def test_character_partial_failure_handling(self, character_server, valid_character_data):
+        """Test handling of partial failures in character operations."""
+        char = character_server.create_character(valid_character_data)
+        
+        # Attempt update with mix of valid and invalid data
+        mixed_update = {
+            'level': 25,  # Valid
+            'hp': 200,    # Valid
+            'invalid_field_with_bad_value': {'nested': 'complexity'},  # Potentially problematic
+            'name': 'UpdatedName',  # Valid
+        }
+        
+        # The update should either succeed completely or fail completely
+        try:
+            updated_char = character_server.update_character(char['id'], mixed_update)
+            # If successful, verify all fields updated
+            assert updated_char['level'] == 25
+            assert updated_char['hp'] == 200
+            assert updated_char['name'] == 'UpdatedName'
+        except Exception:
+            # If failed, verify original data maintained
+            current_char = character_server.get_character(char['id'])
+            assert current_char['name'] == valid_character_data['name']
+            assert current_char['level'] == valid_character_data['level']
+
+
+class TestCharacterServerAdvancedQueries:
+    """Test suite for advanced query and filtering scenarios."""
+    
+    def test_character_filtering_simulation(self, character_server, valid_character_data):
+        """Simulate character filtering and search functionality."""
+        # Create diverse set of characters for filtering tests
+        test_characters = [
+            {'name': 'WarriorAlpha', 'class': 'Warrior', 'level': 10},
+            {'name': 'WarriorBeta', 'class': 'Warrior', 'level': 20},
+            {'name': 'MageAlpha', 'class': 'Mage', 'level': 15},
+            {'name': 'MageBeta', 'class': 'Mage', 'level': 25},
+            {'name': 'RogueAlpha', 'class': 'Rogue', 'level': 12},
+        ]
+        
+        created_chars = []
+        for char_data in test_characters:
+            char = character_server.create_character(char_data)
+            created_chars.append(char)
+        
+        # Simulate filtering by class
+        all_chars = character_server.list_characters()
+        warriors = [char for char in all_chars if char['class'] == 'Warrior']
+        mages = [char for char in all_chars if char['class'] == 'Mage']
+        
+        assert len(warriors) == 2
+        assert len(mages) == 2
+        assert all('Warrior' in char['name'] for char in warriors)
+        
+        # Simulate filtering by level range
+        high_level_chars = [char for char in all_chars if char['level'] >= 20]
+        assert len(high_level_chars) == 2
+        assert all(char['level'] >= 20 for char in high_level_chars)
+    
+    def test_character_sorting_simulation(self, character_server):
+        """Simulate character sorting functionality."""
+        # Create characters with various levels and names
+        characters_data = [
+            {'name': 'Charlie', 'class': 'Warrior', 'level': 30},
+            {'name': 'Alice', 'class': 'Mage', 'level': 10},
+            {'name': 'Bob', 'class': 'Rogue', 'level': 20},
+            {'name': 'David', 'class': 'Cleric', 'level': 40},
+            {'name': 'Eve', 'class': 'Paladin', 'level': 35},
+        ]
+        
+        for char_data in characters_data:
+            character_server.create_character(char_data)
+        
+        all_chars = character_server.list_characters()
+        
+        # Simulate sorting by name
+        chars_by_name = sorted(all_chars, key=lambda x: x['name'])
+        expected_name_order = ['Alice', 'Bob', 'Charlie', 'David', 'Eve']
+        actual_names = [char['name'] for char in chars_by_name]
+        assert actual_names == expected_name_order
+        
+        # Simulate sorting by level
+        chars_by_level = sorted(all_chars, key=lambda x: x['level'])
+        expected_level_order = [10, 20, 30, 35, 40]
+        actual_levels = [char['level'] for char in chars_by_level]
+        assert actual_levels == expected_level_order
+
+
+class TestCharacterServerMemoryAndResourceManagement:
+    """Test suite for memory and resource management scenarios."""
+    
+    def test_character_memory_cleanup_simulation(self, character_server, valid_character_data):
+        """Simulate memory cleanup after character deletion."""
+        # Create and delete many characters to test cleanup
+        created_ids = []
+        
+        for i in range(100):
+            char_data = {**valid_character_data, 'name': f'CleanupHero{i}'}
+            char = character_server.create_character(char_data)
+            created_ids.append(char['id'])
+        
+        # Verify all created
+        assert len(character_server.list_characters()) == 100
+        
+        # Delete half of them
+        for i in range(0, len(created_ids), 2):
+            character_server.delete_character(created_ids[i])
+        
+        # Verify deletion and that remaining characters are intact
+        remaining_chars = character_server.list_characters()
+        assert len(remaining_chars) == 50
+        
+        # Verify deleted characters cannot be retrieved
+        for i in range(0, len(created_ids), 2):
+            assert character_server.get_character(created_ids[i]) is None
+    
+    def test_character_large_dataset_operations(self, character_server, valid_character_data):
+        """Test operations with large character datasets."""
+        # Create large dataset
+        num_characters = 500
+        batch_size = 50
+        
+        for batch in range(num_characters // batch_size):
+            batch_chars = []
+            for i in range(batch_size):
+                char_idx = batch * batch_size + i
+                char_data = {
+                    **valid_character_data,
+                    'name': f'LargeDatasetHero{char_idx}',
+                    'batch': batch,
+                    'index': i,
+                    'large_data': ['item'] * 100  # Some bulk data
+                }
+                char = character_server.create_character(char_data)
+                batch_chars.append(char)
+            
+            # Verify batch operations
+            assert len(batch_chars) == batch_size
+        
+        # Verify total count
+        all_chars = character_server.list_characters()
+        assert len(all_chars) == num_characters
+        
+        # Test random access patterns
+        import random
+        for _ in range(100):
+            random_char = random.choice(all_chars)
+            retrieved = character_server.get_character(random_char['id'])
+            assert retrieved is not None
+            assert retrieved['name'] == random_char['name']
+
+
+class TestCharacterServerConfigurationAndSettings:
+    """Test suite for configuration and settings scenarios."""
+    
+    def test_character_default_values_handling(self, character_server):
+        """Test handling of default values in character creation."""
+        # Test character creation with minimal data and default handling
+        minimal_data = {
+            'name': 'DefaultTestHero',
+            'class': 'Novice',
+            'level': 1
+        }
+        
+        char = character_server.create_character(minimal_data)
+        
+        # Verify required fields exist
+        assert 'id' in char
+        assert char['name'] == 'DefaultTestHero'
+        assert char['class'] == 'Novice'
+        assert char['level'] == 1
+        
+        # Test updating with defaults
+        default_update = {
+            'hp': 100,  # Explicit value
+            'mp': 50,   # Explicit value
+        }
+        
+        updated_char = character_server.update_character(char['id'], default_update)
+        assert updated_char['hp'] == 100
+        assert updated_char['mp'] == 50
+    
+    def test_character_field_constraints_validation(self, character_server):
+        """Test field constraint validation scenarios."""
+        # Test various constraint scenarios
+        constraint_test_cases = [
+            # (field_name, valid_value, constraint_description)
+            ('level', 1, 'minimum_level'),
+            ('level', 100, 'high_level'),
+            ('name', 'A' * 255, 'max_length_name'),
+            ('class', 'VeryLongClassName' * 5, 'long_class_name'),
+        ]
+        
+        for field_name, value, description in constraint_test_cases:
+            char_data = {
+                'name': f'ConstraintTest_{description}',
+                'class': 'Tester',
+                'level': 1
+            }
+            char_data[field_name] = value
+            
+            char = character_server.create_character(char_data)
+            assert char[field_name] == value
+
+
+class TestCharacterServerAuditingAndLogging:
+    """Test suite for auditing and logging scenarios."""
+    
+    def test_character_operation_tracking(self, character_server, valid_character_data):
+        """Test tracking of character operations for audit purposes."""
+        # Create character and track operations
+        char = character_server.create_character(valid_character_data)
+        operations_log = []
+        
+        # Simulate operation logging
+        operations_log.append({
+            'operation': 'CREATE',
+            'character_id': char['id'],
+            'timestamp': '2023-01-01T00:00:00Z',
+            'data': valid_character_data
+        })
+        
+        # Update operations
+        updates = [
+            {'level': 10, 'timestamp': '2023-01-01T01:00:00Z'},
+            {'level': 20, 'timestamp': '2023-01-01T02:00:00Z'},
+            {'name': 'UpdatedHero', 'timestamp': '2023-01-01T03:00:00Z'},
+        ]
+        
+        for update_data in updates:
+            timestamp = update_data.pop('timestamp')
+            character_server.update_character(char['id'], update_data)
+            
+            operations_log.append({
+                'operation': 'UPDATE',
+                'character_id': char['id'],
+                'timestamp': timestamp,
+                'data': update_data
+            })
+        
+        # Verify operation log integrity
+        assert len(operations_log) == 4  # 1 create + 3 updates
+        assert operations_log[0]['operation'] == 'CREATE'
+        assert all(op['character_id'] == char['id'] for op in operations_log)
+        
+        # Verify final character state matches operation history
+        final_char = character_server.get_character(char['id'])
+        assert final_char['level'] == 20
+        assert final_char['name'] == 'UpdatedHero'
+
+
+class TestCharacterServerCompatibilityAndInteroperability:
+    """Test suite for compatibility and interoperability scenarios."""
+    
+    def test_character_data_serialization_compatibility(self, character_server, valid_character_data):
+        """Test character data serialization and deserialization compatibility."""
+        # Create character with complex data
+        complex_data = {
+            **valid_character_data,
+            'metadata': {
+                'version': '1.0',
+                'format': 'json',
+                'encoding': 'utf-8'
+            },
+            'binary_data': b'binary_content'.hex(),  # Simulate binary data as hex
+            'unicode_data': '🎮🗡️⚔️🛡️',
+            'numeric_data': {
+                'integer': 42,
+                'float': 3.14159,
+                'negative': -100
+            }
+        }
+        
+        char = character_server.create_character(complex_data)
+        
+        # Simulate serialization/deserialization cycle
+        import json
+        
+        # Convert to JSON and back (simulating API transfer)
+        json_data = json.dumps(char, ensure_ascii=False)
+        deserialized_char = json.loads(json_data)
+        
+        # Verify data integrity after serialization round-trip
+        assert deserialized_char['name'] == complex_data['name']
+        assert deserialized_char['metadata']['version'] == '1.0'
+        assert deserialized_char['unicode_data'] == '🎮🗡️⚔️🛡️'
+        assert deserialized_char['numeric_data']['float'] == 3.14159
+    
+    def test_character_api_version_compatibility(self, character_server, valid_character_data):
+        """Test character API version compatibility scenarios."""
+        # Simulate different API version formats
+        api_v1_data = {
+            'name': 'APITestHero',
+            'class': 'Warrior',
+            'level': 1,
+            'api_version': '1.0'
+        }
+        
+        api_v2_data = {
+            'name': 'APITestHero',
+            'character_class': 'Warrior',  # Different field name
+            'experience_level': 1,         # Different field name
+            'api_version': '2.0',
+            'extended_attributes': {
+                'created_by': 'test_system',
+                'creation_method': 'api_v2'
+            }
+        }
+        
+        # Test v1 format
+        char_v1 = character_server.create_character(api_v1_data)
+        assert char_v1['api_version'] == '1.0'
+        
+        # Test that the system can handle different field structures
+        # (assuming the mock server is flexible with field names)
+        if hasattr(character_server, 'create_character_v2'):
+            char_v2 = character_server.create_character_v2(api_v2_data)
+            assert char_v2['api_version'] == '2.0'
+
+
+# Performance benchmark fixtures and tests
+@pytest.fixture
+def benchmark_character_data():
+    """Fixture providing standardized data for benchmark tests."""
+    return {
+        'name': 'BenchmarkHero',
+        'class': 'Speedster', 
+        'level': 1,
+        'benchmark_metadata': {
+            'test_type': 'performance',
+            'iteration': 0
+        }
+    }
+
+
+class TestCharacterServerPerformanceBenchmarks:
+    """Performance benchmark test suite."""
+    
+    def test_character_creation_performance_benchmark(self, character_server, benchmark_character_data):
+        """Benchmark character creation performance."""
+        import time
+        
+        num_iterations = 1000
+        start_time = time.time()
+        
+        created_chars = []
+        for i in range(num_iterations):
+            char_data = {
+                **benchmark_character_data,
+                'name': f'BenchHero{i}',
+                'benchmark_metadata': {
+                    'test_type': 'creation_benchmark',
+                    'iteration': i
+                }
+            }
+            char = character_server.create_character(char_data)
+            created_chars.append(char)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        avg_time_per_creation = total_time / num_iterations
+        
+        # Performance assertions (adjust thresholds as needed)
+        assert total_time < 10.0  # Should complete in under 10 seconds
+        assert avg_time_per_creation < 0.01  # Each creation should be under 10ms
+        assert len(created_chars) == num_iterations
+        
+        # Verify all characters have unique IDs
+        char_ids = [char['id'] for char in created_chars]
+        assert len(set(char_ids)) == len(char_ids)
+    
+    def test_character_retrieval_performance_benchmark(self, character_server, benchmark_character_data):
+        """Benchmark character retrieval performance."""
+        import time
+        import random
+        
+        # Create test dataset
+        num_chars = 1000
+        created_chars = []
+        
+        for i in range(num_chars):
+            char_data = {**benchmark_character_data, 'name': f'RetrievalBenchHero{i}'}
+            char = character_server.create_character(char_data)
+            created_chars.append(char)
+        
+        # Benchmark retrieval performance
+        num_retrievals = 2000
+        char_ids = [char['id'] for char in created_chars]
+        
+        start_time = time.time()
+        
+        for _ in range(num_retrievals):
+            random_id = random.choice(char_ids)
+            retrieved_char = character_server.get_character(random_id)
+            assert retrieved_char is not None
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        avg_time_per_retrieval = total_time / num_retrievals
+        
+        # Performance assertions
+        assert total_time < 5.0  # Should complete in under 5 seconds
+        assert avg_time_per_retrieval < 0.0025  # Each retrieval under 2.5ms
+
+
+class TestCharacterServerRobustnessAndStability:
+    """Test suite for system robustness and stability scenarios."""
+    
+    def test_character_server_graceful_degradation(self, character_server, valid_character_data):
+        """Test graceful degradation under various stress conditions."""
+        # Test system behavior with incremental load
+        load_levels = [10, 50, 100, 200, 500]
+        
+        for load_level in load_levels:
+            characters = []
+            
+            # Create characters at this load level
+            for i in range(load_level):
+                char_data = {
+                    **valid_character_data,
+                    'name': f'LoadTest{load_level}_{i}',
+                    'load_level': load_level
+                }
+                char = character_server.create_character(char_data)
+                characters.append(char)
+            
+            # Verify system still responsive
+            all_chars = character_server.list_characters()
+            assert len([c for c in all_chars if c.get('load_level') == load_level]) == load_level
+            
+            # Test random operations at this load level
+            for _ in range(min(10, load_level)):
+                random_char = characters[len(characters) // 2]
+                retrieved = character_server.get_character(random_char['id'])
+                assert retrieved is not None
+    
+    def test_character_server_recovery_patterns(self, character_server, valid_character_data):
+        """Test various recovery patterns and failure scenarios."""
+        # Create baseline characters
+        baseline_chars = []
+        for i in range(20):
+            char_data = {**valid_character_data, 'name': f'BaselineHero{i}'}
+            char = character_server.create_character(char_data)
+            baseline_chars.append(char)
+        
+        # Simulate various failure scenarios and recovery
+        failure_scenarios = [
+            'network_timeout',
+            'partial_data_corruption',
+            'concurrent_access_conflict',
+            'resource_exhaustion',
+            'invalid_operation_sequence'
+        ]
+        
+        for scenario in failure_scenarios:
+            # Simulate recovery operation
+            recovery_char_data = {
+                **valid_character_data,
+                'name': f'RecoveryHero_{scenario}',
+                'recovery_scenario': scenario
+            }
+            
+            try:
+                recovery_char = character_server.create_character(recovery_char_data)
+                assert recovery_char['recovery_scenario'] == scenario
+                
+                # Verify system still functional after recovery
+                retrieved = character_server.get_character(recovery_char['id'])
+                assert retrieved is not None
+                
+            except Exception as e:
+                # If creation fails, verify baseline characters still intact
+                for baseline_char in baseline_chars[:5]:  # Check sample
+                    retrieved = character_server.get_character(baseline_char['id'])
+                    assert retrieved is not None
+
+
+# Add test discovery and execution helpers
+def run_comprehensive_character_server_tests():
+    """Helper function to run all character server tests with comprehensive reporting."""
+    import pytest
+    
+    test_modules = [
+        'TestCharacterCreation',
+        'TestCharacterRetrieval', 
+        'TestCharacterUpdate',
+        'TestCharacterDeletion',
+        'TestCharacterListing',
+        'TestCharacterValidation',
+        'TestCharacterServerEdgeCases',
+        'TestCharacterServerPerformance',
+        'TestAsyncCharacterOperations',
+        'TestCharacterServerSecurityAndValidation',
+        'TestCharacterServerDataIntegrity',
+        'TestCharacterServerBoundaryConditions',
+        'TestCharacterServerErrorHandling',
+        'TestCharacterServerStressAndPerformance',
+        'TestCharacterServerSpecialCharacters',
+        'TestCharacterServerEdgeCasesAndCornerCases',
+        # New comprehensive test classes
+        'TestCharacterServerAdvancedValidation',
+        'TestCharacterServerTransactionIntegrity',
+        'TestCharacterServerConcurrencySimulation',
+        'TestCharacterServerDataMigrationScenarios',
+        'TestCharacterServerAdvancedErrorRecovery',
+        'TestCharacterServerAdvancedQueries',
+        'TestCharacterServerMemoryAndResourceManagement',
+        'TestCharacterServerConfigurationAndSettings',
+        'TestCharacterServerAuditingAndLogging',
+        'TestCharacterServerCompatibilityAndInteroperability',
+        'TestCharacterServerPerformanceBenchmarks',
+        'TestCharacterServerRobustnessAndStability',
+    ]
+    
+    return pytest.main([
+        __file__,
+        '-v',
+        '--tb=short',
+        '--durations=20',
+        '--strict-markers',
+        '-x',  # Stop on first failure for debugging
+    ])
+
+
+if __name__ == '__main__':
+    run_comprehensive_character_server_tests()

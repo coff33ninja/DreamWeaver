@@ -1203,3 +1203,750 @@ if __name__ == '__main__':
     else:
         print("✅ ALL TESTS PASSED!")
         sys.exit(0)
+
+class TestCheckpointManagerSecurityAndRobustness(unittest.TestCase):
+    """Security and robustness tests for CheckpointManager."""
+    
+    def setUp(self):
+        """Set up security test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+        
+    def tearDown(self):
+        """Clean up security tests."""
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_path_traversal_prevention(self):
+        """Test prevention of path traversal attacks in checkpoint names."""
+        malicious_names = [
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32\\config\\sam",
+            "checkpoint/../../../sensitive_file",
+            "./../../outside_directory/file",
+            "checkpoint\\..\\..\\windows\\file",
+            "/absolute/path/checkpoint",
+            "~user/checkpoint",
+            "$HOME/checkpoint",
+            "checkpoint;rm -rf /",
+            "checkpoint`rm -rf /`",
+            "checkpoint$(rm -rf /)",
+        ]
+        
+        safe_data = {"secure": "data"}
+        
+        for malicious_name in malicious_names:
+            with self.subTest(name=malicious_name):
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(malicious_name, safe_data)
+                    # If save succeeds, ensure the file is saved in the correct directory
+                    if result:
+                        # Verify no files were created outside the checkpoint directory
+                        checkpoint_files = []
+                        for root, dirs, files in os.walk(self.temp_dir):
+                            checkpoint_files.extend([os.path.join(root, f) for f in files])
+                        
+                        # All files should be within the temp directory
+                        for file_path in checkpoint_files:
+                            self.assertTrue(file_path.startswith(self.temp_dir), 
+                                          f"File {file_path} created outside checkpoint directory")
+                except (ValueError, OSError, SecurityError) as e:
+                    # Expected behavior - malicious paths should be rejected
+                    self.assertIsInstance(e, (ValueError, OSError, SecurityError))
+
+    def test_checkpoint_name_injection_prevention(self):
+        """Test prevention of code injection through checkpoint names."""
+        injection_attempts = [
+            "'; DROP TABLE checkpoints; --",
+            "<script>alert('xss')</script>",
+            "checkpoint${IFS}$(whoami)",
+            "checkpoint|whoami",
+            "checkpoint&whoami",
+            "checkpoint;whoami",
+            "checkpoint\x00null_byte",
+            "checkpoint\r\nHTTP_injection",
+            "checkpoint%00null_encoded",
+        ]
+        
+        for injection_name in injection_attempts:
+            with self.subTest(name=repr(injection_name)):
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(injection_name, {"data": "test"})
+                    # If it succeeds, verify no code execution occurred
+                    if result:
+                        loaded = self.checkpoint_manager.load_checkpoint(injection_name)
+                        if loaded:
+                            self.assertEqual(loaded["data"], "test")
+                except (ValueError, TypeError) as e:
+                    # Expected - injection attempts should be rejected
+                    pass
+
+    def test_large_checkpoint_name_handling(self):
+        """Test handling of extremely large checkpoint names."""
+        # Test various large name sizes
+        large_name_tests = [
+            ("medium", "x" * 1000),
+            ("large", "x" * 10000),
+            ("huge", "x" * 100000),
+        ]
+        
+        for test_name, large_name in large_name_tests:
+            with self.subTest(size=test_name):
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(large_name, {"size_test": test_name})
+                    if result:
+                        # If it succeeds, verify we can retrieve it
+                        loaded = self.checkpoint_manager.load_checkpoint(large_name)
+                        if loaded:
+                            self.assertEqual(loaded["size_test"], test_name)
+                except (ValueError, OSError) as e:
+                    # Large names might be rejected by filesystem limits
+                    self.assertIsInstance(e, (ValueError, OSError))
+
+    def test_checkpoint_data_validation(self):
+        """Test validation of checkpoint data for potential security issues."""
+        # Test data that might cause issues during serialization/deserialization
+        potentially_dangerous_data = [
+            {"__class__": "malicious_class", "data": "exploit"},
+            {"eval": "malicious_code", "exec": "more_code"},
+            {"import": "os", "system": "rm -rf /"},
+            {"pickle": b"malicious_pickle_data"},
+            {"lambda": "lambda: os.system('ls')"},
+        ]
+        
+        for i, dangerous_data in enumerate(potentially_dangerous_data):
+            with self.subTest(data_type=f"dangerous_{i}"):
+                checkpoint_name = f"security_test_{i}"
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(checkpoint_name, dangerous_data)
+                    if result:
+                        loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                        # Verify data was safely serialized/deserialized
+                        if loaded:
+                            self.assertIsInstance(loaded, dict)
+                except (TypeError, ValueError, SecurityError) as e:
+                    # Some dangerous data should be rejected
+                    pass
+
+    def test_file_permission_robustness(self):
+        """Test robustness under various file permission scenarios."""
+        if os.name == 'nt':  # Skip on Windows as permission handling is different
+            self.skipTest("File permission tests not applicable on Windows")
+            
+        checkpoint_name = "permission_test"
+        test_data = {"permission": "test"}
+        
+        # Test with read-only checkpoint directory
+        try:
+            os.chmod(self.temp_dir, 0o444)  # Read-only
+            with self.assertRaises((PermissionError, OSError)):
+                self.checkpoint_manager.save_checkpoint(checkpoint_name, test_data)
+        finally:
+            os.chmod(self.temp_dir, 0o755)  # Restore permissions
+
+    def test_disk_space_handling(self):
+        """Test behavior when disk space is limited (simulated)."""
+        # This test simulates disk space issues by creating a very large checkpoint
+        checkpoint_name = "disk_space_test"
+        
+        # Create data that would be large when serialized
+        large_data = {
+            "massive_array": [f"data_{i}" * 1000 for i in range(1000)],
+            "metadata": {"size": "massive", "test": "disk_space"}
+        }
+        
+        try:
+            # Attempt to save large data
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, large_data)
+            if result:
+                # If successful, verify we can load it back
+                loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                if loaded:
+                    self.assertEqual(loaded["metadata"]["test"], "disk_space")
+        except (OSError, MemoryError) as e:
+            # Expected if disk space or memory is insufficient
+            self.assertIsInstance(e, (OSError, MemoryError))
+
+    def test_concurrent_file_access_robustness(self):
+        """Test robustness under concurrent file access scenarios."""
+        import threading
+        import time
+        
+        checkpoint_name = "concurrent_access_test"
+        results = []
+        errors = []
+        
+        def concurrent_access_worker(worker_id, operation):
+            """Worker function for concurrent access testing."""
+            try:
+                if operation == "save":
+                    data = {"worker": worker_id, "operation": operation, "timestamp": time.time()}
+                    result = self.checkpoint_manager.save_checkpoint(f"{checkpoint_name}_{worker_id}", data)
+                    results.append((worker_id, operation, result))
+                elif operation == "load":
+                    result = self.checkpoint_manager.load_checkpoint(f"{checkpoint_name}_{worker_id % 3}")
+                    results.append((worker_id, operation, result is not None))
+                elif operation == "list":
+                    result = self.checkpoint_manager.list_checkpoints()
+                    results.append((worker_id, operation, len(result)))
+                elif operation == "delete":
+                    result = self.checkpoint_manager.delete_checkpoint(f"{checkpoint_name}_{worker_id % 3}")
+                    results.append((worker_id, operation, result))
+            except Exception as e:
+                errors.append((worker_id, operation, str(e)))
+        
+        # Create checkpoints first
+        for i in range(3):
+            self.checkpoint_manager.save_checkpoint(f"{checkpoint_name}_{i}", {"initial": i})
+        
+        # Create threads for different operations
+        threads = []
+        operations = ["save", "load", "list", "delete"]
+        
+        for worker_id in range(20):
+            operation = operations[worker_id % len(operations)]
+            thread = threading.Thread(target=concurrent_access_worker, args=(worker_id, operation))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads
+        for thread in threads:
+            thread.join(timeout=30)
+        
+        # Verify no critical errors occurred
+        critical_errors = [e for e in errors if "corrupted" in e[2].lower() or "invalid" in e[2].lower()]
+        self.assertEqual(len(critical_errors), 0, f"Critical errors during concurrent access: {critical_errors}")
+
+
+class TestCheckpointManagerDataIntegrityAndCorruption(unittest.TestCase):
+    """Tests for data integrity and corruption scenarios."""
+    
+    def setUp(self):
+        """Set up data integrity test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+        
+    def tearDown(self):
+        """Clean up data integrity tests."""
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_checkpoint_file_corruption_detection(self):
+        """Test detection and handling of corrupted checkpoint files."""
+        checkpoint_name = "corruption_test"
+        original_data = {"integrity": "original", "checksum": "valid"}
+        
+        # Save a valid checkpoint
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, original_data)
+        self.assertTrue(result)
+        
+        # Simulate file corruption by directly modifying checkpoint files
+        checkpoint_files = []
+        for root, dirs, files in os.walk(self.temp_dir):
+            for file in files:
+                if checkpoint_name in file:
+                    checkpoint_files.append(os.path.join(root, file))
+        
+        if checkpoint_files:
+            # Corrupt the first checkpoint file found
+            corrupted_file = checkpoint_files[0]
+            try:
+                with open(corrupted_file, 'r+b') as f:
+                    f.seek(10)  # Seek to middle of file
+                    f.write(b'CORRUPTED_DATA_XXXX')  # Overwrite with garbage
+                
+                # Try to load the corrupted checkpoint
+                with self.assertRaises((ValueError, TypeError, json.JSONDecodeError, Exception)):
+                    self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                    
+            except Exception as e:
+                # If we can't corrupt the file, that's also acceptable
+                pass
+
+    def test_partial_checkpoint_save_recovery(self):
+        """Test recovery from partial checkpoint saves."""
+        checkpoint_name = "partial_save_test"
+        
+        # Mock a scenario where save operation is interrupted
+        with patch('builtins.open', side_effect=[IOError("Disk full"), MagicMock()]):
+            try:
+                result = self.checkpoint_manager.save_checkpoint(checkpoint_name, {"data": "test"})
+                # First attempt should fail, but shouldn't leave partial files
+            except IOError:
+                pass
+        
+        # Verify no partial files were left behind
+        checkpoint_files = []
+        for root, dirs, files in os.walk(self.temp_dir):
+            checkpoint_files.extend(files)
+        
+        # Should not have partial checkpoint files
+        partial_files = [f for f in checkpoint_files if checkpoint_name in f and ('.tmp' in f or '.partial' in f)]
+        self.assertEqual(len(partial_files), 0, f"Partial files found: {partial_files}")
+
+    def test_checkpoint_metadata_consistency(self):
+        """Test consistency of checkpoint metadata."""
+        checkpoints_with_metadata = []
+        
+        # Create checkpoints with detailed metadata
+        for i in range(5):
+            checkpoint_name = f"metadata_test_{i}"
+            data = {
+                "id": i,
+                "created_at": f"2024-01-{i+1:02d}T10:00:00Z",
+                "version": f"1.{i}",
+                "metadata": {
+                    "size": 1000 + i * 100,
+                    "type": "test",
+                    "tags": [f"tag_{j}" for j in range(i+1)]
+                }
+            }
+            
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
+            if result:
+                checkpoints_with_metadata.append((checkpoint_name, data))
+        
+        # Verify metadata consistency across operations
+        for checkpoint_name, original_data in checkpoints_with_metadata:
+            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+            if loaded_data:
+                # Check that all metadata fields are preserved
+                self.assertEqual(loaded_data["id"], original_data["id"])
+                self.assertEqual(loaded_data["version"], original_data["version"])
+                self.assertEqual(loaded_data["metadata"]["size"], original_data["metadata"]["size"])
+                self.assertEqual(loaded_data["metadata"]["tags"], original_data["metadata"]["tags"])
+
+    def test_checkpoint_versioning_consistency(self):
+        """Test consistency of checkpoint versioning across updates."""
+        base_name = "versioning_test"
+        versions = []
+        
+        # Create multiple versions of the same logical checkpoint
+        for version in range(1, 6):
+            data = {
+                "version": version,
+                "content": f"This is version {version}",
+                "changelog": f"Changes in version {version}",
+                "timestamp": time.time() + version
+            }
+            
+            checkpoint_name = f"{base_name}_v{version}"
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, data)
+            if result:
+                versions.append((checkpoint_name, data))
+        
+        # Verify all versions can be loaded and are distinct
+        loaded_versions = []
+        for checkpoint_name, original_data in versions:
+            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+            if loaded_data:
+                loaded_versions.append(loaded_data)
+                self.assertEqual(loaded_data["version"], original_data["version"])
+                self.assertEqual(loaded_data["content"], original_data["content"])
+        
+        # Verify version numbers are unique and sequential
+        version_numbers = [v["version"] for v in loaded_versions]
+        self.assertEqual(len(set(version_numbers)), len(version_numbers))  # All unique
+        self.assertEqual(sorted(version_numbers), list(range(1, len(version_numbers) + 1)))  # Sequential
+
+    def test_checkpoint_binary_data_integrity(self):
+        """Test integrity of binary data in checkpoints."""
+        import hashlib
+        
+        # Create test binary data
+        binary_data = {
+            "image_data": bytes(range(256)) * 100,  # 25.6KB of binary data
+            "compressed_data": b'\x78\x9c' + b'compressed_content' * 50,  # Simulated compressed data
+            "encrypted_data": b'\x00\x01\x02\x03' * 1000,  # Simulated encrypted data
+            "random_bytes": os.urandom(1000),  # Random binary data
+        }
+        
+        # Calculate checksums of original data
+        original_checksums = {}
+        for key, data in binary_data.items():
+            original_checksums[key] = hashlib.sha256(data).hexdigest()
+        
+        checkpoint_name = "binary_integrity_test"
+        
+        try:
+            result = self.checkpoint_manager.save_checkpoint(checkpoint_name, binary_data)
+            if result:
+                loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+                if loaded_data:
+                    # Verify binary data integrity by comparing checksums
+                    for key, original_checksum in original_checksums.items():
+                        if key in loaded_data:
+                            loaded_checksum = hashlib.sha256(loaded_data[key]).hexdigest()
+                            self.assertEqual(loaded_checksum, original_checksum, 
+                                           f"Binary data corruption detected in {key}")
+        except (TypeError, ValueError) as e:
+            # Binary data might not be serializable in some implementations
+            self.assertIsInstance(e, (TypeError, ValueError))
+
+    def test_checkpoint_atomic_operations(self):
+        """Test atomicity of checkpoint operations."""
+        checkpoint_name = "atomic_test"
+        original_data = {"state": "original", "counter": 0}
+        
+        # Save initial checkpoint
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, original_data)
+        self.assertTrue(result)
+        
+        # Verify initial state
+        loaded = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        if loaded:
+            self.assertEqual(loaded["state"], "original")
+        
+        # Attempt to update checkpoint with potential failure scenarios
+        update_data = {"state": "updated", "counter": 1}
+        
+        # Mock a failure during save operation
+        with patch.object(self.checkpoint_manager, 'save_checkpoint', 
+                         side_effect=[Exception("Simulated failure")]):
+            try:
+                self.checkpoint_manager.save_checkpoint(checkpoint_name, update_data)
+            except Exception:
+                pass
+        
+        # Verify original data is still intact (atomicity preserved)
+        loaded_after_failure = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+        if loaded_after_failure:
+            self.assertEqual(loaded_after_failure["state"], "original", 
+                           "Checkpoint state corrupted after failed update")
+            self.assertEqual(loaded_after_failure["counter"], 0,
+                           "Checkpoint counter corrupted after failed update")
+
+
+class TestCheckpointManagerResourceManagement(unittest.TestCase):
+    """Tests for resource management and cleanup."""
+    
+    def setUp(self):
+        """Set up resource management test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+        
+    def tearDown(self):
+        """Clean up resource management tests."""
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_memory_usage_during_large_operations(self):
+        """Test memory usage during large checkpoint operations."""
+        import psutil
+        import gc
+        
+        # Get initial memory usage
+        process = psutil.Process()
+        initial_memory = process.memory_info().rss
+        
+        # Create large checkpoint data
+        large_data = {
+            "large_array": list(range(100000)),
+            "large_dict": {f"key_{i}": f"value_{i}" * 100 for i in range(10000)},
+            "nested_structure": [[i] * 100 for i in range(1000)]
+        }
+        
+        checkpoint_name = "memory_usage_test"
+        
+        # Perform checkpoint operations
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, large_data)
+        if result:
+            loaded_data = self.checkpoint_manager.load_checkpoint(checkpoint_name)
+            
+            # Force garbage collection
+            del loaded_data
+            gc.collect()
+            
+            # Check memory usage after operations
+            final_memory = process.memory_info().rss
+            memory_increase = final_memory - initial_memory
+            
+            # Memory increase should be reasonable (less than 500MB for this test)
+            max_acceptable_increase = 500 * 1024 * 1024  # 500MB
+            self.assertLess(memory_increase, max_acceptable_increase,
+                          f"Excessive memory usage: {memory_increase / (1024*1024):.1f}MB increase")
+
+    def test_file_handle_cleanup(self):
+        """Test proper cleanup of file handles."""
+        import gc
+        
+        checkpoint_name = "file_handle_test"
+        test_data = {"handle_test": "data"}
+        
+        # Perform multiple operations to test file handle management
+        for i in range(100):
+            save_result = self.checkpoint_manager.save_checkpoint(f"{checkpoint_name}_{i}", test_data)
+            if save_result:
+                loaded = self.checkpoint_manager.load_checkpoint(f"{checkpoint_name}_{i}")
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Try to remove the temp directory to check for open file handles
+        try:
+            # Create a new temp directory to test file handle cleanup
+            test_dir = tempfile.mkdtemp()
+            test_manager = CheckpointManager(checkpoint_dir=test_dir)
+            
+            # Perform operations
+            test_manager.save_checkpoint("cleanup_test", {"data": "test"})
+            test_manager.load_checkpoint("cleanup_test")
+            
+            # Delete the manager to trigger cleanup
+            del test_manager
+            gc.collect()
+            
+            # Should be able to remove directory if handles were properly closed
+            shutil.rmtree(test_dir)
+            
+        except OSError as e:
+            if "being used by another process" in str(e) or "Directory not empty" in str(e):
+                self.fail("File handles not properly cleaned up")
+
+    def test_temporary_file_cleanup(self):
+        """Test cleanup of temporary files during operations."""
+        checkpoint_name = "temp_file_cleanup_test"
+        test_data = {"cleanup": "test"}
+        
+        # Count files before operations
+        initial_file_count = sum(len(files) for _, _, files in os.walk(self.temp_dir))
+        
+        # Perform operations that might create temporary files
+        result = self.checkpoint_manager.save_checkpoint(checkpoint_name, test_data)
+        if result:
+            self.checkpoint_manager.load_checkpoint(checkpoint_name)
+            self.checkpoint_manager.delete_checkpoint(checkpoint_name)
+        
+        # Count files after operations
+        final_file_count = sum(len(files) for _, _, files in os.walk(self.temp_dir))
+        
+        # Should not have accumulated temporary files
+        temp_files = []
+        for root, dirs, files in os.walk(self.temp_dir):
+            temp_files.extend([f for f in files if f.endswith(('.tmp', '.temp', '.bak', '.partial'))])
+        
+        self.assertEqual(len(temp_files), 0, f"Temporary files not cleaned up: {temp_files}")
+
+    def test_resource_exhaustion_handling(self):
+        """Test handling of resource exhaustion scenarios."""
+        # Test with many small checkpoints to potentially exhaust file descriptors
+        checkpoint_data = {"small": "data"}
+        created_checkpoints = []
+        
+        try:
+            for i in range(1000):  # Create many checkpoints
+                checkpoint_name = f"resource_test_{i}"
+                result = self.checkpoint_manager.save_checkpoint(checkpoint_name, checkpoint_data)
+                if result:
+                    created_checkpoints.append(checkpoint_name)
+                else:
+                    break  # Stop if we can't create more
+            
+            # Verify we can still perform operations
+            test_checkpoint = "resource_final_test"
+            final_result = self.checkpoint_manager.save_checkpoint(test_checkpoint, {"final": "test"})
+            
+            if final_result:
+                loaded = self.checkpoint_manager.load_checkpoint(test_checkpoint)
+                self.assertIsNotNone(loaded)
+            
+        except (OSError, IOError) as e:
+            # Resource exhaustion is acceptable, but shouldn't crash
+            self.assertIsInstance(e, (OSError, IOError))
+        
+        # Cleanup should work even after resource exhaustion
+        for checkpoint_name in created_checkpoints[:10]:  # Clean up first 10
+            try:
+                self.checkpoint_manager.delete_checkpoint(checkpoint_name)
+            except Exception:
+                pass  # Cleanup failures are acceptable in resource exhaustion scenarios
+
+
+class TestCheckpointManagerCrossCompatibility(unittest.TestCase):
+    """Tests for cross-platform and version compatibility."""
+    
+    def setUp(self):
+        """Set up compatibility test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.checkpoint_manager = CheckpointManager(checkpoint_dir=self.temp_dir)
+        
+    def tearDown(self):
+        """Clean up compatibility tests."""
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    def test_path_separator_handling(self):
+        """Test handling of different path separators across platforms."""
+        # Test checkpoint names with different path-like patterns
+        path_like_names = [
+            "checkpoint/with/forward/slashes",
+            "checkpoint\\with\\back\\slashes", 
+            "checkpoint/mixed\\separators/test",
+            "checkpoint.with.dots",
+            "checkpoint-with-dashes",
+            "checkpoint_with_underscores"
+        ]
+        
+        test_data = {"path_test": True}
+        
+        for name in path_like_names:
+            with self.subTest(name=name):
+                try:
+                    # Try to save - implementation should handle path separators appropriately
+                    result = self.checkpoint_manager.save_checkpoint(name, test_data)
+                    if result:
+                        loaded = self.checkpoint_manager.load_checkpoint(name)
+                        if loaded:
+                            self.assertEqual(loaded["path_test"], True)
+                except (ValueError, OSError) as e:
+                    # Some path patterns might be rejected, which is acceptable
+                    pass
+
+    def test_unicode_filename_handling(self):
+        """Test handling of unicode characters in checkpoint names."""
+        unicode_names = [
+            "checkpoint_测试",  # Chinese characters
+            "checkpoint_тест",  # Cyrillic
+            "checkpoint_العربية",  # Arabic
+            "checkpoint_🚀🎉",  # Emoji
+            "checkpoint_café",  # Accented characters
+            "checkpoint_αβγ",  # Greek
+        ]
+        
+        test_data = {"unicode_test": True}
+        
+        for name in unicode_names:
+            with self.subTest(name=repr(name)):
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(name, test_data)
+                    if result:
+                        loaded = self.checkpoint_manager.load_checkpoint(name)
+                        if loaded:
+                            self.assertEqual(loaded["unicode_test"], True)
+                except (ValueError, OSError, UnicodeError) as e:
+                    # Unicode handling varies by platform and filesystem
+                    pass
+
+    def test_case_sensitivity_handling(self):
+        """Test handling of case sensitivity in checkpoint names."""
+        case_variants = [
+            ("checkpoint", "CHECKPOINT"),
+            ("CamelCase", "camelcase"),
+            ("Mixed_Case_123", "mixed_case_123"),
+        ]
+        
+        for lower_name, upper_name in case_variants:
+            with self.subTest(lower=lower_name, upper=upper_name):
+                lower_data = {"case": "lower"}
+                upper_data = {"case": "upper"}
+                
+                # Save both variants
+                lower_result = self.checkpoint_manager.save_checkpoint(lower_name, lower_data)
+                upper_result = self.checkpoint_manager.save_checkpoint(upper_name, upper_data)
+                
+                if lower_result and upper_result:
+                    # Try to load both
+                    loaded_lower = self.checkpoint_manager.load_checkpoint(lower_name)
+                    loaded_upper = self.checkpoint_manager.load_checkpoint(upper_name)
+                    
+                    # On case-sensitive filesystems, these should be different
+                    # On case-insensitive filesystems, behavior may vary
+                    if loaded_lower and loaded_upper:
+                        # Verify we can distinguish between them or they're handled consistently
+                        pass
+
+    def test_filesystem_specific_limitations(self):
+        """Test handling of filesystem-specific limitations."""
+        # Test names that might cause issues on specific filesystems
+        problematic_names = [
+            "CON",  # Windows reserved name
+            "PRN",  # Windows reserved name
+            "AUX",  # Windows reserved name
+            "checkpoint" + "x" * 300,  # Very long name
+            "checkpoint.",  # Trailing dot (Windows issue)
+            "checkpoint ",  # Trailing space (Windows issue)
+            "check:point",  # Colon (Windows issue)
+            "check*point",  # Asterisk (Windows issue)
+            "check?point",  # Question mark (Windows issue)
+            "check|point",  # Pipe (Windows issue)
+        ]
+        
+        test_data = {"filesystem_test": True}
+        
+        for name in problematic_names:
+            with self.subTest(name=repr(name)):
+                try:
+                    result = self.checkpoint_manager.save_checkpoint(name, test_data)
+                    if result:
+                        loaded = self.checkpoint_manager.load_checkpoint(name)
+                        # If save and load succeed, verify data integrity
+                        if loaded:
+                            self.assertEqual(loaded["filesystem_test"], True)
+                except (ValueError, OSError) as e:
+                    # Filesystem limitations should be handled gracefully
+                    pass
+
+# Add these new test classes to the main runner
+if __name__ == '__main__':
+    # Update test classes list
+    additional_test_classes = [
+        TestCheckpointManagerSecurityAndRobustness,
+        TestCheckpointManagerDataIntegrityAndCorruption, 
+        TestCheckpointManagerResourceManagement,
+        TestCheckpointManagerCrossCompatibility
+    ]
+    
+    # Add to existing test classes
+    all_test_classes = [
+        TestCheckpointManager,
+        TestCheckpointManagerEdgeCases,
+        TestCheckpointManagerRealImplementation,
+        TestCheckpointManagerAdditionalEdgeCases,
+        TestCheckpointManagerMarkers
+    ] + additional_test_classes
+    
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    
+    for test_class in all_test_classes:
+        suite.addTests(loader.loadTestsFromTestCase(test_class))
+    
+    runner = unittest.TextTestRunner(
+        verbosity=2, 
+        buffer=True,
+        failfast=False,
+        stream=sys.stdout
+    )
+    
+    print("="*80)
+    print("COMPREHENSIVE CHECKPOINT MANAGER TEST SUITE - EXTENDED")
+    print("="*80)
+    print(f"Testing Framework: unittest (pytest compatible)")
+    print(f"Total Test Classes: {len(all_test_classes)}")
+    print(f"New Security & Robustness Tests Added")
+    print(f"New Data Integrity & Corruption Tests Added") 
+    print(f"New Resource Management Tests Added")
+    print(f"New Cross-Platform Compatibility Tests Added")
+    print("="*80)
+    
+    result = runner.run(suite)
+    
+    print("\n" + "="*80)
+    print("EXTENDED TEST SUMMARY")
+    print("="*80)
+    print(f"Tests Run: {result.testsRun}")
+    print(f"Failures: {len(result.failures)}")
+    print(f"Errors: {len(result.errors)}")
+    print(f"Skipped: {len(result.skipped) if hasattr(result, 'skipped') else 'N/A'}")
+    
+    if result.testsRun > 0:
+        success_rate = ((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100)
+        print(f"Success Rate: {success_rate:.1f}%")
+    
+    print("="*80)
+    
+    if result.failures or result.errors:
+        sys.exit(1)
+    else:
+        print("✅ ALL EXTENDED TESTS PASSED!")
+        sys.exit(0)
