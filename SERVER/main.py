@@ -6,11 +6,10 @@ import signal
 # This ensures that 'src' can be imported as a module and helps linters find it.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.gradio_interface import launch_interface
-from src.server_api import app as server_api_app
 import uvicorn
 import multiprocessing
-
+from src.gradio_interface import launch_interface
+from src.server_api import app as server_api_app
 # Call this early, but it will be more effective if called inside each process's target function
 # if they don't inherit the main process's logging config correctly due to 'spawn'.
 from src.logging_config import setup_logging, get_logger
@@ -57,16 +56,16 @@ def terminate_process(proc: multiprocessing.Process, name: str) -> None:
 
 
 def main():
-    # Call setup_logging here for the main process
-    setup_logging()
-    logger = get_logger()
-
-    # Use 'spawn' for Windows safety and cross-platform compatibility
     """
     Start and manage Gradio and FastAPI servers in separate processes with robust lifecycle and shutdown handling.
 
     This function initializes multiprocessing with the 'spawn' method for cross-platform compatibility, launches the Gradio and FastAPI servers in independent processes, and monitors their status. It registers signal handlers to ensure both servers are terminated gracefully on SIGINT or SIGTERM, and handles unexpected process exits or exceptions by shutting down both servers before exiting.
     """
+    # Call setup_logging here for the main process
+    setup_logging()
+    logger = get_logger()
+
+    # Use 'spawn' for Windows safety and cross-platform compatibility
     multiprocessing.set_start_method("spawn", force=True)  # Must be called only once
     logger.info("Starting Gradio and FastAPI servers in separate processes...")
 

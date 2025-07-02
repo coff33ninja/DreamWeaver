@@ -1,5 +1,4 @@
 import os
-from whisper import load_model
 from pyannote.audio import Pipeline
 import asyncio  # Added asyncio
 import re
@@ -28,6 +27,7 @@ class Narrator:
             model_size = DEFAULT_WHISPER_MODEL_SIZE
         logger.info(f"Narrator: Loading Whisper STT model '{model_size}'...")
         try:
+            from whisper import load_model
             self.stt_model = load_model(model_size)
             logger.info("Narrator: Whisper STT model loaded successfully.")
         except Exception as e:
