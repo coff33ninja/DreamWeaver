@@ -1,269 +1,274 @@
-import unittest
-from unittest.mock import Mock, patch, MagicMock, call, AsyncMock
 import pytest
 import asyncio
 import os
-import tempfile
-from pathlib import Path
-import sys
-from typing import Optional
+from unittest.mock import patch, MagicMock
 
-# Add the source directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Ensure correct import path for TTSManager from src/
+from src.tts_manager import TTSManager
+from SERVER.src.config import MODELS_PATH, TTS_MODELS_PATH as SERVER_TTS_MODELS_PATH # Renamed to avoid clash if used directly
+import logging # Import logging for patching getLogger
 
-try:
-    from tts_manager import TTSManager
-except ImportError:
-    # If direct import fails, try alternative import paths
-    try:
-        from SERVER.src.tts_manager import TTSManager
-    except ImportError:
-        from src.tts_manager import TTSManager
+# Use SERVER_TTS_MODELS_PATH which is derived from SERVER.src.config.MODELS_PATH
+# This is where the TTSManager will attempt to create subdirectories.
+
+@pytest.fixture
+def server_tts_manager_gtts_success(monkeypatch):
+    """Fixture for server TTSManager with gTTS mocked for success."""
+    mock_gtts_lib = MagicMock()
+    monkeypatch.setattr("SERVER.src.tts_manager.gtts", mock_gtts_lib)
+
+    # Mock os.makedirs called during __init__
+    with patch("os.makedirs") as mock_os_makedirs:
+        # Mock os.environ if TTS_HOME is critical for gTTS part (it's more for Coqui)
+        with patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+             manager = TTSManager(tts_service_name="gtts", language="en")
+    return manager, mock_gtts_lib, mock_os_makedirs
+
+@pytest.fixture
+def server_tts_manager_xttsv2_success(monkeypatch):
+    """Fixture for server TTSManager with CoquiTTS mocked for success."""
+    mock_coqui_tts_lib = MagicMock()
+    mock_coqui_tts_instance = MagicMock()
+    mock_coqui_tts_lib.return_value = mock_coqui_tts_instance
+    monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", mock_coqui_tts_lib)
+
+    mock_torch = MagicMock()
+    mock_torch.cuda.is_available.return_value = False # Assume CPU
+    monkeypatch.setattr("SERVER.src.tts_manager.torch", mock_torch)
+
+    with patch("os.makedirs") as mock_os_makedirs:
+        with patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="mock_xtts_model"):
+                manager = TTSManager(
+                    tts_service_name="xttsv2",
+                    model_name="tts_models/multilingual/multi-dataset/xtts_v2", # Example model
+                    language="en"
+                )
+    return manager, mock_coqui_tts_lib, mock_coqui_tts_instance, mock_os_makedirs
 
 
-class TestTTSManagerInitialization(unittest.TestCase):
-    """Test TTSManager initialization and configuration."""
-    
-    def test_init_gtts_service(self):
-        """Test initialization with gTTS service."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts.__bool__ = Mock(return_value=True)
-            manager = TTSManager(tts_service_name="gtts", language="en")
-            self.assertEqual(manager.service_name, "gtts")
-            self.assertEqual(manager.language, "en")
-            self.assertIsNotNone(manager)
-    
-    def test_init_xttsv2_service(self):
-        """Test initialization with XTTSv2 service."""
-        with patch('tts_manager.CoquiTTS') as mock_coqui:
-            mock_coqui.__bool__ = Mock(return_value=True)
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                with patch('tts_manager.torch') as mock_torch:
-                    mock_torch.cuda.is_available.return_value = False
-                    manager = TTSManager(
-                        tts_service_name="xttsv2", 
-                        model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-                        language="en"
+class TestServerTTSManagerInitialization:
+    def test_init_gtts_service_success(self, server_tts_manager_gtts_success):
+        manager, mock_gtts_lib, _ = server_tts_manager_gtts_success
+        assert manager.service_name == "gtts"
+        assert manager.language == "en"
+        assert manager.is_initialized
+        assert manager.tts_instance == manager._gtts_synthesize_blocking
+
+    def test_init_gtts_service_failure_lib_missing(self, monkeypatch):
+        monkeypatch.setattr("SERVER.src.tts_manager.gtts", None)
+        with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+            with patch.object(logging, "getLogger") as mock_get_logger:
+                mock_log_instance = MagicMock()
+                mock_get_logger.return_value = mock_log_instance
+                manager = TTSManager(tts_service_name="gtts")
+                assert not manager.is_initialized
+                mock_log_instance.error.assert_any_call(
+                    "Server TTSManager: Error - gTTS service selected but gtts library not found."
+                )
+
+    def test_init_xttsv2_service_success_cpu(self, server_tts_manager_xttsv2_success, monkeypatch):
+        manager, mock_coqui_tts_lib, mock_coqui_tts_instance, _ = server_tts_manager_xttsv2_success
+        assert manager.service_name == "xttsv2"
+        assert manager.is_initialized
+        mock_coqui_tts_lib.assert_called_once_with(
+            model_name="mock_xtts_model", progress_bar=True
+        )
+        mock_coqui_tts_instance.to.assert_called_once_with("cpu")
+
+    def test_init_xttsv2_service_success_gpu(self, monkeypatch):
+        mock_coqui_tts_lib = MagicMock()
+        mock_coqui_tts_instance = MagicMock()
+        mock_coqui_tts_lib.return_value = mock_coqui_tts_instance
+        monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", mock_coqui_tts_lib)
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True # Simulate GPU
+        monkeypatch.setattr("SERVER.src.tts_manager.torch", mock_torch)
+
+        with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="gpu_model_id"):
+                manager = TTSManager(tts_service_name="xttsv2", model_name="gpu_model_id")
+                assert manager.is_initialized
+                mock_coqui_tts_instance.to.assert_called_once_with("cuda")
+
+    def test_init_xttsv2_failure_lib_missing(self, monkeypatch):
+        monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", None)
+        with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+            with patch.object(logging, "getLogger") as mock_get_logger:
+                mock_log_instance = MagicMock()
+                mock_get_logger.return_value = mock_log_instance
+                with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="any_model"):
+                    manager = TTSManager(tts_service_name="xttsv2", model_name="any_model")
+                    assert not manager.is_initialized
+                    mock_log_instance.error.assert_any_call(
+                        "Server TTSManager: Error - Coqui TTS library not available for XTTSv2."
                     )
-                    self.assertEqual(manager.service_name, "xttsv2")
-                    self.assertEqual(manager.language, "en")
-    
-    def test_init_default_parameters(self):
-        """Test initialization with default parameters."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts.__bool__ = Mock(return_value=True)
-            manager = TTSManager(tts_service_name="gtts")
-            self.assertEqual(manager.language, "en")
-            self.assertEqual(manager.model_name, "")
-            self.assertEqual(manager.speaker_wav_path, "")
-            self.assertFalse(manager.is_initialized)
-    
-    def test_init_with_speaker_wav_path(self):
-        """Test initialization with speaker wav path for XTTS."""
-        speaker_path = "/path/to/speaker.wav"
-        with patch('tts_manager.CoquiTTS') as mock_coqui:
-            mock_coqui.__bool__ = Mock(return_value=True)
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                with patch('tts_manager.torch') as mock_torch:
-                    mock_torch.cuda.is_available.return_value = False
-                    manager = TTSManager(
-                        tts_service_name="xttsv2",
-                        model_name="test_model",
-                        speaker_wav_path=speaker_path
-                    )
-                    self.assertEqual(manager.speaker_wav_path, speaker_path)
-    
-    def test_init_none_values_converted_to_strings(self):
-        """Test that None values are properly converted to empty strings."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts.__bool__ = Mock(return_value=True)
-            manager = TTSManager(
-                tts_service_name="gtts",
-                model_name=None,
-                speaker_wav_path=None,
-                language=None
-            )
-            self.assertEqual(manager.model_name, "")
-            self.assertEqual(manager.speaker_wav_path, "")
-            self.assertEqual(manager.language, "en")  # None should default to "en"
 
+    def test_init_unsupported_service(self, monkeypatch):
+        monkeypatch.setattr("SERVER.src.tts_manager.gtts", None)
+        monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", None)
+        with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
+            with patch.object(logging, "getLogger") as mock_get_logger:
+                mock_log_instance = MagicMock()
+                mock_get_logger.return_value = mock_log_instance
+                manager = TTSManager(tts_service_name="fake_service")
+                assert not manager.is_initialized
+                mock_log_instance.error.assert_any_call(
+                    "Server TTSManager: Unsupported TTS service 'fake_service'."
+                )
 
-class TestTTSManagerServiceInitialization(unittest.TestCase):
-    """Test service-specific initialization logic."""
-    
-    @patch('tts_manager.gtts')
-    def test_gtts_initialization_success(self, mock_gtts):
-        """Test successful gTTS initialization."""
-        mock_gtts.__bool__ = Mock(return_value=True)
-        manager = TTSManager(tts_service_name="gtts")
-        self.assertTrue(manager.is_initialized)
-        self.assertIsNotNone(manager.tts_instance)
-    
-    @patch('tts_manager.gtts', None)
-    def test_gtts_initialization_library_not_found(self):
-        """Test gTTS initialization when library is not available."""
-        with patch('builtins.print') as mock_print:
-            manager = TTSManager(tts_service_name="gtts")
-            self.assertFalse(manager.is_initialized)
-            mock_print.assert_called_with("Server TTSManager: Error - gTTS service selected but library not found.")
-    
-    @patch('tts_manager.CoquiTTS')
-    @patch('tts_manager.torch')
-    def test_xttsv2_initialization_success(self, mock_torch, mock_coqui):
-        """Test successful XTTSv2 initialization."""
-        mock_torch.cuda.is_available.return_value = True
-        mock_coqui_instance = Mock()
-        mock_coqui.return_value = mock_coqui_instance
-        mock_coqui.__bool__ = Mock(return_value=True)
-        
-        with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-            manager = TTSManager(tts_service_name="xttsv2", model_name="test_model")
-            self.assertTrue(manager.is_initialized)
-            mock_coqui.assert_called_once_with(model_name="test_model", progress_bar=True)
-            mock_coqui_instance.to.assert_called_once_with("cuda")
-    
-    @patch('tts_manager.CoquiTTS', None)
-    def test_xttsv2_initialization_library_not_found(self):
-        """Test XTTSv2 initialization when Coqui TTS is not available."""
-        with patch('builtins.print') as mock_print:
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                manager = TTSManager(tts_service_name="xttsv2", model_name="test_model")
-                self.assertFalse(manager.is_initialized)
-                mock_print.assert_called_with("Server TTSManager: Error - Coqui TTS library not available for XTTSv2.")
-    
-    def test_xttsv2_no_model_name(self):
-        """Test XTTSv2 initialization without model name."""
-        with patch('builtins.print') as mock_print:
-            manager = TTSManager(tts_service_name="xttsv2")
-            self.assertFalse(manager.is_initialized)
-            mock_print.assert_called_with("Server TTSManager: Warning - No model name provided for TTS service 'xttsv2'.")
-    
-    def test_unsupported_service(self):
-        """Test initialization with unsupported service."""
-        with patch('builtins.print') as mock_print:
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                manager = TTSManager(tts_service_name="unsupported", model_name="test_model")
-                self.assertFalse(manager.is_initialized)
-                mock_print.assert_called_with("Server TTSManager: Unsupported TTS service 'unsupported'.")
+@pytest.mark.asyncio
+class TestServerTTSManagerSynthesizeAsync:
 
+    @patch("SERVER.src.tts_manager.os.makedirs")
+    @patch("SERVER.src.tts_manager.os.path.exists")
+    @patch("SERVER.src.tts_manager.os.path.getsize")
+    @patch("SERVER.src.tts_manager.asyncio.to_thread")
+    async def test_synthesize_gtts_success(self, mock_to_thread, mock_getsize, mock_exists, mock_makedirs, server_tts_manager_gtts_success):
+        manager, _, _ = server_tts_manager_gtts_success
+        mock_exists.return_value = True
+        mock_getsize.return_value = 100
 
-class TestTTSManagerSynthesis(unittest.TestCase):
-    """Test text-to-speech synthesis functionality."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.test_text = "Hello, this is a test message."
-        self.output_path = "/tmp/test_output.wav"
-    
-    def test_synthesize_gtts_success(self):
-        """Test successful gTTS synthesis."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts.__bool__ = Mock(return_value=True)
-            manager = TTSManager(tts_service_name="gtts", language="en")
-            
-            async def run_test():
-                with patch('tts_manager.asyncio.to_thread') as mock_to_thread:
-                    mock_to_thread.return_value = None
-                    with patch('tts_manager.os.makedirs'):
-                        result = await manager.synthesize(self.test_text, self.output_path)
-                        self.assertTrue(result)
-                        mock_to_thread.assert_called_once()
-            
-            asyncio.run(run_test())
-    
-    def test_synthesize_xttsv2_success(self):
-        """Test successful XTTSv2 synthesis."""
-        with patch('tts_manager.CoquiTTS') as mock_coqui:
-            mock_coqui.__bool__ = Mock(return_value=True)
-            mock_coqui_instance = Mock()
-            mock_coqui.return_value = mock_coqui_instance
-            
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                with patch('tts_manager.torch') as mock_torch:
-                    mock_torch.cuda.is_available.return_value = False
-                    manager = TTSManager(tts_service_name="xttsv2", model_name="test_model")
-                    
-                    async def run_test():
-                        with patch('tts_manager.asyncio.to_thread') as mock_to_thread:
-                            mock_to_thread.return_value = None
-                            with patch('tts_manager.os.makedirs'):
-                                result = await manager.synthesize(self.test_text, self.output_path)
-                                self.assertTrue(result)
-                                mock_to_thread.assert_called_once()
-                    
-                    asyncio.run(run_test())
-    
-    def test_synthesize_not_initialized(self):
-        """Test synthesis when manager is not initialized."""
-        manager = TTSManager.__new__(TTSManager)  # Create without calling __init__
+        test_text = "Hello gTTS Server"
+        output_path = "/server_tmp/test_gtts.mp3" # Example path
+
+        result_ok = await manager.synthesize(test_text, output_path)
+
+        assert result_ok
+        mock_to_thread.assert_called_once_with(
+            manager._gtts_synthesize_blocking, test_text, output_path, manager.language
+        )
+        mock_makedirs.assert_called_with(os.path.dirname(output_path), exist_ok=True)
+
+    @patch("SERVER.src.tts_manager.os.makedirs")
+    @patch("SERVER.src.tts_manager.os.path.exists")
+    @patch("SERVER.src.tts_manager.os.path.getsize")
+    @patch("SERVER.src.tts_manager.asyncio.to_thread")
+    async def test_synthesize_xttsv2_success(self, mock_to_thread, mock_getsize, mock_exists, mock_makedirs, server_tts_manager_xttsv2_success):
+        manager, _, _, _ = server_tts_manager_xttsv2_success
+        mock_exists.return_value = True
+        mock_getsize.return_value = 100
+
+        test_text = "Hello XTTS Server"
+        output_path = "/server_tmp/test_xtts.wav"
+        speaker_wav = "/path/to/server_speaker.wav"
+
+        result_ok = await manager.synthesize(test_text, output_path, speaker_wav_for_synthesis=speaker_wav)
+
+        assert result_ok
+        mock_to_thread.assert_called_once_with(
+            manager._xttsv2_synthesize_blocking, test_text, output_path, speaker_wav, manager.language
+        )
+        mock_makedirs.assert_called_with(os.path.dirname(output_path), exist_ok=True)
+
+    async def test_synthesize_not_initialized_raises_error(self):
+        manager = TTSManager.__new__(TTSManager)
         manager.is_initialized = False
         manager.tts_instance = None
-        
-        async def run_test():
-            with patch('builtins.print') as mock_print:
-                result = await manager.synthesize(self.test_text, self.output_path)
-                self.assertFalse(result)
-                mock_print.assert_called_with("Server TTSManager: Not initialized, cannot synthesize.")
-        
-        asyncio.run(run_test())
-    
-    def test_synthesize_exception_handling(self):
-        """Test synthesis exception handling and cleanup."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts.__bool__ = Mock(return_value=True)
-            manager = TTSManager(tts_service_name="gtts")
-            
-            async def run_test():
-                with patch('tts_manager.asyncio.to_thread', side_effect=Exception("Test error")):
-                    with patch('tts_manager.os.makedirs'):
-                        with patch('tts_manager.os.path.exists', return_value=True):
-                            with patch('tts_manager.os.remove') as mock_remove:
-                                with patch('builtins.print') as mock_print:
-                                    result = await manager.synthesize(self.test_text, self.output_path)
-                                    self.assertFalse(result)
-                                    mock_remove.assert_called_once_with(self.output_path)
-                                    mock_print.assert_called_with("Server TTSManager: Error during async TTS synthesis with gtts: Test error")
-            
-            asyncio.run(run_test())
-    
-    def test_synthesize_xttsv2_with_speaker_wav(self):
-        """Test XTTSv2 synthesis with speaker wav file."""
-        speaker_wav = "/path/to/speaker.wav"
-        with patch('tts_manager.CoquiTTS') as mock_coqui:
-            mock_coqui.__bool__ = Mock(return_value=True)
-            mock_coqui_instance = Mock()
-            mock_coqui.return_value = mock_coqui_instance
-            
-            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
-                with patch('tts_manager.torch') as mock_torch:
-                    mock_torch.cuda.is_available.return_value = False
-                    manager = TTSManager(tts_service_name="xttsv2", model_name="test_model", speaker_wav_path=speaker_wav)
-                    
-                    async def run_test():
-                        with patch('tts_manager.asyncio.to_thread') as mock_to_thread:
-                            mock_to_thread.return_value = None
-                            with patch('tts_manager.os.makedirs'):
-                                result = await manager.synthesize(self.test_text, self.output_path, speaker_wav_for_synthesis=speaker_wav)
-                                self.assertTrue(result)
-                    
-                    asyncio.run(run_test())
+        manager.service_name = "test_service_server"
+
+        with patch.object(logging, "getLogger") as mock_get_logger:
+            mock_log_instance = MagicMock()
+            mock_get_logger.return_value = mock_log_instance
+            with pytest.raises(RuntimeError, match=r"TTSManager \(test_service_server\) is not initialized."):
+                await manager.synthesize("test", "output.wav")
+            # Log message for this specific path
+            mock_log_instance.error.assert_any_call(
+                 f"Server TTSManager (test_service_server): Not initialized, cannot synthesize text: 'test'."
+            )
+
+    @patch("SERVER.src.tts_manager.os.makedirs")
+    @patch("SERVER.src.tts_manager.os.path.exists", return_value=False)
+    @patch("SERVER.src.tts_manager.asyncio.to_thread")
+    async def test_synthesize_output_file_missing(self, mock_to_thread, mock_exists, mock_makedirs, server_tts_manager_gtts_success):
+        manager, _, _ = server_tts_manager_gtts_success
+
+        with patch.object(logging, "getLogger") as mock_get_logger:
+            mock_log_instance = MagicMock()
+            mock_get_logger.return_value = mock_log_instance
+            result_ok = await manager.synthesize("test", "/server_tmp/output.mp3")
+            assert not result_ok
+            mock_log_instance.error.assert_any_call(
+                f"Server TTSManager: Synthesis completed but output file /server_tmp/output.mp3 is missing or empty."
+            )
+
+    @patch("SERVER.src.tts_manager.os.makedirs")
+    @patch("SERVER.src.tts_manager.os.path.exists")
+    @patch("SERVER.src.tts_manager.os.remove")
+    @patch("SERVER.src.tts_manager.asyncio.to_thread", side_effect=Exception("TTS lib error server"))
+    async def test_synthesize_handles_exception_and_cleans_up(self, mock_to_thread, mock_remove, mock_exists, mock_makedirs, server_tts_manager_gtts_success):
+        manager, _, _ = server_tts_manager_gtts_success
+        mock_exists.return_value = True
+
+        with patch.object(logging, "getLogger") as mock_get_logger:
+            mock_log_instance = MagicMock()
+            mock_get_logger.return_value = mock_log_instance
+            result_ok = await manager.synthesize("test", "/server_tmp/error_output.mp3")
+            assert not result_ok
+            mock_log_instance.error.assert_any_call(
+                f"Server TTSManager: Error during async TTS synthesis with gtts for text 'test...': TTS lib error server",
+                exc_info=True
+            )
+            mock_remove.assert_called_once_with("/server_tmp/error_output.mp3")
 
 
-class TestTTSManagerBlockingSynthesis(unittest.TestCase):
-    """Test blocking synthesis methods."""
-    
-    def test_gtts_synthesize_blocking(self):
-        """Test gTTS blocking synthesis method."""
-        with patch('tts_manager.gtts') as mock_gtts:
-            mock_gtts_instance = Mock()
-            mock_gtts.gTTS.return_value = mock_gtts_instance
-            mock_gtts.__bool__ = Mock(return_value=True)
-            
+class TestServerTTSManagerStaticMethods:
+    @patch("SERVER.src.tts_manager.gtts", MagicMock())
+    @patch("SERVER.src.tts_manager.CoquiTTS", MagicMock())
+    def test_list_services_both_available(self):
+        services = TTSManager.list_services()
+        assert "gtts" in services
+        assert "xttsv2" in services
+
+    @patch("SERVER.src.tts_manager.gtts", None)
+    @patch("SERVER.src.tts_manager.CoquiTTS", MagicMock())
+    def test_list_services_only_xttsv2_available(self):
+        services = TTSManager.list_services()
+        assert "gtts" not in services
+        assert "xttsv2" in services
+
+    def test_get_available_models(self):
+        assert TTSManager.get_available_models("gtts") == ["N/A (uses language codes)"]
+        assert TTSManager.get_available_models("xttsv2") == ["tts_models/multilingual/multi-dataset/xtts_v2"]
+        assert TTSManager.get_available_models("unknown_service") == []
+
+class TestServerTTSManagerPrivateHelpers:
+    @patch("SERVER.src.tts_manager.os.makedirs")
+    def test_get_or_download_model_blocking(self, mock_makedirs, monkeypatch):
+        monkeypatch.setattr("SERVER.src.tts_manager.gtts", MagicMock())
+        with patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
             manager = TTSManager(tts_service_name="gtts")
-            manager._gtts_synthesize_blocking("test text", "/tmp/output.wav", "en")
-            
-            mock_gtts.gTTS.assert_called_once_with(text="test text", lang="en")
-            mock_gtts_instance.save.assert_called_once_with("/tmp/output.wav")
-    
-    def test_xttsv2_synthesize_blocking_with_speaker_wav(self):
-        """Test XTTSv2 blocking synthesis wit
+
+        result_xtts = manager._get_or_download_model_blocking("xttsv2", "server_xtts_model")
+        assert result_xtts == "server_xtts_model"
+        mock_makedirs.assert_any_call(os.path.join(SERVER_TTS_MODELS_PATH, "xttsv2"), exist_ok=True)
+
+        result_gtts = manager._get_or_download_model_blocking("gtts", "en")
+        assert result_gtts is None # gTTS returns None here as per implementation
+        mock_makedirs.assert_any_call(os.path.join(SERVER_TTS_MODELS_PATH, "gtts"), exist_ok=True)
+
+    @patch("SERVER.src.tts_manager.gtts")
+    def test_gtts_synthesize_blocking(self, mock_gtts_lib, server_tts_manager_gtts_success):
+        manager, _, _ = server_tts_manager_gtts_success
+        mock_gtts_obj = MagicMock()
+        mock_gtts_lib.gTTS.return_value = mock_gtts_obj
+
+        manager._gtts_synthesize_blocking("server text", "/srv_path", "srv_lang")
+        mock_gtts_lib.gTTS.assert_called_once_with(text="server text", lang="srv_lang")
+        mock_gtts_obj.save.assert_called_once_with("/srv_path")
+
+    @patch("SERVER.src.tts_manager.os.path.exists", return_value=True)
+    def test_xttsv2_synthesize_blocking_with_speaker(self, mock_os_exists, server_tts_manager_xttsv2_success):
+        manager, _, mock_coqui_tts_instance, _ = server_tts_manager_xttsv2_success
+        manager.tts_instance = mock_coqui_tts_instance
+        manager.speaker_wav_path = "/srv_valid/speaker.wav"
+
+        manager._xttsv2_synthesize_blocking("srv text", "/srv_path", speaker_wav="/srv_explicit/speaker.wav", lang="srv_lang")
+        mock_coqui_tts_instance.tts_to_file.assert_called_with(text="srv text", speaker_wav="/srv_explicit/speaker.wav", language="srv_lang", file_path="/srv_path")
+
+        manager._xttsv2_synthesize_blocking("srv text2", "/srv_path2", speaker_wav=None, lang="srv_lang2")
+        mock_coqui_tts_instance.tts_to_file.assert_called_with(text="srv text2", speaker_wav="/srv_valid/speaker.wav", language="srv_lang2", file_path="/srv_path2")
+
+# Basic logging setup for pytest output if needed
+logging.basicConfig(level=logging.DEBUG)

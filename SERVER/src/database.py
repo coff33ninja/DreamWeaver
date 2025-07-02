@@ -5,6 +5,7 @@ import logging
 
 logger = logging.getLogger("dreamweaver_server")
 
+
 class Database:
     def __init__(self, db_path):
         """
@@ -25,7 +26,7 @@ class Database:
         Returns:
             sqlite3.Connection: The thread-local SQLite connection object.
         """
-        if not hasattr(self._thread_local, 'conn'):
+        if not hasattr(self._thread_local, "conn"):
             try:
                 # Each thread gets its own connection. No need for check_same_thread=False.
                 conn = sqlite3.connect(self.db_path)
@@ -34,11 +35,16 @@ class Database:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 self._thread_local.conn = conn
             except sqlite3.Error as e:
-                logger.error(f"Error connecting to database in thread {threading.get_ident()}: {e}", exc_info=True)
+                logger.error(
+                    f"Error connecting to database in thread {threading.get_ident()}: {e}",
+                    exc_info=True,
+                )
                 raise
         return self._thread_local.conn
 
-    def _execute_query(self, query, params=None, commit=False, fetchone=False, fetchall=False):
+    def _execute_query(
+        self, query, params=None, commit=False, fetchone=False, fetchall=False
+    ):
         """
         Executes a SQL query with optional parameters and supports committing transactions and fetching results.
 
@@ -64,7 +70,9 @@ class Database:
                 return cursor.fetchall()
             return cursor
         except sqlite3.Error as e:
-            logger.error(f"Database error: {e}\nQuery: {query}\nParams: {params}", exc_info=True)
+            logger.error(
+                f"Database error: {e}\nQuery: {query}\nParams: {params}", exc_info=True
+            )
             return None
 
     def _ensure_column(self, table_name, column_name, column_definition):
@@ -78,20 +86,34 @@ class Database:
         """
         try:
             # Check if column exists (more robust way for SQLite)
-            cursor = self._execute_query(f"PRAGMA table_info({table_name});", fetchall=True)
-            if cursor is None: # Error in _execute_query
-                logger.warning(f"Database: Could not get table_info for {table_name}. Column '{column_name}' check skipped.")
+            cursor = self._execute_query(
+                f"PRAGMA table_info({table_name});", fetchall=True
+            )
+            if cursor is None:  # Error in _execute_query
+                logger.warning(
+                    f"Database: Could not get table_info for {table_name}. Column '{column_name}' check skipped."
+                )
                 return
 
-            columns = [row['name'] for row in cursor]
+            columns = [row["name"] for row in cursor]
             if column_name not in columns:
-                self._execute_query(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition};", commit=True)
-                logger.info(f"Database: Added '{column_name}' column to '{table_name}' table.")
+                self._execute_query(
+                    f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition};",
+                    commit=True,
+                )
+                logger.info(
+                    f"Database: Added '{column_name}' column to '{table_name}' table."
+                )
             # else: # For debugging
             #    logger.debug(f"Database: Column '{column_name}' already exists in '{table_name}'.")
 
-        except sqlite3.OperationalError as e: # Should be caught by _execute_query mostly
-            logger.error(f"Database: Error ensuring column '{column_name}' in '{table_name}': {e}", exc_info=True)
+        except (
+            sqlite3.OperationalError
+        ) as e:  # Should be caught by _execute_query mostly
+            logger.error(
+                f"Database: Error ensuring column '{column_name}' in '{table_name}': {e}",
+                exc_info=True,
+            )
 
     def _ensure_index(self, index_name, table_name, columns):
         """
@@ -105,11 +127,18 @@ class Database:
         # This is a simplified check. A more robust way would be to query PRAGMA index_list and PRAGMA index_info.
         # For simplicity, we use "CREATE INDEX IF NOT EXISTS".
         try:
-            self._execute_query(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns});", commit=True)
-            logger.info(f"Database: Ensured index '{index_name}' on '{table_name}({columns})'.")
+            self._execute_query(
+                f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({columns});",
+                commit=True,
+            )
+            logger.info(
+                f"Database: Ensured index '{index_name}' on '{table_name}({columns})'."
+            )
         except sqlite3.Error as e:
-            logger.error(f"Database: Error ensuring index '{index_name}' on '{table_name}': {e}", exc_info=True)
-
+            logger.error(
+                f"Database: Error ensuring index '{index_name}' on '{table_name}': {e}",
+                exc_info=True,
+            )
 
     def _ensure_schema(self):
         """
@@ -117,7 +146,8 @@ class Database:
 
         This includes creating the `characters`, `story_log`, `training_data`, and `client_tokens` tables with appropriate fields and constraints, and adding any missing columns to support new features or schema changes.
         """
-        self._execute_query("""
+        self._execute_query(
+            """
             CREATE TABLE IF NOT EXISTS characters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -126,27 +156,31 @@ class Database:
                 Actor_id TEXT NOT NULL UNIQUE,
                 llm_model TEXT -- Added for character-specific LLM model choice
             )
-        """)
+        """
+        )
         self._ensure_column("characters", "llm_model", "TEXT")
 
-
-        self._execute_query("""
+        self._execute_query(
+            """
             CREATE TABLE IF NOT EXISTS story_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 speaker TEXT NOT NULL, text TEXT NOT NULL,
                 narrator_audio_path TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         self._ensure_column("story_log", "narrator_audio_path", "TEXT")
 
-        self._execute_query("""
+        self._execute_query(
+            """
             CREATE TABLE IF NOT EXISTS training_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 Actor_id TEXT NOT NULL, input_text TEXT NOT NULL, output_text TEXT NOT NULL,
                 FOREIGN KEY (Actor_id) REFERENCES characters(Actor_id)
             )
-        """)
+        """
+        )
 
         # Define new client statuses
         # 'Registered': Token created, client not yet connected.
@@ -156,7 +190,8 @@ class Database:
         # 'Error_API': Client heartbeating, but its API is not responding to server checks.
         # 'Error_Unreachable': Client cannot be reached at all (failed registration, multiple failed heartbeats).
         # 'Deactivated': Admin manually deactivated this client slot.
-        self._execute_query("""
+        self._execute_query(
+            """
             CREATE TABLE IF NOT EXISTS client_tokens (
                 Actor_id TEXT PRIMARY KEY,
                 token TEXT NOT NULL UNIQUE,
@@ -168,18 +203,34 @@ class Database:
                 session_token_expiry DATETIME,  -- Expiry for the session token
                 FOREIGN KEY (Actor_id) REFERENCES characters(Actor_id)
             )
-        """)
+        """
+        )
         self._ensure_column("client_tokens", "client_port", "INTEGER")
-        self._ensure_column("client_tokens", "status", "TEXT DEFAULT 'Registered'") # Ensure default is set if column added
+        self._ensure_column(
+            "client_tokens", "status", "TEXT DEFAULT 'Registered'"
+        )  # Ensure default is set if column added
         self._ensure_column("client_tokens", "session_token", "TEXT UNIQUE")
         self._ensure_column("client_tokens", "session_token_expiry", "DATETIME")
 
         # Add index for performance on client status lookups
-        self._ensure_index("idx_client_tokens_status_last_seen", "client_tokens", "status, last_seen")
+        self._ensure_index(
+            "idx_client_tokens_status_last_seen", "client_tokens", "status, last_seen"
+        )
 
         self._get_conn().commit()
 
-    def save_character(self, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model=None):
+    def save_character(
+        self,
+        name,
+        personality,
+        goals,
+        backstory,
+        tts,
+        tts_model,
+        reference_audio_filename,
+        Actor_id,
+        llm_model=None,
+    ):
         """
         Insert a new character or update an existing character record identified by Actor_id with the provided attributes.
 
@@ -193,7 +244,21 @@ class Database:
                 tts=excluded.tts, tts_model=excluded.tts_model, reference_audio_filename=excluded.reference_audio_filename,
                 llm_model=excluded.llm_model
         """
-        self._execute_query(query, (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model), commit=True)
+        self._execute_query(
+            query,
+            (
+                name,
+                personality,
+                goals,
+                backstory,
+                tts,
+                tts_model,
+                reference_audio_filename,
+                Actor_id,
+                llm_model,
+            ),
+            commit=True,
+        )
         logger.info(f"Character '{name}' for Actor_id '{Actor_id}' saved/updated.")
 
     def get_character(self, Actor_id):
@@ -204,7 +269,11 @@ class Database:
         Returns:
             dict: A dictionary containing the character's details if found, otherwise None.
         """
-        row = self._execute_query("SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model FROM characters WHERE Actor_id=?", (Actor_id,), fetchone=True)
+        row = self._execute_query(
+            "SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model FROM characters WHERE Actor_id=?",
+            (Actor_id,),
+            fetchone=True,
+        )
         return dict(row) if row else None
 
     def get_characters_by_ids(self, Actor_ids: list[str]) -> dict[str, dict]:
@@ -216,18 +285,26 @@ class Database:
         """
         if not Actor_ids:
             return {}
-        placeholders = ','.join('?' for _ in Actor_ids)
+        placeholders = ",".join("?" for _ in Actor_ids)
         query = f"SELECT id, name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model FROM characters WHERE Actor_id IN ({placeholders})"
         rows = self._execute_query(query, Actor_ids, fetchall=True)
-        return {row['Actor_id']: dict(row) for row in rows} if rows else {}
-
+        return {row["Actor_id"]: dict(row) for row in rows} if rows else {}
 
     def save_story_entry(self, speaker, text, narrator_audio_path=None):
         """
         Insert a new entry into the story log with the specified speaker, text, optional narrator audio path, and the current UTC timestamp.
         """
         query = "INSERT INTO story_log (speaker, text, narrator_audio_path, timestamp) VALUES (?, ?, ?, ?)"
-        self._execute_query(query, (speaker, text, narrator_audio_path, datetime.now(timezone.utc).isoformat()), commit=True)
+        self._execute_query(
+            query,
+            (
+                speaker,
+                text,
+                narrator_audio_path,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+            commit=True,
+        )
 
     def save_story(self, narration_text, character_texts, narrator_audio_path=None):
         """
@@ -250,7 +327,10 @@ class Database:
         Returns:
             List[dict]: A list of dictionaries, each containing the ID, speaker, text, timestamp, and narrator audio path for a story log entry, ordered by timestamp.
         """
-        rows = self._execute_query("SELECT id, speaker, text, timestamp, narrator_audio_path FROM story_log ORDER BY timestamp ASC", fetchall=True)
+        rows = self._execute_query(
+            "SELECT id, speaker, text, timestamp, narrator_audio_path FROM story_log ORDER BY timestamp ASC",
+            fetchall=True,
+        )
         return [dict(row) for row in rows] if rows else []
 
     def save_training_data(self, dataset, Actor_id):
@@ -262,7 +342,9 @@ class Database:
             Actor_id (str): The unique identifier of the actor to associate with the training data.
         """
         query = "INSERT INTO training_data (Actor_id, input_text, output_text) VALUES (?, ?, ?)"
-        self._execute_query(query, (Actor_id, dataset["input"], dataset["output"]), commit=True)
+        self._execute_query(
+            query, (Actor_id, dataset["input"], dataset["output"]), commit=True
+        )
 
     def get_training_data_for_Actor(self, Actor_id):
         """
@@ -274,8 +356,16 @@ class Database:
         Returns:
             List[dict]: A list of dictionaries, each containing 'input' and 'output' keys representing the input and output text pairs for the Actor. Returns an empty list if no data is found.
         """
-        rows = self._execute_query("SELECT input_text, output_text FROM training_data WHERE Actor_id=?", (Actor_id,), fetchall=True)
-        return [{"input": row["input_text"], "output": row["output_text"]} for row in rows] if rows else []
+        rows = self._execute_query(
+            "SELECT input_text, output_text FROM training_data WHERE Actor_id=?",
+            (Actor_id,),
+            fetchall=True,
+        )
+        return (
+            [{"input": row["input_text"], "output": row["output_text"]} for row in rows]
+            if rows
+            else []
+        )
 
     def save_client_token(self, Actor_id, token):
         """
@@ -285,14 +375,27 @@ class Database:
         """
         # Ensure character exists or create a placeholder if it's Actor1
         if Actor_id == "Actor1" and not self.get_character("Actor1"):
-            self.save_character(name="ServerChar", personality="Host", goals="Manage story", backstory="Server's own character",
-                                tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, Actor_id="Actor1", llm_model=None)
+            self.save_character(
+                name="ServerChar",
+                personality="Host",
+                goals="Manage story",
+                backstory="Server's own character",
+                tts="piper",
+                tts_model="en_US-ryan-high",
+                reference_audio_filename=None,
+                Actor_id="Actor1",
+                llm_model=None,
+            )
 
         query = """
             INSERT INTO client_tokens (Actor_id, token, status, last_seen) VALUES (?, ?, 'Registered', ?)
             ON CONFLICT(Actor_id) DO UPDATE SET token=excluded.token, status='Registered', last_seen=excluded.last_seen
         """
-        self._execute_query(query, (Actor_id, token, datetime.now(timezone.utc).isoformat()), commit=True)
+        self._execute_query(
+            query,
+            (Actor_id, token, datetime.now(timezone.utc).isoformat()),
+            commit=True,
+        )
         logger.info(f"Token for '{Actor_id}' saved. Status: Registered.")
 
     def get_client_token_details(self, Actor_id):
@@ -314,22 +417,32 @@ class Database:
             str or None: The primary token if found, otherwise None.
         """
         details = self.get_client_token_details(Actor_id)
-        return details['token'] if details else None
+        return details["token"] if details else None
 
-    def update_client_session_token(self, Actor_id: str, session_token: str | None, session_token_expiry: datetime | None):
+    def update_client_session_token(
+        self,
+        Actor_id: str,
+        session_token: str | None,
+        session_token_expiry: datetime | None,
+    ):
         """
         Updates the session token and its expiry for a given Actor_id.
         Setting session_token to None effectively clears it.
         """
         query = "UPDATE client_tokens SET session_token = ?, session_token_expiry = ? WHERE Actor_id = ?"
-        self._execute_query(query, (session_token, session_token_expiry, Actor_id), commit=True)
+        self._execute_query(
+            query, (session_token, session_token_expiry, Actor_id), commit=True
+        )
         if session_token:
-            logger.info(f"Updated session token for Actor_id '{Actor_id}'. Expiry: {session_token_expiry}")
+            logger.info(
+                f"Updated session token for Actor_id '{Actor_id}'. Expiry: {session_token_expiry}"
+            )
         else:
             logger.info(f"Cleared session token for Actor_id '{Actor_id}'.")
 
-
-    def get_token(self, Actor_id): #DEPRECATED in favor of get_primary_token or get_client_token_details
+    def get_token(
+        self, Actor_id
+    ):  # DEPRECATED in favor of get_primary_token or get_client_token_details
         """
         Retrieve the token string associated with the specified Actor ID.
 
@@ -337,7 +450,7 @@ class Database:
             str or None: The token if found, otherwise None.
         """
         details = self.get_client_token_details(Actor_id)
-        return details['token'] if details else None
+        return details["token"] if details else None
 
     def register_client(self, Actor_id, ip_address, client_port):
         """
@@ -355,8 +468,12 @@ class Database:
             SET ip_address = ?, client_port = ?, last_seen = ?, status = 'Online_Heartbeat'
             WHERE Actor_id = ?
         """
-        self._execute_query(query, (ip_address, client_port, timestamp_utc_iso, Actor_id), commit=True)
-        logger.info(f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
+        self._execute_query(
+            query, (ip_address, client_port, timestamp_utc_iso, Actor_id), commit=True
+        )
+        logger.info(
+            f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat."
+        )
 
     def update_client_status(self, Actor_id, new_status, last_seen_iso=None):
         """
@@ -374,7 +491,6 @@ class Database:
         self._execute_query(query, (new_status, last_seen_iso, Actor_id), commit=True)
         # logger.debug(f"Status for {Actor_id} updated to {new_status}.") # Use debug for potentially verbose logs
 
-
     def get_clients_for_story_progression(self):
         """
         Retrieve a list of clients that are currently responsive and eligible for story progression, excluding "Actor1".
@@ -384,7 +500,9 @@ class Database:
         """
         # Define "recent" more dynamically, e.g., 2.5 * heartbeat interval (assuming 60s)
         # This could be passed from config or ClientManager if it knows the heartbeat interval
-        recent_threshold = (datetime.now(timezone.utc) - timedelta(seconds=150)).isoformat()
+        recent_threshold = (
+            datetime.now(timezone.utc) - timedelta(seconds=150)
+        ).isoformat()
         query = """
             SELECT Actor_id, ip_address, client_port
             FROM client_tokens
@@ -408,7 +526,7 @@ class Database:
         """
         Closes the current thread's SQLite database connection if it exists.
         """
-        if hasattr(self._thread_local, 'conn'):
+        if hasattr(self._thread_local, "conn"):
             self._thread_local.conn.close()
             del self._thread_local.conn
 
