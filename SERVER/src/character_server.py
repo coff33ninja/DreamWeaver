@@ -1,6 +1,10 @@
 from .llm_engine import LLMEngine
 from .tts_manager import TTSManager
-from .config import REFERENCE_VOICES_AUDIO_PATH, CHARACTERS_AUDIO_PATH
+from .config import (
+    REFERENCE_VOICES_AUDIO_PATH,
+    CHARACTERS_AUDIO_PATH,
+    ACTOR1_PYGAME_AUDIO_ENABLED,  # Import new config
+)
 import pygame
 import uuid
 import os
@@ -137,17 +141,22 @@ class CharacterServer:  # This is for Actor1, the server's own character
         # This is unusual for a server. If audio playback is for the narrator,
         # consider streaming audio to the Gradio UI instead.
         # If for local testing only, this could be made optional via config.
-        if not pygame.mixer.get_init():
-            try:
-                pygame.mixer.init()
-                logger.info(
-                    f"CharacterServer ({self.character_Actor_id}): Pygame mixer initialized for audio playback. (Note: Unusual for server)"
-                )
-            except pygame.error as e_pygame:
-                logger.warning(
-                    f"CharacterServer ({self.character_Actor_id}): Pygame mixer could not be initialized: {e_pygame}. Audio playback will fail.",
-                    exc_info=True,
-                )
+        if ACTOR1_PYGAME_AUDIO_ENABLED:
+            if not pygame.mixer.get_init():
+                try:
+                    pygame.mixer.init()
+                    logger.info(
+                        f"CharacterServer ({self.character_Actor_id}): Pygame mixer initialized for Actor1 audio playback because ACTOR1_PYGAME_AUDIO_ENABLED is True."
+                    )
+                except pygame.error as e_pygame:
+                    logger.warning(
+                        f"CharacterServer ({self.character_Actor_id}): Pygame mixer could not be initialized for Actor1: {e_pygame}. Audio playback will fail despite being enabled.",
+                        exc_info=True,
+                    )
+        else:
+            logger.info(
+                f"CharacterServer ({self.character_Actor_id}): Pygame mixer for Actor1 audio playback is DISABLED by configuration (ACTOR1_PYGAME_AUDIO_ENABLED=False)."
+            )
         logger.info(
             f"CharacterServer ({self.character_Actor_id}): Asynchronous initialization complete."
         )
@@ -290,11 +299,7 @@ class CharacterServer:  # This is for Actor1, the server's own character
             logger.info(
                 f"CharacterServer ({char_name}): Audio successfully synthesized to {final_audio_path}"
             )
-            # JULES: Pygame audio playback.
-            # As noted in async_init, server-side audio playback via pygame is unusual.
-            # This might be for local testing. For remote users (narrator),
-            # audio should ideally be streamed to the UI.
-            if pygame.mixer.get_init():
+            if ACTOR1_PYGAME_AUDIO_ENABLED and pygame.mixer.get_init():
                 try:
 
                     def play_sound_blocking():
@@ -306,20 +311,24 @@ class CharacterServer:  # This is for Actor1, the server's own character
                             pygame.time.Clock().tick(10)
 
                     logger.debug(
-                        f"CharacterServer ({char_name}): Playing audio {final_audio_path} (via Pygame)"
+                        f"CharacterServer ({char_name}): Playing audio {final_audio_path} for Actor1 (Pygame)."
                     )
                     await asyncio.to_thread(play_sound_blocking)
                     logger.info(
-                        f"CharacterServer ({char_name}): Finished playing audio {final_audio_path} (via Pygame)"
+                        f"CharacterServer ({char_name}): Finished playing audio {final_audio_path} for Actor1 (Pygame)."
                     )
                 except Exception as e_play:
                     logger.error(
-                        f"CharacterServer ({char_name}): Error playing audio {final_audio_path} with Pygame: {e_play}",
+                        f"CharacterServer ({char_name}): Error playing audio {final_audio_path} with Pygame for Actor1: {e_play}",
                         exc_info=True,
                     )
-            else:
+            elif ACTOR1_PYGAME_AUDIO_ENABLED and not pygame.mixer.get_init():
                 logger.warning(
-                    f"CharacterServer ({char_name}): Pygame mixer not initialized. Cannot play audio {final_audio_path}."
+                    f"CharacterServer ({char_name}): Pygame audio for Actor1 is ENABLED but mixer not initialized. Cannot play audio {final_audio_path}."
+                )
+            else: # Pygame audio is disabled
+                logger.info(
+                    f"CharacterServer ({char_name}): Pygame audio for Actor1 is DISABLED. Skipping playback of {final_audio_path}."
                 )
         else:
             logger.error(

@@ -49,6 +49,7 @@ class CharacterClient:
         self.local_reference_audio_path: Optional[str] = None
         self.session_token: Optional[str] = None
         self.session_token_expiry: Optional[datetime] = None
+        self.is_registered: bool = False # New flag for registration status
 
         # WebSocket related attributes
         self.websocket_url: Optional[str] = None
@@ -105,18 +106,24 @@ class CharacterClient:
         logger.info(
             f"CharacterClient ({self.Actor_id}): Starting asynchronous initialization..."
         )
-        registered = await asyncio.to_thread(_register)
-        if not registered:
-            logger.critical(
-                f"CharacterClient ({self.Actor_id}): Failed to register with server after retries. Functionality may be severely impaired."
-            )
-        else:
-            logger.info(
-                f"CharacterClient ({self.Actor_id}): Successfully registered with server."
-            )
+        self.is_registered = await asyncio.to_thread(_register)
 
+        if not self.is_registered:
+            logger.critical(
+                f"CharacterClient ({self.Actor_id}): Failed to register with server after retries. Halting further initialization. Client will not be fully functional."
+            )
+            # Potentially set self.llm and self.tts to None or uninitialized state explicitly
+            # or raise an exception to be caught by the main.py to prevent uvicorn start.
+            # For now, returning early prevents further setup.
+            return  # Stop further initialization if registration fails
+
+        logger.info(
+            f"CharacterClient ({self.Actor_id}): Successfully registered with server."
+        )
+
+        # Proceed with initialization only if registered
         self.character = await asyncio.to_thread(_fetch)
-        if not self.character:
+        if not self.character: # Still attempt to use defaults if traits fetch fails but registration was OK
             logger.critical(
                 f"CharacterClient ({self.Actor_id}): Failed to fetch character traits. Using hardcoded defaults."
             )
@@ -155,9 +162,9 @@ class CharacterClient:
             f"CharacterClient for {self.Actor_id} base asynchronous initialization complete. LLM Ready: {llm_ready_status}, TTS Ready: {tts_ready_status}."
         )
 
-        if registered:  # Only attempt handshake if registration was successful
-            await self._perform_handshake_async()
-            if (
+        # Handshake and WebSocket connection only if registered
+        await self._perform_handshake_async()
+        if (
                 self.session_token
             ):  # If handshake gave us a session token, connect to WebSocket
                 # Construct WebSocket URL from server_url (http/https -> ws/wss)
@@ -951,7 +958,9 @@ class CharacterClient:
             text_to_synthesize (str): The text to convert to speech.
 
         Returns:
-            str | None: The file path to the generated audio if successful, or None if TTS is not initialized.
+            str | None: The file path to the generated audio if successful.
+        Raises:
+            RuntimeError: If the TTSManager is not initialized.
         """
         char_name = (
             self.character.get("name", self.Actor_id)
@@ -962,8 +971,9 @@ class CharacterClient:
             logger.error(
                 f"CharacterClient ({self.Actor_id}): TTS not initialized. Cannot synthesize audio for text: '{text_to_synthesize[:50]}...'."
             )
-            return None
-        if not text_to_synthesize:  # Added check for empty text
+            raise RuntimeError(f"TTSManager for CharacterClient {self.Actor_id} is not initialized.")
+
+        if not text_to_synthesize:
             logger.warning(
                 f"CharacterClient ({self.Actor_id}): Text is empty for audio synthesis. Skipping."
             )

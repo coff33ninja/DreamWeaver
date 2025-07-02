@@ -14,12 +14,44 @@ MockAutoTokenizer = MagicMock()
 MockBitsAndBytesConfig = MagicMock()
 MockPrepareModelForKbitTraining = MagicMock()
 MockLoraConfig = MagicMock()
-MockGetPeftModel = MagicMock() # Used if adapter doesn't exist
+MockGetPeftModel = MagicMock()
 MockDataset = MagicMock()
 MockTrainer = MagicMock()
 MockTrainingArguments = MagicMock()
 MockTorch = MagicMock()
-MockDataCollator = MagicMock()
+MockDataCollatorForLanguageModeling = MagicMock()
+
+
+@pytest.fixture(autouse=True) # Apply to all tests in this module
+def reset_global_mocks():
+    """Resets global mocks before each test."""
+    MockAutoModelForCausalLM.from_pretrained.reset_mock()
+    MockAutoTokenizer.from_pretrained.reset_mock()
+    MockBitsAndBytesConfig.reset_mock()
+    MockPrepareModelForKbitTraining.reset_mock()
+    MockPeftModel.from_pretrained.reset_mock()
+    MockPeftModel.save_pretrained.reset_mock() # Also reset save_pretrained on the class
+    MockGetPeftModel.reset_mock()
+    MockLoraConfig.reset_mock()
+    MockDataCollatorForLanguageModeling.reset_mock()
+    MockTrainer.reset_mock()
+    MockTrainingArguments.reset_mock()
+    MockDataset.from_list.reset_mock()
+    MockTorch.cuda.is_available.return_value = False
+    MockTorch.cuda.is_bf16_supported.return_value = False
+
+    # Configure return value for get_peft_model to be a mock that has methods like eval, train, save_pretrained
+    peft_model_instance = MagicMock(spec=MockPeftModel)
+    peft_model_instance.save_pretrained = MagicMock()
+    peft_model_instance.eval = MagicMock()
+    peft_model_instance.train = MagicMock()
+    peft_model_instance.device = "cpu" # Mock device
+    MockGetPeftModel.return_value = peft_model_instance
+
+    # Configure AutoModelForCausalLM.from_pretrained to return a mock with necessary attributes
+    base_model_instance = MagicMock()
+    base_model_instance.device = "cpu" # Mock device
+    MockAutoModelForCausalLM.from_pretrained.return_value = base_model_instance
 
 
 @pytest.fixture
@@ -36,49 +68,28 @@ def mock_server_dependencies(monkeypatch):
     monkeypatch.setattr("SERVER.src.llm_engine.Dataset", MockDataset)
     monkeypatch.setattr("SERVER.src.llm_engine.Trainer", MockTrainer)
     monkeypatch.setattr("SERVER.src.llm_engine.TrainingArguments", MockTrainingArguments)
-    monkeypatch.setattr("SERVER.src.llm_engine.DataCollatorForLanguageModeling", MockDataCollator)
-
-
-    MockAutoModelForCausalLM.from_pretrained.reset_mock()
-    MockAutoTokenizer.from_pretrained.reset_mock()
-    MockBitsAndBytesConfig.reset_mock()
-    MockPrepareModelForKbitTraining.reset_mock()
-    MockPeftModel.from_pretrained.reset_mock()
-    MockGetPeftModel.reset_mock()
-    MockLoraConfig.reset_mock()
-    MockTorch.cuda.is_available.return_value = False
-    MockTorch.cuda.is_bf16_supported.return_value = False
-    MockGetPeftModel.return_value = MagicMock() # Ensure get_peft_model returns a mock model
+    monkeypatch.setattr("SERVER.src.llm_engine.DataCollatorForLanguageModeling", MockDataCollatorForLanguageModeling)
 
 
 @pytest.fixture
 def mock_db():
     """Fixture for a mocked database object."""
     db = MagicMock()
-    db.get_training_data_for_Actor.return_value = [] # Default to no training data
+    db.get_training_data_for_Actor.return_value = []
     return db
 
 @pytest.fixture
-async def server_llm_engine_no_init_load(mock_server_dependencies, mock_db, event_loop):
-    """
-    Provides a server LLMEngine instance where _load_model is NOT called automatically.
-    asyncio.get_event_loop().run_in_executor is patched.
-    """
-    with patch.object(LLMEngine, "_load_model", MagicMock()) as mock_load_method_on_instance:
-    # with patch("asyncio.get_event_loop") as mock_get_loop:
-        # mock_event_loop = MagicMock()
-        # mock_event_loop.run_in_executor = MagicMock() # Prevent _load_model from running
-        # mock_get_loop.return_value = mock_event_loop
+def server_llm_engine_no_init_load(mock_server_dependencies, mock_db):
+    with patch.object(LLMEngine, "_load_model", MagicMock()):
         engine = LLMEngine(model_name="server_test_model", db=mock_db)
-        engine.is_initialized = False # Explicitly set for clarity
+        engine.is_initialized = False
     return engine
 
 
 class TestServerLLMEngineInitialization:
 
-    def test_init_paths_and_defaults(self, mock_server_dependencies, server_llm_engine_no_init_load, mock_db):
-        engine = server_llm_engine_no_init_load # _load_model is mocked out
-
+    def test_init_paths_and_defaults(self, server_llm_engine_no_init_load, mock_db):
+        engine = server_llm_engine_no_init_load
         assert engine.db == mock_db
         assert engine.model_name == "server_test_model"
         sane_model_name = "server_test_model".replace("/", "_")
@@ -86,25 +97,18 @@ class TestServerLLMEngineInitialization:
         assert engine.adapter_path == expected_adapter_path
         assert engine.base_model_cache_path == os.path.join(MODELS_PATH, "llm_base_models")
         assert not engine.is_initialized
-        # Check that _load_model was patched out correctly by the fixture for this instance
         assert isinstance(engine._load_model, MagicMock)
-
 
     @patch("SERVER.src.llm_engine.os.makedirs")
     def test_init_creates_directories(self, mock_makedirs, mock_server_dependencies, mock_db):
-        # Instantiate LLMEngine directly to test its __init__'s os.makedirs calls
-        # Patch run_in_executor to prevent _load_model from actually running and interfering
         with patch("asyncio.get_event_loop") as mock_get_loop:
             mock_event_loop = MagicMock()
             mock_event_loop.run_in_executor = MagicMock()
             mock_get_loop.return_value = mock_event_loop
-
             engine = LLMEngine(model_name="dir_test_model", db=mock_db)
-
             sane_model_name = "dir_test_model".replace("/", "_")
             expected_adapter_path = os.path.join(ADAPTERS_PATH, sane_model_name, "Actor1")
             expected_base_model_cache_path = os.path.join(MODELS_PATH, "llm_base_models")
-
             calls = [
                 patch.call(expected_adapter_path, exist_ok=True),
                 patch.call(expected_base_model_cache_path, exist_ok=True),
@@ -112,102 +116,76 @@ class TestServerLLMEngineInitialization:
             mock_makedirs.assert_has_calls(calls, any_order=True)
             mock_event_loop.run_in_executor.assert_called_once_with(None, engine._load_model)
 
-
-    def test_load_model_success_no_cuda_no_adapter_creates_peft(self, mock_server_dependencies, server_llm_engine_no_init_load):
+    def test_load_model_no_cuda_no_adapter_creates_peft(self, server_llm_engine_no_init_load):
         engine = server_llm_engine_no_init_load
-        # Reset the _load_model mock to be a real method for this test, but keep dependencies mocked
-        engine._load_model = LLMEngine._load_model.__get__(engine, LLMEngine) # Unpatch for this instance
-
+        engine._load_model = LLMEngine._load_model.__get__(engine, LLMEngine)
         MockTorch.cuda.is_available.return_value = False
-        
-        mock_tokenizer_instance = MagicMock()
-        mock_tokenizer_instance.pad_token = None
-        mock_tokenizer_instance.eos_token = "[EOS]"
+        mock_tokenizer_instance = MagicMock(pad_token=None, eos_token="[EOS]")
         MockAutoTokenizer.from_pretrained.return_value = mock_tokenizer_instance
-        
-        mock_model_instance = MagicMock()
-        MockAutoModelForCausalLM.from_pretrained.return_value = mock_model_instance
-        
-        mock_peft_model_after_init = MockGetPeftModel.return_value # what get_peft_model returns
-        
-        with patch("SERVER.src.llm_engine.os.path.exists", return_value=False): # No adapter config
+        mock_model_instance = MockAutoModelForCausalLM.from_pretrained.return_value # Already set by fixture
+
+        with patch("SERVER.src.llm_engine.os.path.exists", return_value=False): # No adapter
             engine._load_model()
 
         MockAutoTokenizer.from_pretrained.assert_called_once_with(engine.model_name, trust_remote_code=True, cache_dir=engine.base_model_cache_path)
         assert mock_tokenizer_instance.pad_token == "[EOS]"
         MockAutoModelForCausalLM.from_pretrained.assert_called_once_with(
-            engine.model_name,
-            quantization_config=None,
-            device_map="auto",
-            trust_remote_code=True,
-            cache_dir=engine.base_model_cache_path
+            engine.model_name, quantization_config=None, device_map="auto",
+            trust_remote_code=True, cache_dir=engine.base_model_cache_path
         )
         MockPrepareModelForKbitTraining.assert_not_called()
-        MockPeftModel.from_pretrained.assert_not_called() # No adapter exists
-        MockLoraConfig.assert_called_once() # Should init new LoraConfig
+        MockPeftModel.from_pretrained.assert_not_called()
+        MockLoraConfig.assert_called_once()
         MockGetPeftModel.assert_called_once_with(mock_model_instance, MockLoraConfig.return_value)
-        
-        mock_peft_model_after_init.eval.assert_called_once()
+        MockGetPeftModel.return_value.eval.assert_called_once()
         assert engine.is_initialized
-        assert engine.model == mock_peft_model_after_init # Model should be the one from get_peft_model
+        assert engine.model == MockGetPeftModel.return_value
         assert engine.tokenizer == mock_tokenizer_instance
 
-
-    def test_load_model_success_with_cuda_and_existing_adapter(self, mock_server_dependencies, server_llm_engine_no_init_load):
+    def test_load_model_with_cuda_and_adapter(self, server_llm_engine_no_init_load):
         engine = server_llm_engine_no_init_load
-        engine._load_model = LLMEngine._load_model.__get__(engine, LLMEngine) # Unpatch
-
+        engine._load_model = LLMEngine._load_model.__get__(engine, LLMEngine)
         MockTorch.cuda.is_available.return_value = True
         MockTorch.cuda.is_bf16_supported.return_value = True
-
         mock_tokenizer_instance = MagicMock()
         MockAutoTokenizer.from_pretrained.return_value = mock_tokenizer_instance
-        
-        mock_base_model_instance = MagicMock()
-        MockAutoModelForCausalLM.from_pretrained.return_value = mock_base_model_instance
-        
-        mock_loaded_peft_model_instance = MagicMock() # This is what PeftModel.from_pretrained returns
-        MockPeftModel.from_pretrained.return_value = mock_loaded_peft_model_instance
-        
-        MockPrepareModelForKbitTraining.return_value = mock_base_model_instance # Simulate return
+        mock_base_model_instance = MockAutoModelForCausalLM.from_pretrained.return_value
 
-        with patch("SERVER.src.llm_engine.os.path.exists", return_value=True): # Adapter config exists
+        mock_loaded_peft_model_instance = MagicMock(spec=MockPeftModel)
+        mock_loaded_peft_model_instance.eval = MagicMock()
+        MockPeftModel.from_pretrained.return_value = mock_loaded_peft_model_instance
+        MockPrepareModelForKbitTraining.return_value = mock_base_model_instance
+
+        with patch("SERVER.src.llm_engine.os.path.exists", return_value=True): # Adapter exists
             engine._load_model()
 
         MockBitsAndBytesConfig.assert_called_once_with(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=MockTorch.bfloat16,
-            bnb_4bit_use_double_quant=False,
+            load_in_4bit=True, bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=MockTorch.bfloat16, bnb_4bit_use_double_quant=False,
         )
-        MockAutoModelForCausalLM.from_pretrained.assert_called_once() # Args checked by bnb_config mock
         MockPrepareModelForKbitTraining.assert_called_once_with(mock_base_model_instance)
         MockPeftModel.from_pretrained.assert_called_once_with(mock_base_model_instance, engine.adapter_path)
-        MockGetPeftModel.assert_not_called() # Should not init new Lora if adapter loaded
-
+        MockGetPeftModel.assert_not_called()
         mock_loaded_peft_model_instance.eval.assert_called_once()
         assert engine.is_initialized
         assert engine.model == mock_loaded_peft_model_instance
 
-
 @pytest.mark.asyncio
 class TestServerLLMEngineGenerate:
-    async def test_generate_success(self, mock_server_dependencies, server_llm_engine_no_init_load):
+    async def test_generate_success(self, server_llm_engine_no_init_load):
         engine = server_llm_engine_no_init_load
-        engine.is_initialized = True # Manually set as _load_model is mocked by fixture
-        engine.model = MagicMock()
+        engine.is_initialized = True
+        engine.model = MagicMock(device="cpu") # Mock model with device
         engine.tokenizer = MagicMock()
-
         mock_inputs = {"input_ids": MagicMock(shape=(-1, 5))}
         engine.tokenizer.return_value = mock_inputs
-        engine.tokenizer.model_max_length = 1024 # Example value
+        mock_inputs.to = MagicMock(return_value=mock_inputs) # Mock .to(device)
+        engine.tokenizer.model_max_length = 1024
         engine.tokenizer.pad_token_id = 1
         engine.tokenizer.eos_token_id = 2
-
         mock_output_sequences = MagicMock()
         engine.model.generate.return_value = mock_output_sequences
         engine.tokenizer.decode.return_value = "Server generated text"
-
         prompt = "Server prompt"
         max_tokens = 60
 
@@ -218,20 +196,22 @@ class TestServerLLMEngineGenerate:
 
         assert response == "Server generated text"
         engine.tokenizer.assert_called_once_with(prompt, return_tensors="pt", padding=True, truncation=True, max_length=1024 - max_tokens - 5)
+        mock_inputs.to.assert_called_once_with(engine.model.device)
         engine.model.generate.assert_called_once()
         engine.tokenizer.decode.assert_called_once()
 
     async def test_generate_not_initialized(self, server_llm_engine_no_init_load):
-        engine = server_llm_engine_no_init_load # is_initialized = False
+        engine = server_llm_engine_no_init_load
         response = await engine.generate("Test prompt")
         assert response == "[LLM_ERROR: NOT_INITIALIZED]"
 
-
 @pytest.mark.asyncio
 class TestServerLLMEngineFineTune:
-    async def test_fine_tune_actor1_success(self, mock_server_dependencies, server_llm_engine_no_init_load, mock_db):
+
+    @patch("asyncio.to_thread", new_callable=AsyncMock)
+    async def test_fine_tune_actor1_success(self, mock_to_thread, server_llm_engine_no_init_load, mock_db):
         engine = server_llm_engine_no_init_load
-        engine.is_initialized = True # Manually set
-        engine.model = MockPeftModel() # Needs to be PeftModel for save_pretrained
-        engine.tokenizer = MagicMock()
-        engine.tokenizer.eos_token = "<EOS>"
+        engine.is_initialized = True
+        # Ensure the model is a PeftModel mock that has train, eval, save_pretrained
+        engine.model = MockGetPeftModel.return_value # From fixture, this is a fully mocked PeftModel
+        engine.tokenizer = MagicMock(eos_token="<EOS>",

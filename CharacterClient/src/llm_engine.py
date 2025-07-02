@@ -4,6 +4,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.utils.quantization_config import BitsAndBytesConfig
 from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
+from transformers.data.data_collator import DataCollatorForLanguageModeling # Added
 import json
 
 try:
@@ -349,27 +350,53 @@ class LLMEngine:
             # The "_finetuned" suffix might be redundant if this is the primary adapter path.
             # For consistency, let's use self.adapters_path directly for saving.
             output_dir = self.adapters_path
-            # output_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "adapters", current_Actor_id, self.model_name.replace('/', '_') + "_finetuned")
+
+            # Dynamically adjust training arguments based on dataset size
+            num_samples = len(dataset)
+            # Sensible defaults, can be tuned further
+            per_device_train_batch_size = 1 # Keep batch size small for LoRA on potentially small data
+            gradient_accumulation_steps = max(1, 4 // per_device_train_batch_size) # Aim for effective batch size of ~4
+
+            # Adjust epochs: more for very small datasets, fewer for larger ones to prevent overfit/long train
+            if num_samples < 10:
+                num_train_epochs = 3
+            elif num_samples < 50:
+                num_train_epochs = 2
+            else:
+                num_train_epochs = 1
+
+            total_train_steps = (num_samples // (per_device_train_batch_size * gradient_accumulation_steps)) * num_train_epochs
+
+            logging_steps = max(1, total_train_steps // 10) # Log ~10 times during training
+            save_steps = max(1, total_train_steps // 2) # Save a couple of times or at least once
+
             training_args = TrainingArguments(
                 output_dir=output_dir,
                 overwrite_output_dir=True,
-                num_train_epochs=1,
-                per_device_train_batch_size=1,
-                save_steps=10,
-                save_total_limit=2,
-                logging_steps=5,
-                learning_rate=2e-5,
-                fp16=torch.cuda.is_available(),
-                report_to=[],
+                num_train_epochs=num_train_epochs,
+                per_device_train_batch_size=per_device_train_batch_size,
+                gradient_accumulation_steps=gradient_accumulation_steps,
+                save_steps=save_steps,
+                save_total_limit=2, # Keep last 2 checkpoints
+                logging_steps=logging_steps,
+                learning_rate=2e-5, # Standard for LoRA
+                fp16=torch.cuda.is_available(), # Enable mixed precision if CUDA is available
+                optim="paged_adamw_8bit" if torch.cuda.is_available() else "adamw_torch", # Use paged AdamW if available
+                report_to=[], # Disable external reporting (e.g., W&B)
+                remove_unused_columns=False, # Important if dataset has extra columns
             )
+
+            data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
+
             trainer = Trainer(
                 model=self.model,
                 args=training_args,
                 train_dataset=dataset,
-                # tokenizer=self.tokenizer  # Removed as Trainer does not accept this argument
+                data_collator=data_collator, # Add data collator
+                # tokenizer=self.tokenizer # Trainer doesn't take tokenizer directly
             )
             logger.info(
-                f"Client LLMEngine ({current_Actor_id}): Starting fine-tuning with {len(dataset)} samples. Output directory: {output_dir}"
+                f"Client LLMEngine ({current_Actor_id}): Starting fine-tuning with {len(dataset)} samples. Output directory: {output_dir}. Epochs: {num_train_epochs}, Batch: {per_device_train_batch_size}, GradAccum: {gradient_accumulation_steps}"
             )
             try:
                 trainer.train()

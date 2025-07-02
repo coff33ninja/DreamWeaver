@@ -243,8 +243,32 @@ class TestLLMEngineGenerate:
         assert response == "[LLM_ERROR:GENERATION_FAILED]"
 
 
+# Added DataCollatorForLanguageModeling to imports for llm_engine
+from CharacterClient.src.llm_engine import LLMEngine, DEFAULT_CLIENT_MODEL_NAME, JsonDataset
+from CharacterClient.src.config import CLIENT_LLM_MODELS_PATH
+from transformers import DataCollatorForLanguageModeling
+
+
+# Mock PEFT and Transformers objects that are loaded by llm_engine
+MockPeftModel = MagicMock()
+# ... (other mocks remain the same)
+# Add DataCollator mock if not already there (it's used by the SUT)
+MockDataCollatorForLanguageModeling = MagicMock()
+
+
+@pytest.fixture
+def mock_dependencies(monkeypatch):
+    # ... (existing monkeypatch setup)
+    monkeypatch.setattr("CharacterClient.src.llm_engine.DataCollatorForLanguageModeling", MockDataCollatorForLanguageModeling)
+    MockDataCollatorForLanguageModeling.reset_mock()
+    # ... (rest of the mock resets)
+
+
+# ... (other test classes remain the same)
+
+
 @pytest.mark.asyncio
-class TestLLMEngineFineTuneAsync: # Placeholder for more complex fine-tuning tests
+class TestLLMEngineFineTuneAsync:
     @patch("CharacterClient.src.llm_engine.os.makedirs")
     @patch("CharacterClient.src.llm_engine.os.listdir")
     @patch("CharacterClient.src.llm_engine.json.dump")

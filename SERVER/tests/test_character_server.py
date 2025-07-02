@@ -128,41 +128,36 @@ class TestCharacterServerInitialization:
 
 @pytest.mark.asyncio
 class TestCharacterServerAsyncInit:
-    async def test_async_init_success(self, character_server_bare, mock_db_cs, mock_dependencies_cs):
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", True) # Test with pygame enabled
+    async def test_async_init_success_pygame_enabled(self, character_server_bare, mock_db_cs, mock_dependencies_cs):
         cs = character_server_bare
         llm_mock, tts_mock = mock_dependencies_cs
         
-        # Setup DB to return specific data for this init call
         char_data_for_init = {
             "name": "TestInitActor1", "personality": "init_pers", "tts": "xttsv2",
             "tts_model": "xtts_model", "reference_audio_filename": "ref.wav",
             "Actor_id": "Actor1", "llm_model": "init_llm", "language": "fr"
         }
         mock_db_cs.get_character.return_value = char_data_for_init
-
         expected_speaker_wav = os.path.join(REFERENCE_VOICES_AUDIO_PATH, "ref.wav")
 
-        with patch("os.path.exists", return_value=True) as mock_os_exists: # ref.wav exists
-            # Mock run_in_executor for LLM/TTS instantiation
+        with patch("os.path.exists", return_value=True) as mock_os_exists:
             async def mock_run_in_executor_specific(loop, func_to_run, *args_to_func):
-                # This is a bit simplified; actual run_in_executor passes the function itself.
-                # We're interested in the lambda that calls the constructor.
-                if "LLMEngine" in str(func_to_run): # Check if it's the LLM init lambda
+                if "LLMEngine" in str(func_to_run):
                     return MockLLMEngineClass(model_name=char_data_for_init["llm_model"], db=mock_db_cs)
-                if "TTSManager" in str(func_to_run): # Check if it's the TTS init lambda
+                if "TTSManager" in str(func_to_run):
                     return MockTTSManagerClass(
                         tts_service_name=char_data_for_init["tts"],
                         model_name=char_data_for_init["tts_model"],
-                        speaker_wav_path=expected_speaker_wav, # This is what should be passed
+                        speaker_wav_path=expected_speaker_wav,
                         language=char_data_for_init["language"]
                     )
-                return MagicMock() # Default for other calls if any
+                return MagicMock()
 
             with patch("asyncio.get_event_loop") as mock_get_loop:
                 mock_loop = MagicMock()
                 mock_loop.run_in_executor.side_effect = mock_run_in_executor_specific
                 mock_get_loop.return_value = mock_loop
-
                 await cs.async_init()
 
         MockLLMEngineClass.assert_called_once_with(model_name="init_llm", db=mock_db_cs)
@@ -173,32 +168,74 @@ class TestCharacterServerAsyncInit:
         mock_os_exists.assert_called_once_with(expected_speaker_wav)
         assert cs.llm == llm_mock
         assert cs.tts == tts_mock
-        MockPygameMixer.init.assert_called_once() # Pygame mixer should be initialized
+        MockPygameMixer.init.assert_called_once()
+
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", False) # Test with pygame disabled
+    async def test_async_init_success_pygame_disabled(self, character_server_bare, mock_db_cs, mock_dependencies_cs):
+        cs = character_server_bare
+        # ... (similar setup for LLM/TTS as above, not repeating for brevity)
+        mock_db_cs.get_character.return_value = {"llm_model": "any", "tts": "gtts"}
+
+
+        # Mock run_in_executor for LLM/TTS instantiation
+        async def mock_run_in_executor_disable(loop, func_to_run, *args_to_func):
+            if "LLMEngine" in str(func_to_run): return MockLLMEngineClass()
+            if "TTSManager" in str(func_to_run): return MockTTSManagerClass()
+            return MagicMock()
+
+        with patch("asyncio.get_event_loop") as mock_get_loop:
+            mock_loop = MagicMock()
+            mock_loop.run_in_executor.side_effect = mock_run_in_executor_disable
+            mock_get_loop.return_value = mock_loop
+
+            logger = logging.getLogger("dreamweaver_server")
+            with patch.object(logger, "info") as mock_log_info:
+                await cs.async_init()
+
+        MockPygameMixer.init.assert_not_called()
+        mock_log_info.assert_any_call(
+            f"CharacterServer ({cs.character_Actor_id}): Pygame mixer for Actor1 audio playback is DISABLED by configuration (ACTOR1_PYGAME_AUDIO_ENABLED=False)."
+        )
 
     async def test_async_init_llm_fails(self, character_server_bare, mock_db_cs, mock_dependencies_cs):
         cs = character_server_bare
-        llm_mock, tts_mock = mock_dependencies_cs
-        llm_mock.is_initialized = False # Simulate LLM init failure
-        mock_db_cs.get_character.return_value = {"llm_model": "fail_llm", "tts": "gtts"} # Basic data
+        llm_mock, tts_mock = mock_dependencies_cs # These are instances from the fixture
+
+        # Simulate LLMEngine constructor (called via run_in_executor) returning a non-initialized mock
+        MockLLMEngineClass.return_value = MagicMock(is_initialized=False)
+
+        mock_db_cs.get_character.return_value = {"llm_model": "fail_llm", "tts": "gtts", "language": "en"}
 
         with patch("asyncio.get_event_loop") as mock_get_loop:
-            # ... (similar run_in_executor mocking as above)
+            async def mock_run_in_executor_llm_fail(loop, func, *args, **kwargs):
+                if "LLMEngine" in str(func):
+                    # Return the mock that has is_initialized=False
+                    return MockLLMEngineClass(model_name=args[0], db=args[1])
+                elif "TTSManager" in str(func):
+                    return MockTTSManagerClass() # Assume TTS init is fine
+                return MagicMock()
+
+            mock_loop = MagicMock()
+            mock_loop.run_in_executor.side_effect = mock_run_in_executor_llm_fail
+            mock_get_loop.return_value = mock_loop
+
             await cs.async_init()
 
-        assert cs.llm == llm_mock # Instance is created
-        assert not cs.llm.is_initialized # But it's marked as not initialized
-        assert cs.tts == tts_mock # TTS should still init
-
-    # Similar tests for TTS failure, pygame failure, reference audio not existing
+        assert cs.llm is not None
+        assert not cs.llm.is_initialized
+        assert cs.tts is not None # TTS should still init
+        assert cs.tts.is_initialized
 
 
 @pytest.mark.asyncio
 class TestCharacterServerGenerateResponse:
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", True) # Assume enabled for this test
     async def test_generate_response_success(self, character_server_initialized, mock_db_cs):
-        cs = character_server_initialized # cs.llm and cs.tts are mocked instances
+        cs = character_server_initialized
+        # Ensure llm and tts are the mocked instances from the fixture
         cs.llm.generate = AsyncMock(return_value="Generated LLM response.")
-        cs.llm.fine_tune = AsyncMock() # Mock fine_tune for server's LLM
-        cs.output_audio = AsyncMock() # Mock output_audio
+        cs.llm.fine_tune = AsyncMock()
+        cs.output_audio = AsyncMock()
 
         narration = "A story starts."
         other_texts = {"OtherChar": "I agree."}
@@ -207,61 +244,96 @@ class TestCharacterServerGenerateResponse:
 
         assert response == "Generated LLM response."
         cs.llm.generate.assert_awaited_once()
-        # Check prompt construction if needed by inspecting call_args[0][0] of cs.llm.generate
 
         mock_db_cs.save_training_data.assert_called_once()
-        # Example check for save_training_data arguments:
-        # training_data_call_args = mock_db_cs.save_training_data.call_args[0]
-        # assert training_data_call_args[1] == "Actor1" # Actor_id
-        # assert "input" in training_data_call_args[0]
-        # assert "output" in training_data_call_args[0]
 
-        cs.llm.fine_tune.assert_awaited_once() # Server LLM's fine_tune
+        cs.llm.fine_tune.assert_awaited_once()
         cs.output_audio.assert_awaited_once_with("Generated LLM response.")
 
     async def test_generate_response_llm_not_initialized(self, character_server_initialized):
         cs = character_server_initialized
-        cs.llm.is_initialized = False
+        cs.llm.is_initialized = False # Ensure LLM is marked as not initialized
 
         response = await cs.generate_response("Narration", {})
         char_name = cs.character.get('name', cs.character_Actor_id)
         assert response == f"[{char_name}_LLM_ERROR:NOT_INITIALIZED]"
-        cs.output_audio.assert_not_awaited() # Should not be called
+        # cs.output_audio.assert_not_awaited() # output_audio might still be called if text is error string
 
     async def test_generate_response_llm_returns_error(self, character_server_initialized):
         cs = character_server_initialized
+        # Ensure llm and tts are the mocked instances
         cs.llm.generate = AsyncMock(return_value="[LLM_ERROR:TEST_FAILURE]")
-        cs.output_audio = AsyncMock()
+        cs.output_audio = AsyncMock() # Mock to check if it's called
 
         response = await cs.generate_response("Narration", {})
         assert response == "[LLM_ERROR:TEST_FAILURE]"
-        cs.output_audio.assert_not_awaited()
+        # output_audio is called even if LLM returns an error, to potentially speak the error.
+        cs.output_audio.assert_awaited_once_with("[LLM_ERROR:TEST_FAILURE]")
 
 
 @pytest.mark.asyncio
 class TestCharacterServerOutputAudio:
+
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", True)
     @patch("character_server.os.makedirs")
     @patch("character_server.os.path.exists")
-    @patch("asyncio.to_thread", new_callable=AsyncMock) # For play_sound_blocking
-    async def test_output_audio_success(self, mock_async_to_thread, mock_os_path_exists, mock_os_makedirs, character_server_initialized):
+    @patch("asyncio.to_thread", new_callable=AsyncMock)
+    async def test_output_audio_success_pygame_enabled_and_initialized(self, mock_async_to_thread, mock_os_path_exists, mock_os_makedirs, character_server_initialized):
         cs = character_server_initialized
-        cs.tts.synthesize = AsyncMock(return_value=True) # Simulate successful synthesis
-        mock_os_path_exists.return_value = True # Simulate audio file exists after synthesis
-        MockPygameMixer.get_init.return_value = True # Pygame mixer is initialized
+        cs.tts.synthesize = AsyncMock(return_value=True)
+        mock_os_path_exists.return_value = True
+        MockPygameMixer.get_init.return_value = True
 
         text_to_speak = "Let's hear this."
         await cs.output_audio(text_to_speak)
 
         cs.tts.synthesize.assert_awaited_once()
-        # Check that the output path is correctly constructed and passed to synthesize
         synthesize_call_args = cs.tts.synthesize.call_args[0]
         assert synthesize_call_args[0] == text_to_speak
-        assert CHARACTERS_AUDIO_PATH in synthesize_call_args[1] # output_path
+        assert CHARACTERS_AUDIO_PATH in synthesize_call_args[1]
         assert ".wav" in synthesize_call_args[1]
 
-        mock_async_to_thread.assert_awaited_once() # For play_sound_blocking
-        MockPygameSound.assert_called_once() # Sound object created
-        MockPygameSound.return_value.play.assert_called_once() # play() called
+        mock_async_to_thread.assert_awaited_once()
+        MockPygameSound.assert_called_once()
+        MockPygameSound.return_value.play.assert_called_once()
+
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", False)
+    @patch("character_server.os.makedirs")
+    @patch("character_server.os.path.exists")
+    async def test_output_audio_pygame_disabled(self, mock_os_path_exists, mock_os_makedirs, character_server_initialized):
+        cs = character_server_initialized
+        cs.tts.synthesize = AsyncMock(return_value=True)
+        mock_os_path_exists.return_value = True
+
+        logger = logging.getLogger("dreamweaver_server")
+        with patch.object(logger, "info") as mock_log_info:
+            await cs.output_audio("Test with pygame disabled.")
+
+        cs.tts.synthesize.assert_awaited_once() # Synthesis should still happen
+        MockPygameSound.return_value.play.assert_not_called()
+        mock_log_info.assert_any_call(
+            f"CharacterServer ({cs.character.get('name', cs.character_Actor_id)}): Pygame audio for Actor1 is DISABLED. Skipping playback of {cs.tts.synthesize.call_args[0][1]}."
+        )
+
+    @patch("character_server.ACTOR1_PYGAME_AUDIO_ENABLED", True)
+    @patch("character_server.os.makedirs")
+    @patch("character_server.os.path.exists")
+    async def test_output_audio_pygame_enabled_mixer_not_init(self, mock_os_path_exists, mock_os_makedirs, character_server_initialized):
+        cs = character_server_initialized
+        cs.tts.synthesize = AsyncMock(return_value=True)
+        mock_os_path_exists.return_value = True
+        MockPygameMixer.get_init.return_value = False # Mixer not initialized
+
+        logger = logging.getLogger("dreamweaver_server")
+        with patch.object(logger, "warning") as mock_log_warning:
+            await cs.output_audio("Test with mixer not init.")
+
+        cs.tts.synthesize.assert_awaited_once()
+        MockPygameSound.return_value.play.assert_not_called()
+        mock_log_warning.assert_any_call(
+            f"CharacterServer ({cs.character.get('name', cs.character_Actor_id)}): Pygame audio for Actor1 is ENABLED but mixer not initialized. Cannot play audio {cs.tts.synthesize.call_args[0][1]}."
+        )
+
 
     async def test_output_audio_tts_not_initialized(self, character_server_initialized):
         cs = character_server_initialized

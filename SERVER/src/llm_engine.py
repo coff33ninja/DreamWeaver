@@ -280,26 +280,40 @@ class LLMEngine:
             batch_size = 1 if len(all_training_data) < 4 else 4
             ga_steps = max(1, 4 // batch_size)
 
+            # Dynamically adjust training arguments based on dataset size
+            num_samples = len(tokenized_dataset) # Use tokenized_dataset length
+            # Sensible defaults, can be tuned further
+            # per_device_train_batch_size is already 'batch_size' from above
+            # gradient_accumulation_steps is already 'ga_steps' from above
+
+            # num_train_epochs is already 'num_epochs' from above
+
+            total_train_steps = (num_samples // (batch_size * ga_steps)) * num_epochs
+
+            # Ensure logging_steps and save_steps are at least 1 and not more than total_train_steps if total_train_steps is small
+            logging_steps = max(1, total_train_steps // 10) if total_train_steps > 0 else 1
+            save_steps = max(1, total_train_steps // 2) if total_train_steps > 0 else 1
+            if total_train_steps > 0:
+                logging_steps = min(logging_steps, total_train_steps)
+                save_steps = min(save_steps, total_train_steps)
+
+
             training_args = TrainingArguments(
-                output_dir=os.path.join(
-                    "./results_server_ft", Actor_id, self.model_name.replace("/", "_")
-                ),
+                output_dir=self.adapter_path, # Save checkpoints under the adapter path for Actor1
+                overwrite_output_dir=True, # Overwrite previous checkpoints if any for simplicity
+                num_train_epochs=num_epochs,
                 per_device_train_batch_size=batch_size,
                 gradient_accumulation_steps=ga_steps,
-                num_train_epochs=num_epochs,
-                learning_rate=5e-5,  # Common for LoRA
-                fp16=torch.cuda.is_available(),  # True if CUDA, False otherwise
-                logging_steps=max(
-                    1, len(tokenized_dataset) // (batch_size * ga_steps) // 2 + 1
-                ),  # Log a few times
-                save_steps=max(
-                    1, len(tokenized_dataset) // (batch_size * ga_steps)
-                ),  # Save once per effective epoch
+                save_steps=save_steps,
+                save_total_limit=2, # Keep last 2 checkpoints
+                logging_steps=logging_steps,
+                learning_rate=5e-5,
+                fp16=torch.cuda.is_available(),
                 optim=(
                     "paged_adamw_8bit" if torch.cuda.is_available() else "adamw_torch"
                 ),
-                report_to="none",
-                remove_unused_columns=False,
+                report_to="none", # Disable external reporting
+                remove_unused_columns=False, # Important as our dataset is simple
             )
 
             data_collator = DataCollatorForLanguageModeling(
@@ -312,10 +326,10 @@ class LLMEngine:
                 train_dataset=tokenized_dataset,
                 data_collator=data_collator,
             )
-            trainer.tokenizer = tokenizer  # Set tokenizer attribute directly for save_model/push_to_hub compatibility
+            # trainer.tokenizer = tokenizer # Not needed if data_collator has it, but good for save_model
 
             print(
-                f"LLMEngine (Server/Actor1): Starting fine-tuning for Actor1 with {len(all_training_data)} data points..."
+                f"LLMEngine (Server/Actor1): Starting fine-tuning for Actor1 with {len(all_training_data)} data points... Output: {self.adapter_path}, Epochs: {num_epochs}, Batch: {batch_size}, GradAccum: {ga_steps}"
             )
             trainer.train()
 
