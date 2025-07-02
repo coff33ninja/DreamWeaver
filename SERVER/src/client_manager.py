@@ -227,6 +227,13 @@ class ClientManager:
         )
         return False
 
+    def authenticate_request(self, Actor_id: str, token: str) -> bool:
+        """
+        Unified authentication: Accepts either a valid session token or the correct primary token for the Actor_id.
+        Returns True if authentication succeeds, False otherwise.
+        """
+        return self.authenticate_request_token(Actor_id, token)
+
     def _perform_single_health_check_blocking(self, client_info: dict):
         """
         Performs a blocking health check on a client by querying its `/health` endpoint and updates the client's status in the database based on the response.

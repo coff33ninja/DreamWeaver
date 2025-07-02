@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional  # For optional fields
 import io
 import logging
-
+import websockets
 from .database import Database
 from .client_manager import ClientManager
 from .dashboard import router as dashboard_router
