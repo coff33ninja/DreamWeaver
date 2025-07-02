@@ -1,6 +1,7 @@
 import serial
 import os
 import logging
+import socket
 
 logger = logging.getLogger("dreamweaver_server")
 
@@ -73,6 +74,23 @@ class Hardware:
                 "Attempted to update LEDs, but Arduino serial port is not open."
             )
         # If self.arduino is None, no message is logged here as it's logged during init.
+
+    @staticmethod
+    def get_adapter_ip_addresses():
+        """
+        Returns a dictionary of network adapter names and their associated IPv4 addresses.
+        """
+        try:
+            import psutil
+        except ImportError:
+            logger.error("psutil is required for get_adapter_ip_addresses. Please install it.")
+            return {}
+        adapters = {}
+        for iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    adapters[iface] = addr.address
+        return adapters
 
     def __del__(self):
         if self.arduino and self.arduino.is_open:

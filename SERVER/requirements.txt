@@ -19,3 +19,4 @@ pyserial
 dotenv
 pytest
 websockets
+psutil

@@ -6,6 +6,7 @@ from .client_manager import ClientManager
 from .checkpoint_manager import CheckpointManager
 from . import env_manager
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
+from .hardware import Hardware
 
 # Import the global connection_manager
 from .websocket_manager import connection_manager as global_ws_connection_manager
@@ -50,6 +51,11 @@ async def get_story_playback_data_async():
         role = "user" if speaker.lower() == "narrator" else "assistant"
         chatbot_messages.append({"role": role, "content": formatted_text})
     return chatbot_messages
+
+
+async def get_adapter_ips_async():
+    # Use a thread to avoid blocking
+    return Hardware.get_adapter_ip_addresses()
 
 
 # --- Async Handlers (Existing ones condensed for brevity in this example) ---
@@ -114,18 +120,45 @@ async def create_character_async(
         None,
     )
     token_msg_part = ""
+    env_snippet = ""
     if Actor_id != "Actor1":
         token = await asyncio.to_thread(
             client_manager_instance.generate_token, Actor_id
         )
         if token:
-            token_msg_part = f" Token for {Actor_id}: {token}"
+            token_msg_part = f"Token for {Actor_id}: {token}"
+            # Use selected IP if provided, else auto-pick
+            server_url = "<your_server_url_here>"
+            try:
+                # Try to get the selected IP from the UI (Gradio passes it as an argument if wired)
+                import inspect
+                frame = inspect.currentframe()
+                args, _, _, values = inspect.getargvalues(frame)
+                selected_ip = values.get('selected_server_ip', None)
+            except Exception:
+                selected_ip = None
+            if selected_ip:
+                server_url = f"http://{selected_ip}:8000"
+            else:
+                adapter_ips = Hardware.get_adapter_ip_addresses()
+                if adapter_ips:
+                    # Prefer Wi-Fi, Ethernet, or first available
+                    preferred = None
+                    for key in ["Wi-Fi", "Ethernet"]:
+                        if key in adapter_ips:
+                            preferred = adapter_ips[key]
+                            break
+                    if not preferred:
+                        preferred = next(iter(adapter_ips.values()))
+                    server_url = f"http://{preferred}:8000"
+            env_snippet = f"CLIENT_Actor_ID=\"{Actor_id}\"\nCLIENT_TOKEN=\"{token}\"\nSERVER_URL=\"{server_url}\""
             logger.info(f"Generated token for {Actor_id}.")
     progress(1, desc="Character created!")
     logger.info(
         f"Character '{name}' for '{Actor_id}' created successfully. Token part: {token_msg_part}"
     )
-    return f"Character '{name}' for '{Actor_id}' created successfully.{token_msg_part}"
+    # Return both status and env_snippet for UI display
+    return f"Character '{name}' for '{Actor_id}' created successfully. {token_msg_part}", env_snippet
 
 
 async def story_interface_async(
@@ -446,12 +479,23 @@ def launch_interface():  # Renamed original launch_interface
                             type="filepath",
                             visible=False,
                         )
+                        # Adapter IP display and selection
+                        adapter_ip_btn = gr.Button("Show Adapter IPs")
+                        adapter_ip_output = gr.JSON(label="Adapter IP Addresses")
+                        adapter_ip_dropdown = gr.Dropdown(label="Select Server IP for Client .env", choices=[], visible=False)
+                        def update_adapter_ip_dropdown():
+                            ips = Hardware.get_adapter_ip_addresses()
+                            if not ips:
+                                return gr.update(choices=[], visible=False), {}
+                            return gr.update(choices=list(ips.values()), visible=True), ips
+                        adapter_ip_btn.click(update_adapter_ip_dropdown, inputs=[], outputs=[adapter_ip_dropdown, adapter_ip_output])
                     with gr.Column(scale=3):
                         char_personality = gr.Textbox(label="Personality", lines=2)
                         char_goals = gr.Textbox(label="Goals", lines=2)
                         char_backstory = gr.Textbox(label="Backstory", lines=3)
                 create_char_btn = gr.Button("Save Character", variant="primary")
                 char_creation_status = gr.Textbox(label="Status", interactive=False)
+                char_env_snippet = gr.Textbox(label="Client .env Snippet (Copy & Paste)", lines=3, interactive=False)
                 with gr.Accordion("Client Configuration Download", open=False):
                     client_config_server_url = gr.Textbox(
                         label="Server URL for Client",
@@ -485,8 +529,9 @@ def launch_interface():  # Renamed original launch_interface
                         char_tts_model,
                         char_ref_audio,
                         char_Actor_id,
+                        adapter_ip_dropdown,  # Pass selected IP to async handler
                     ],
-                    outputs=char_creation_status,
+                    outputs=[char_creation_status, char_env_snippet],
                 )
 
                 async def handle_download_client_config(
