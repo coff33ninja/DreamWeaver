@@ -894,3 +894,643 @@ if __name__ == '__main__':
     # Run async tests
     print("\nRunning asynchronous tests...")
     asyncio.run(run_async_tests())
+    
+    # Run additional async tests
+    print("\nRunning additional comprehensive tests...")
+    asyncio.run(run_additional_async_tests())
+
+class TestLLMConfigAdvanced(unittest.TestCase):
+    """Advanced test cases for LLMConfig class covering more edge cases."""
+
+    def test_config_extreme_temperature_values(self):
+        """Test LLMConfig with extreme boundary temperature values."""
+        # Test very small positive temperature
+        config_min = LLMConfig(temperature=0.0001)
+        self.assertEqual(config_min.temperature, 0.0001)
+        
+        # Test temperature close to maximum
+        config_max = LLMConfig(temperature=1.9999)
+        self.assertEqual(config_max.temperature, 1.9999)
+
+    def test_config_extreme_max_tokens_values(self):
+        """Test LLMConfig with extreme max_tokens values."""
+        config_min = LLMConfig(max_tokens=1)
+        self.assertEqual(config_min.max_tokens, 1)
+        
+        config_large = LLMConfig(max_tokens=100000)
+        self.assertEqual(config_large.max_tokens, 100000)
+
+    def test_config_special_model_names(self):
+        """Test LLMConfig with various model name formats."""
+        special_models = [
+            "gpt-3.5-turbo-0613",
+            "gpt-4-32k",
+            "text-davinci-003",
+            "claude-v1",
+            "custom-model-v2.1"
+        ]
+        
+        for model in special_models:
+            with self.subTest(model=model):
+                config = LLMConfig(model=model)
+                self.assertEqual(config.model, model)
+
+    def test_config_api_key_variations(self):
+        """Test LLMConfig with different API key formats."""
+        api_keys = [
+            "sk-1234567890abcdef",
+            "test_key_with_underscores",
+            "key-with-dashes",
+            "VeryLongApiKeyWith123Numbers456AndSpecialChars!@#",
+            "short"
+        ]
+        
+        for api_key in api_keys:
+            with self.subTest(api_key=api_key[:10] + "..."):
+                config = LLMConfig(api_key=api_key)
+                self.assertEqual(config.api_key, api_key)
+
+    def test_config_timeout_variations(self):
+        """Test LLMConfig with different timeout values."""
+        timeouts = [1, 5, 30, 60, 300, 3600]
+        
+        for timeout in timeouts:
+            with self.subTest(timeout=timeout):
+                config = LLMConfig(timeout=timeout)
+                self.assertEqual(config.timeout, timeout)
+
+    def test_config_from_dict_missing_keys(self):
+        """Test LLMConfig.from_dict with missing optional keys."""
+        minimal_data = {"model": "gpt-3.5-turbo"}
+        config = LLMConfig.from_dict(minimal_data)
+        
+        self.assertEqual(config.model, "gpt-3.5-turbo")
+        self.assertEqual(config.temperature, 0.7)  # default
+        self.assertEqual(config.max_tokens, 1000)  # default
+
+    def test_config_from_dict_extra_keys(self):
+        """Test LLMConfig.from_dict ignoring extra keys."""
+        data_with_extra = {
+            "model": "gpt-4",
+            "temperature": 0.8,
+            "max_tokens": 2000,
+            "api_key": "test_key",
+            "timeout": 45,
+            "extra_key": "should_be_ignored",
+            "another_extra": 123
+        }
+        
+        config = LLMConfig.from_dict(data_with_extra)
+        self.assertEqual(config.model, "gpt-4")
+        self.assertEqual(config.temperature, 0.8)
+        self.assertEqual(config.max_tokens, 2000)
+        self.assertEqual(config.api_key, "test_key")
+        self.assertEqual(config.timeout, 45)
+        # Extra keys should not cause errors
+
+
+class TestLLMResponseAdvanced(unittest.TestCase):
+    """Advanced test cases for LLMResponse class."""
+
+    def test_response_different_finish_reasons(self):
+        """Test LLMResponse with different finish reasons."""
+        finish_reasons = ["stop", "length", "content_filter", "function_call", "tool_calls"]
+        
+        for reason in finish_reasons:
+            with self.subTest(finish_reason=reason):
+                response = LLMResponse("Test content", finish_reason=reason)
+                self.assertEqual(response.finish_reason, reason)
+
+    def test_response_complex_usage_data(self):
+        """Test LLMResponse with complex usage data."""
+        complex_usage = {
+            "prompt_tokens": 1500,
+            "completion_tokens": 800,
+            "total_tokens": 2300,
+            "prompt_tokens_details": {"cached_tokens": 100},
+            "completion_tokens_details": {"reasoning_tokens": 50}
+        }
+        
+        response = LLMResponse("Content", usage=complex_usage)
+        self.assertEqual(response.usage, complex_usage)
+
+    def test_response_very_long_content(self):
+        """Test LLMResponse with very long content."""
+        long_content = "x" * 50000
+        response = LLMResponse(long_content)
+        
+        self.assertEqual(response.content, long_content)
+        self.assertEqual(len(response.content), 50000)
+
+    def test_response_multiline_content(self):
+        """Test LLMResponse with multiline content."""
+        multiline_content = """This is line 1
+This is line 2
+This is line 3
+    Indented line
+        More indented line"""
+        
+        response = LLMResponse(multiline_content)
+        self.assertEqual(response.content, multiline_content)
+        self.assertIn("\n", response.content)
+
+    def test_response_content_with_json(self):
+        """Test LLMResponse with JSON-formatted content."""
+        json_content = '{"key": "value", "nested": {"array": [1, 2, 3]}}'
+        response = LLMResponse(json_content)
+        
+        self.assertEqual(response.content, json_content)
+        # Verify it's valid JSON
+        parsed = json.loads(response.content)
+        self.assertEqual(parsed["key"], "value")
+
+    def test_response_content_with_code(self):
+        """Test LLMResponse with code content."""
+        code_content = '''def hello_world():
+    """A simple function."""
+    print("Hello, World!")
+    return "success"
+
+# Call the function
+result = hello_world()'''
+        
+        response = LLMResponse(code_content)
+        self.assertEqual(response.content, code_content)
+
+
+class TestLLMEngineAdvanced(unittest.TestCase):
+    """Advanced test cases for LLMEngine class."""
+
+    def setUp(self):
+        """Set up advanced test fixtures."""
+        self.config = LLMConfig(api_key="test_key", timeout=60)
+        self.engine = LLMEngine(self.config)
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_streaming_response(self, mock_openai):
+        """Test generation with streaming-like response handling."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Streaming content chunk"
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.completion_tokens = 30
+        mock_response.usage.total_tokens = 50
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        result = await engine.generate("Test streaming")
+        
+        self.assertEqual(result.content, "Streaming content chunk")
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_function_call_finish_reason(self, mock_openai):
+        """Test generation with function_call finish reason."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = '{"function": "test_function", "arguments": "{}"}'
+        mock_response.choices[0].finish_reason = "function_call"
+        mock_response.usage.prompt_tokens = 25
+        mock_response.usage.completion_tokens = 15
+        mock_response.usage.total_tokens = 40
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        result = await engine.generate("Call a function")
+        
+        self.assertEqual(result.finish_reason, "function_call")
+        self.assertIn("function", result.content)
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_length_limit_reached(self, mock_openai):
+        """Test generation when length limit is reached."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Truncated response due to length"
+        mock_response.choices[0].finish_reason = "length"
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 1000  # Max tokens reached
+        mock_response.usage.total_tokens = 1010
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        result = await engine.generate("Generate long response")
+        
+        self.assertEqual(result.finish_reason, "length")
+        self.assertEqual(result.usage["completion_tokens"], 1000)
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_content_filter(self, mock_openai):
+        """Test generation with content filter finish reason."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = ""
+        mock_response.choices[0].finish_reason = "content_filter"
+        mock_response.usage.prompt_tokens = 15
+        mock_response.usage.completion_tokens = 0
+        mock_response.usage.total_tokens = 15
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        result = await engine.generate("Filtered content prompt")
+        
+        self.assertEqual(result.finish_reason, "content_filter")
+        self.assertEqual(result.content, "")
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_malformed_response(self, mock_openai):
+        """Test handling of malformed API responses."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = []  # Empty choices array
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        with self.assertRaises(LLMError):
+            await engine.generate("Test prompt")
+
+    async def test_generate_with_very_long_system_prompt(self):
+        """Test generation with very long system prompt."""
+        long_system_prompt = "You are a helpful assistant. " * 1000
+        
+        # This should not raise an error for the system prompt length
+        # but will fail due to no client, which is expected
+        with self.assertRaises(LLMError):
+            await self.engine.generate("Test", system_prompt=long_system_prompt)
+
+    def test_set_api_key_updates_client(self):
+        """Test that setting API key reinitializes the client."""
+        original_client = self.engine._client
+        
+        with patch('openai.AsyncOpenAI') as mock_openai:
+            mock_client = AsyncMock()
+            mock_openai.return_value = mock_client
+            
+            self.engine.set_api_key("new_api_key")
+            
+            self.assertEqual(self.engine.config.api_key, "new_api_key")
+            mock_openai.assert_called_once_with(api_key="new_api_key")
+
+    def test_validate_config_edge_cases(self):
+        """Test configuration validation with edge cases."""
+        # Test with exactly zero temperature (should be valid)
+        config = LLMConfig(model="gpt-3.5-turbo", temperature=0.0, api_key="key")
+        engine = LLMEngine(config)
+        self.assertTrue(engine.validate_config())
+        
+        # Test with exactly 2.0 temperature (should be valid)
+        config = LLMConfig(model="gpt-3.5-turbo", temperature=2.0, api_key="key")
+        engine = LLMEngine(config)
+        self.assertTrue(engine.validate_config())
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_with_all_optional_parameters(self, mock_openai):
+        """Test generation with all possible optional parameters."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Full parameter response"
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.completion_tokens = 30
+        mock_response.usage.total_tokens = 50
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        await engine.generate(
+            "Test prompt",
+            system_prompt="System instructions",
+            presence_penalty=0.5,
+            frequency_penalty=0.3,
+            top_p=0.9,
+            stop=["STOP", "END"],
+            seed=42
+        )
+        
+        # Verify all parameters were passed
+        call_args = mock_client.chat.completions.create.call_args
+        kwargs = call_args[1]
+        
+        self.assertEqual(kwargs['presence_penalty'], 0.5)
+        self.assertEqual(kwargs['frequency_penalty'], 0.3)
+        self.assertEqual(kwargs['top_p'], 0.9)
+        self.assertEqual(kwargs['stop'], ["STOP", "END"])
+        self.assertEqual(kwargs['seed'], 42)
+
+
+class TestLLMEngineErrorHandling(unittest.TestCase):
+    """Comprehensive error handling tests for LLMEngine."""
+
+    def setUp(self):
+        """Set up error handling test fixtures."""
+        self.config = LLMConfig(api_key="test_key")
+        self.engine = LLMEngine(self.config)
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_rate_limit_error(self, mock_openai):
+        """Test handling of rate limit errors."""
+        mock_client = AsyncMock()
+        
+        # Simulate rate limit error
+        mock_client.chat.completions.create.side_effect = Exception("Rate limit exceeded")
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        with self.assertRaises(LLMError) as context:
+            await engine.generate("Test prompt")
+        self.assertIn("Generation failed", str(context.exception))
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_authentication_error(self, mock_openai):
+        """Test handling of authentication errors."""
+        mock_client = AsyncMock()
+        
+        # Simulate authentication error
+        mock_client.chat.completions.create.side_effect = Exception("Invalid API key")
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        with self.assertRaises(LLMError) as context:
+            await engine.generate("Test prompt")
+        self.assertIn("Generation failed", str(context.exception))
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_network_error(self, mock_openai):
+        """Test handling of network errors."""
+        mock_client = AsyncMock()
+        
+        # Simulate network error
+        mock_client.chat.completions.create.side_effect = Exception("Connection failed")
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        with self.assertRaises(LLMError) as context:
+            await engine.generate("Test prompt")
+        self.assertIn("Generation failed", str(context.exception))
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_unexpected_response_structure(self, mock_openai):
+        """Test handling of unexpected response structure."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        
+        # Response missing required attributes
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message = None  # Missing message
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        engine = LLMEngine(self.config)
+        engine._client = mock_client
+        
+        with self.assertRaises(LLMError):
+            await engine.generate("Test prompt")
+
+
+class TestLLMEngineResourceManagement(unittest.TestCase):
+    """Test resource management and cleanup in LLMEngine."""
+
+    def test_multiple_engine_instances(self):
+        """Test creating multiple engine instances."""
+        configs = [
+            LLMConfig(model="gpt-3.5-turbo", api_key="key1"),
+            LLMConfig(model="gpt-4", api_key="key2"),
+            LLMConfig(model="gpt-3.5-turbo-16k", api_key="key3")
+        ]
+        
+        engines = [LLMEngine(config) for config in configs]
+        
+        self.assertEqual(len(engines), 3)
+        for i, engine in enumerate(engines):
+            self.assertEqual(engine.config, configs[i])
+
+    def test_engine_config_modification_after_creation(self):
+        """Test modifying engine configuration after creation."""
+        config = LLMConfig(api_key="original_key")
+        engine = LLMEngine(config)
+        
+        # Modify the original config
+        config.api_key = "modified_key"
+        
+        # Engine should still have the original reference
+        self.assertEqual(engine.config.api_key, "modified_key")
+
+    @patch('openai.AsyncOpenAI')
+    async def test_concurrent_api_key_updates(self, mock_openai):
+        """Test concurrent API key updates."""
+        mock_openai.return_value = AsyncMock()
+        
+        config = LLMConfig(api_key="initial_key")
+        engine = LLMEngine(config)
+        
+        # Simulate concurrent key updates
+        keys = ["key1", "key2", "key3", "key4", "key5"]
+        
+        for key in keys:
+            engine.set_api_key(key)
+            self.assertEqual(engine.config.api_key, key)
+
+
+# Additional test utilities and fixtures
+class TestLLMEngineTestUtilities(unittest.TestCase):
+    """Test utilities and helper functions for comprehensive testing."""
+
+    def test_config_equality_with_different_objects(self):
+        """Test config equality with various object types."""
+        config = LLMConfig(api_key="test")
+        
+        # Test equality with different types
+        self.assertNotEqual(config, None)
+        self.assertNotEqual(config, "string")
+        self.assertNotEqual(config, 123)
+        self.assertNotEqual(config, [])
+        self.assertNotEqual(config, {})
+
+    def test_response_equality_with_different_objects(self):
+        """Test response equality with various object types."""
+        response = LLMResponse("content")
+        
+        # Test equality with different types
+        self.assertNotEqual(response, None)
+        self.assertNotEqual(response, "string")
+        self.assertNotEqual(response, 123)
+        self.assertNotEqual(response, [])
+        self.assertNotEqual(response, {})
+
+    def test_comprehensive_string_representations(self):
+        """Test string representations contain expected information."""
+        config = LLMConfig(model="test-model", temperature=0.5, api_key="secret")
+        engine = LLMEngine(config)
+        
+        config_str = str(config)
+        engine_str = str(engine)
+        
+        # Verify key information is present
+        self.assertIn("test-model", config_str)
+        self.assertIn("0.5", config_str)
+        self.assertIn("test-model", engine_str)
+
+    @patch('openai.AsyncOpenAI')
+    async def test_generate_preserves_message_order(self, mock_openai):
+        """Test that message order is preserved in API calls."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Response"
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        config = LLMConfig(api_key="test_key")
+        engine = LLMEngine(config)
+        engine._client = mock_client
+        
+        await engine.generate("User message", system_prompt="System message")
+        
+        # Verify message order
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args[1]['messages']
+        
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0]['role'], 'system')
+        self.assertEqual(messages[1]['role'], 'user')
+
+
+# Performance and stress tests
+class TestLLMEnginePerformance(unittest.TestCase):
+    """Performance and stress tests for LLMEngine."""
+
+    @patch('openai.AsyncOpenAI')
+    async def test_high_concurrency_generation(self, mock_openai):
+        """Test engine under high concurrency load."""
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "Concurrent response"
+        mock_response.choices[0].finish_reason = "stop"
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 20
+        mock_response.usage.total_tokens = 30
+        mock_response.model = "gpt-3.5-turbo"
+        
+        mock_client.chat.completions.create.return_value = mock_response
+        mock_openai.return_value = mock_client
+        
+        config = LLMConfig(api_key="test_key")
+        engine = LLMEngine(config)
+        engine._client = mock_client
+        
+        # Create many concurrent tasks
+        num_tasks = 50
+        tasks = [
+            engine.generate(f"Prompt {i}")
+            for i in range(num_tasks)
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        self.assertEqual(len(results), num_tasks)
+        self.assertEqual(mock_client.chat.completions.create.call_count, num_tasks)
+
+    def test_memory_usage_multiple_configs(self):
+        """Test memory usage with multiple configuration objects."""
+        configs = []
+        
+        # Create many config objects
+        for i in range(1000):
+            config = LLMConfig(
+                model=f"model-{i}",
+                temperature=0.5,
+                max_tokens=1000,
+                api_key=f"key-{i}"
+            )
+            configs.append(config)
+        
+        # Verify all configs are properly created
+        self.assertEqual(len(configs), 1000)
+        self.assertEqual(configs[0].model, "model-0")
+        self.assertEqual(configs[999].model, "model-999")
+
+
+# Update the async test runner to include the new test methods
+async def run_additional_async_tests():
+    """Helper function to run additional async tests."""
+    additional_async_methods = [
+        'test_generate_with_streaming_response',
+        'test_generate_with_function_call_finish_reason',
+        'test_generate_with_length_limit_reached',
+        'test_generate_with_content_filter',
+        'test_generate_with_malformed_response',
+        'test_generate_with_very_long_system_prompt',
+        'test_generate_with_all_optional_parameters',
+        'test_generate_rate_limit_error',
+        'test_generate_authentication_error',
+        'test_generate_network_error',
+        'test_generate_unexpected_response_structure',
+        'test_concurrent_api_key_updates',
+        'test_generate_preserves_message_order',
+        'test_high_concurrency_generation'
+    ]
+    
+    test_classes = [
+        TestLLMEngineAdvanced(),
+        TestLLMEngineErrorHandling(),
+        TestLLMEngineResourceManagement(),
+        TestLLMEngineTestUtilities(),
+        TestLLMEnginePerformance()
+    ]
+    
+    for test_class in test_classes:
+        test_class.setUp() if hasattr(test_class, 'setUp') else None
+        for method_name in dir(test_class):
+            if method_name.startswith('test_') and asyncio.iscoroutinefunction(getattr(test_class, method_name)):
+                try:
+                    await getattr(test_class, method_name)()
+                    print(f"✓ {test_class.__class__.__name__}.{method_name} passed")
+                except Exception as e:
+                    print(f"✗ {test_class.__class__.__name__}.{method_name} failed: {e}")

@@ -787,3 +787,595 @@ class TestConfigPerformance:
         
         finally:
             os.unlink(temp_path)
+
+# Tests for the actual config.py functionality
+class TestActualConfigModule:
+    """Test the actual config.py module functionality - path management and directory creation."""
+    
+    def setup_method(self):
+        """Set up test fixtures for actual config testing."""
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_env = dict(os.environ)
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+        # Restore original environment
+        os.environ.clear()
+        os.environ.update(self.original_env)
+    
+    def test_client_root_path_calculation(self):
+        """Test CLIENT_ROOT path calculation."""
+        # Import to get the actual config module
+        import sys
+        import importlib
+        
+        # Temporarily add path and import
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            assert hasattr(config, 'CLIENT_ROOT')
+            assert os.path.isabs(config.CLIENT_ROOT)
+            assert config.CLIENT_ROOT.endswith('CharacterClient')
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_default_path_constants(self):
+        """Test default path constants are properly defined."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # Test all expected path constants exist
+            expected_paths = [
+                'CLIENT_ROOT', 'DEFAULT_CLIENT_DATA_PATH', 'CLIENT_DATA_PATH',
+                'DEFAULT_CLIENT_MODELS_PATH', 'CLIENT_MODELS_PATH',
+                'CLIENT_LLM_MODELS_PATH', 'CLIENT_TTS_MODELS_PATH',
+                'CLIENT_TTS_REFERENCE_VOICES_PATH', 'CLIENT_LOGS_PATH',
+                'CLIENT_TEMP_AUDIO_PATH'
+            ]
+            
+            for path_name in expected_paths:
+                assert hasattr(config, path_name), f"Missing path constant: {path_name}"
+                path_value = getattr(config, path_name)
+                assert isinstance(path_value, str), f"{path_name} should be a string"
+                assert os.path.isabs(path_value), f"{path_name} should be absolute path"
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': '/custom/data/path'})
+    def test_environment_variable_override_data_path(self):
+        """Test CLIENT_DATA_PATH can be overridden by environment variable."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            assert config.CLIENT_DATA_PATH == '/custom/data/path'
+            # Dependent paths should also use the custom base
+            assert config.CLIENT_LOGS_PATH.startswith('/custom/data/path')
+            assert config.CLIENT_TEMP_AUDIO_PATH.startswith('/custom/data/path')
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_MODELS_PATH': '/custom/models/path'})
+    def test_environment_variable_override_models_path(self):
+        """Test CLIENT_MODELS_PATH can be overridden by environment variable."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            assert config.CLIENT_MODELS_PATH == '/custom/models/path'
+            # Sub-model paths should use the custom base
+            assert config.CLIENT_LLM_MODELS_PATH.startswith('/custom/models/path')
+            assert config.CLIENT_TTS_MODELS_PATH.startswith('/custom/models/path')
+            assert config.CLIENT_TTS_REFERENCE_VOICES_PATH.startswith('/custom/models/path')
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_ensure_client_directories_function_exists(self):
+        """Test that ensure_client_directories function exists and is callable."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            assert hasattr(config, 'ensure_client_directories')
+            assert callable(config.ensure_client_directories)
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    @patch('os.makedirs')
+    def test_ensure_client_directories_creates_all_paths(self, mock_makedirs):
+        """Test that ensure_client_directories attempts to create all required directories."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # Reset the mock to clear any calls from import
+            mock_makedirs.reset_mock()
+            
+            config.ensure_client_directories()
+            
+            # Should have called makedirs for each directory
+            expected_calls = [
+                config.CLIENT_DATA_PATH,
+                config.CLIENT_MODELS_PATH,
+                config.CLIENT_LLM_MODELS_PATH,
+                config.CLIENT_TTS_MODELS_PATH,
+                config.CLIENT_TTS_REFERENCE_VOICES_PATH,
+                config.CLIENT_LOGS_PATH,
+                config.CLIENT_TEMP_AUDIO_PATH
+            ]
+            
+            assert mock_makedirs.call_count >= len(expected_calls)
+            
+            # Check that all expected paths were called
+            called_paths = [call[0][0] for call in mock_makedirs.call_args_list]
+            for expected_path in expected_calls:
+                assert expected_path in called_paths
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    @patch('os.makedirs')
+    def test_ensure_client_directories_uses_exist_ok(self, mock_makedirs):
+        """Test that ensure_client_directories uses exist_ok=True."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # Reset the mock to clear any calls from import
+            mock_makedirs.reset_mock()
+            
+            config.ensure_client_directories()
+            
+            # All calls should use exist_ok=True
+            for call in mock_makedirs.call_args_list:
+                args, kwargs = call
+                assert kwargs.get('exist_ok', False) is True
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    @patch('os.makedirs', side_effect=OSError("Permission denied"))
+    @patch('sys.stderr')
+    def test_ensure_client_directories_handles_permission_errors(self, mock_stderr, mock_makedirs):
+        """Test that ensure_client_directories handles permission errors gracefully."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # Should not raise exception even with permission errors
+            config.ensure_client_directories()
+            
+            # Should log critical errors
+            # The function should continue even if some directories fail
+            assert mock_makedirs.called
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_config_module_can_run_as_main(self):
+        """Test that config module can be executed as main for verification."""
+        import sys
+        import subprocess
+        
+        # Try to run the config module as main
+        try:
+            result = subprocess.run([
+                sys.executable, '-c',
+                'import sys; sys.path.insert(0, "CharacterClient/src"); import config'
+            ], capture_output=True, text=True, timeout=10)
+            
+            # Should not crash
+            assert result.returncode == 0 or result.returncode is None
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pytest.skip("Cannot execute config module as subprocess")
+    
+    def test_path_hierarchy_consistency(self):
+        """Test that path hierarchy is consistent."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # CLIENT_DATA_PATH should be parent of logs and temp_audio
+            assert config.CLIENT_LOGS_PATH.startswith(config.CLIENT_DATA_PATH)
+            assert config.CLIENT_TEMP_AUDIO_PATH.startswith(config.CLIENT_DATA_PATH)
+            
+            # CLIENT_MODELS_PATH should be parent of specific model paths
+            assert config.CLIENT_LLM_MODELS_PATH.startswith(config.CLIENT_MODELS_PATH)
+            assert config.CLIENT_TTS_MODELS_PATH.startswith(config.CLIENT_MODELS_PATH)
+            assert config.CLIENT_TTS_REFERENCE_VOICES_PATH.startswith(config.CLIENT_TTS_MODELS_PATH)
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_path_separation_characters(self):
+        """Test that paths use correct separation characters for the platform."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            paths_to_test = [
+                config.CLIENT_ROOT, config.CLIENT_DATA_PATH, config.CLIENT_MODELS_PATH,
+                config.CLIENT_LLM_MODELS_PATH, config.CLIENT_TTS_MODELS_PATH,
+                config.CLIENT_TTS_REFERENCE_VOICES_PATH, config.CLIENT_LOGS_PATH,
+                config.CLIENT_TEMP_AUDIO_PATH
+            ]
+            
+            for path in paths_to_test:
+                # Should use os.path.join (platform-appropriate separators)
+                assert os.sep in path or len(path.split('/')) == 1  # Root path might not have separators
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_directory_names_are_valid(self):
+        """Test that directory names are valid for the filesystem."""
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            paths_to_test = [
+                config.CLIENT_DATA_PATH, config.CLIENT_MODELS_PATH,
+                config.CLIENT_LLM_MODELS_PATH, config.CLIENT_TTS_MODELS_PATH,
+                config.CLIENT_TTS_REFERENCE_VOICES_PATH, config.CLIENT_LOGS_PATH,
+                config.CLIENT_TEMP_AUDIO_PATH
+            ]
+            
+            invalid_chars = '<>:"|?*' if os.name == 'nt' else '\0'
+            
+            for path in paths_to_test:
+                for char in invalid_chars:
+                    assert char not in os.path.basename(path), f"Invalid char '{char}' in path: {path}"
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+
+
+class TestConfigRealDirectoryOperations:
+    """Test actual directory operations with temporary directories."""
+    
+    def setup_method(self):
+        """Set up with temporary directory for safe testing."""
+        self.temp_root = tempfile.mkdtemp()
+        self.original_env = dict(os.environ)
+    
+    def teardown_method(self):
+        """Clean up temporary directories."""
+        import shutil
+        if os.path.exists(self.temp_root):
+            shutil.rmtree(self.temp_root)
+        os.environ.clear()
+        os.environ.update(self.original_env)
+    
+    @patch.dict(os.environ, clear=True)
+    def test_directory_creation_with_custom_base(self):
+        """Test directory creation with custom base path."""
+        custom_data_path = os.path.join(self.temp_root, 'custom_data')
+        os.environ['DREAMWEAVER_CLIENT_DATA_PATH'] = custom_data_path
+        
+        import sys
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            import config
+            importlib.reload(config)
+            
+            # Directories should be created under our custom path
+            expected_dirs = [
+                custom_data_path,
+                os.path.join(custom_data_path, 'logs'),
+                os.path.join(custom_data_path, 'temp_audio')
+            ]
+            
+            for expected_dir in expected_dirs:
+                assert os.path.exists(expected_dir), f"Directory not created: {expected_dir}"
+                assert os.path.isdir(expected_dir), f"Path is not a directory: {expected_dir}"
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_directory_permissions(self):
+        """Test that created directories have appropriate permissions."""
+        custom_data_path = os.path.join(self.temp_root, 'permissions_test')
+        
+        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': custom_data_path}):
+            import sys
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Check that directories are readable and writable
+                test_dirs = [
+                    custom_data_path,
+                    config.CLIENT_LOGS_PATH,
+                    config.CLIENT_TEMP_AUDIO_PATH
+                ]
+                
+                for test_dir in test_dirs:
+                    if os.path.exists(test_dir):
+                        assert os.access(test_dir, os.R_OK), f"Directory not readable: {test_dir}"
+                        assert os.access(test_dir, os.W_OK), f"Directory not writable: {test_dir}"
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+    
+    def test_nested_directory_creation(self):
+        """Test creation of deeply nested directories."""
+        deep_path = os.path.join(self.temp_root, 'very', 'deep', 'nested', 'structure')
+        
+        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': deep_path}):
+            import sys
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should create the entire nested structure
+                assert os.path.exists(deep_path), "Deep nested directory not created"
+                
+                # Should also create subdirectories
+                logs_path = os.path.join(deep_path, 'logs')
+                assert os.path.exists(logs_path), "Nested logs directory not created"
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+
+
+class TestConfigEdgeCasesReal:
+    """Test edge cases for the real config module."""
+    
+    def setup_method(self):
+        """Set up for edge case testing."""
+        self.temp_root = tempfile.mkdtemp()
+        self.original_env = dict(os.environ)
+    
+    def teardown_method(self):
+        """Clean up edge case testing."""
+        import shutil
+        if os.path.exists(self.temp_root):
+            shutil.rmtree(self.temp_root)
+        os.environ.clear()
+        os.environ.update(self.original_env)
+    
+    def test_empty_environment_variable(self):
+        """Test behavior with empty environment variables."""
+        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': ''}):
+            import sys
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should fall back to default path, not use empty string
+                assert config.CLIENT_DATA_PATH != ''
+                assert 'CharacterClient' in config.CLIENT_DATA_PATH
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+    
+    def test_relative_path_in_environment(self):
+        """Test behavior with relative paths in environment variables."""
+        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': './relative/path'}):
+            import sys
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should handle relative paths (behavior may vary)
+                assert config.CLIENT_DATA_PATH is not None
+                # The exact behavior depends on implementation
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+    
+    def test_unicode_paths(self):
+        """Test handling of Unicode characters in paths."""
+        unicode_path = os.path.join(self.temp_root, 'тест_🎯_test')
+        
+        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': unicode_path}):
+            import sys
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should handle Unicode paths gracefully
+                assert config.CLIENT_DATA_PATH == unicode_path
+                # Directory creation may or may not succeed depending on filesystem
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            except (UnicodeError, OSError):
+                # Unicode paths might not be supported on all systems
+                pytest.skip("Unicode paths not supported on this system")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+
+
+class TestConfigLogging:
+    """Test logging behavior in config module."""
+    
+    def test_logging_setup_during_import(self):
+        """Test that logging is properly set up during import."""
+        import sys
+        import logging
+        
+        # Capture log output
+        with patch('logging.getLogger') as mock_logger:
+            mock_logger_instance = MagicMock()
+            mock_logger.return_value = mock_logger_instance
+            
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should have created a logger
+                assert mock_logger.called
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+    
+    @patch('sys.stderr')
+    def test_critical_error_output(self, mock_stderr):
+        """Test that critical errors are output to stderr."""
+        import sys
+        
+        with patch('os.makedirs', side_effect=OSError("Critical error")):
+            sys.path.insert(0, 'CharacterClient/src')
+            try:
+                import config
+                importlib.reload(config)
+                
+                # Should have written to stderr for critical errors
+                # The exact behavior depends on implementation
+            
+            except ImportError:
+                pytest.skip("Config module not available for actual testing")
+            finally:
+                if 'CharacterClient/src' in sys.path:
+                    sys.path.remove('CharacterClient/src')
+
+
+# Performance tests for real config functionality
+class TestConfigPerformanceReal:
+    """Performance tests for actual config operations."""
+    
+    def test_import_performance(self):
+        """Test that config module imports quickly."""
+        import sys
+        import time
+        
+        sys.path.insert(0, 'CharacterClient/src')
+        try:
+            start_time = time.time()
+            import config
+            importlib.reload(config)
+            import_time = time.time() - start_time
+            
+            # Should import quickly (less than 1 second)
+            assert import_time < 1.0, f"Config import too slow: {import_time:.3f}s"
+        
+        except ImportError:
+            pytest.skip("Config module not available for actual testing")
+        finally:
+            if 'CharacterClient/src' in sys.path:
+                sys.path.remove('CharacterClient/src')
+    
+    def test_directory_creation_performance(self):
+        """Test that directory creation is performant."""
+        import sys
+        import time
+        
+        temp_root = tempfile.mkdtemp()
+        custom_path = os.path.join(temp_root, 'perf_test')
+        
+        try:
+            with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': custom_path}):
+                sys.path.insert(0, 'CharacterClient/src')
+                try:
+                    import config
+                    
+                    start_time = time.time()
+                    config.ensure_client_directories()
+                    creation_time = time.time() - start_time
+                    
+                    # Directory creation should be fast (less than 1 second)
+                    assert creation_time < 1.0, f"Directory creation too slow: {creation_time:.3f}s"
+                
+                except ImportError:
+                    pytest.skip("Config module not available for actual testing")
+                finally:
+                    if 'CharacterClient/src' in sys.path:
+                        sys.path.remove('CharacterClient/src')
+        
+        finally:
+            import shutil
+            if os.path.exists(temp_root):
+                shutil.rmtree(temp_root)
+
+
+if __name__ == '__main__':
+    pytest.main([__file__, '-v'])

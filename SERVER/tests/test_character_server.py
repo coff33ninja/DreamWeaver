@@ -1207,3 +1207,666 @@ if __name__ == '__main__':
         '--cov-report=html',
         '--cov-report=term-missing'
     ])
+
+class TestCharacterServerNetworkAndConcurrency:
+    """Test suite for network-related and concurrency scenarios."""
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_character_creation_race_conditions(self):
+        """Test race conditions in concurrent character creation."""
+        character_server = MockCharacterServer()
+        
+        async def create_character_async(name):
+            await asyncio.sleep(0.001)  # Simulate network delay
+            return character_server.create_character({
+                'name': name,
+                'class': 'Concurrent',
+                'level': 1
+            })
+        
+        # Create multiple characters concurrently
+        tasks = [create_character_async(f'ConcurrentHero_{i}') for i in range(20)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Verify all succeeded and have unique IDs
+        successful_results = [r for r in results if not isinstance(r, Exception)]
+        assert len(successful_results) == 20
+        
+        ids = [char['id'] for char in successful_results]
+        assert len(set(ids)) == len(ids)  # All IDs should be unique
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_character_updates_consistency(self):
+        """Test data consistency under concurrent updates."""
+        character_server = MockCharacterServer()
+        
+        # Create a character to update
+        char = character_server.create_character({
+            'name': 'ConcurrentUpdateHero',
+            'class': 'Warrior',
+            'level': 1,
+            'stats': {'strength': 10, 'health': 100}
+        })
+        
+        async def update_character_async(update_data):
+            await asyncio.sleep(0.001)
+            return character_server.update_character(char['id'], update_data)
+        
+        # Perform concurrent updates
+        updates = [
+            {'level': 10, 'stats': {'strength': 15}},
+            {'level': 15, 'stats': {'health': 150}},
+            {'level': 20, 'experience': 1000},
+            {'skills': ['combat'], 'level': 25},
+            {'equipment': ['sword'], 'level': 30}
+        ]
+        
+        tasks = [update_character_async(update) for update in updates]
+        results = await asyncio.gather(*tasks)
+        
+        # Verify final character state is consistent
+        final_char = character_server.get_character(char['id'])
+        assert final_char is not None
+        assert 'level' in final_char
+        assert final_char['level'] >= 1  # Should have been updated
+
+
+class TestCharacterServerDatabaseSimulation:
+    """Test suite simulating database-like operations and constraints."""
+    
+    def test_character_unique_name_constraint_simulation(self, character_server):
+        """Test simulation of unique name constraints."""
+        # Create first character
+        char1_data = {
+            'name': 'UniqueHero',
+            'class': 'Warrior',
+            'level': 1
+        }
+        char1 = character_server.create_character(char1_data)
+        assert char1 is not None
+        
+        # Try to create second character with same name
+        # In a real database, this might fail with a unique constraint
+        char2_data = {
+            'name': 'UniqueHero',  # Same name
+            'class': 'Mage',  # Different class
+            'level': 5
+        }
+        char2 = character_server.create_character(char2_data)
+        
+        # Current mock allows duplicates, but test verifies behavior
+        assert char2 is not None
+        assert char1['id'] != char2['id']
+    
+    def test_character_foreign_key_simulation(self, character_server):
+        """Test simulation of foreign key relationships."""
+        # Create characters that might reference each other
+        char1 = character_server.create_character({
+            'name': 'Leader',
+            'class': 'Paladin',
+            'level': 50
+        })
+        
+        char2 = character_server.create_character({
+            'name': 'Follower',
+            'class': 'Warrior',
+            'level': 30,
+            'leader_id': char1['id']  # Simulated foreign key
+        })
+        
+        # Verify relationship
+        assert char2['leader_id'] == char1['id']
+        
+        # Test cascading operations
+        character_server.delete_character(char1['id'])
+        
+        # In real DB, this might cascade or be prevented
+        follower = character_server.get_character(char2['id'])
+        assert follower is not None  # Mock doesn't handle cascading
+        assert follower['leader_id'] == char1['id']  # Reference still exists
+    
+    def test_character_transaction_simulation(self, character_server):
+        """Test simulation of database transaction behavior."""
+        initial_count = len(character_server.list_characters())
+        
+        # Simulate a transaction with multiple operations
+        try:
+            # Operation 1: Create character
+            char1 = character_server.create_character({
+                'name': 'TransactionHero1',
+                'class': 'Warrior',
+                'level': 1
+            })
+            
+            # Operation 2: Create another character
+            char2 = character_server.create_character({
+                'name': 'TransactionHero2',
+                'class': 'Mage',
+                'level': 1
+            })
+            
+            # Operation 3: Update first character
+            character_server.update_character(char1['id'], {'level': 10})
+            
+            # Simulate transaction success
+            final_count = len(character_server.list_characters())
+            assert final_count == initial_count + 2
+            
+        except Exception as e:
+            # In real DB, would rollback transaction
+            pytest.fail(f"Transaction simulation failed: {e}")
+
+
+class TestCharacterServerCachingAndOptimization:
+    """Test suite for caching and optimization scenarios."""
+    
+    def test_character_retrieval_caching_simulation(self, character_server, valid_character_data):
+        """Test simulation of caching behavior for character retrieval."""
+        char = character_server.create_character(valid_character_data)
+        
+        # Multiple retrievals to test caching behavior
+        retrieval_times = []
+        for _ in range(10):
+            start_time = asyncio.get_event_loop().time() if hasattr(asyncio, 'get_event_loop') else 0
+            retrieved_char = character_server.get_character(char['id'])
+            end_time = asyncio.get_event_loop().time() if hasattr(asyncio, 'get_event_loop') else 0
+            
+            assert retrieved_char is not None
+            assert retrieved_char['id'] == char['id']
+            
+            retrieval_times.append(end_time - start_time)
+        
+        # In a real cached system, subsequent retrievals might be faster
+        # Here we just verify consistency
+        assert all(time >= 0 for time in retrieval_times)
+    
+    def test_character_list_pagination_simulation(self, character_server):
+        """Test simulation of paginated character listing."""
+        # Create many characters
+        characters = []
+        for i in range(50):
+            char_data = {
+                'name': f'PaginationHero_{i:02d}',
+                'class': 'Warrior',
+                'level': i + 1
+            }
+            characters.append(character_server.create_character(char_data))
+        
+        # Simulate pagination
+        all_chars = character_server.list_characters()
+        
+        # Test pagination logic (would be implemented in real server)
+        page_size = 10
+        total_pages = len(all_chars) // page_size + (1 if len(all_chars) % page_size > 0 else 0)
+        
+        for page in range(total_pages):
+            start_idx = page * page_size
+            end_idx = min(start_idx + page_size, len(all_chars))
+            page_chars = all_chars[start_idx:end_idx]
+            
+            assert len(page_chars) <= page_size
+            if page < total_pages - 1:
+                assert len(page_chars) == page_size
+    
+    def test_character_search_and_filtering_simulation(self, character_server):
+        """Test simulation of character search and filtering."""
+        # Create diverse characters
+        test_characters = [
+            {'name': 'Alice', 'class': 'Warrior', 'level': 25, 'guild': 'RedDragons'},
+            {'name': 'Bob', 'class': 'Mage', 'level': 30, 'guild': 'BlueMoons'},
+            {'name': 'Carol', 'class': 'Warrior', 'level': 20, 'guild': 'RedDragons'},
+            {'name': 'Dave', 'class': 'Rogue', 'level': 35, 'guild': 'Shadows'},
+            {'name': 'Eve', 'class': 'Mage', 'level': 28, 'guild': 'BlueMoons'},
+        ]
+        
+        created_chars = []
+        for char_data in test_characters:
+            created_chars.append(character_server.create_character(char_data))
+        
+        all_chars = character_server.list_characters()
+        
+        # Simulate filtering by class
+        warriors = [c for c in all_chars if c.get('class') == 'Warrior']
+        mages = [c for c in all_chars if c.get('class') == 'Mage']
+        
+        assert len(warriors) >= 2
+        assert len(mages) >= 2
+        
+        # Simulate filtering by level range
+        mid_level_chars = [c for c in all_chars if 20 <= c.get('level', 0) <= 30]
+        assert len(mid_level_chars) >= 3
+        
+        # Simulate filtering by guild
+        red_dragons = [c for c in all_chars if c.get('guild') == 'RedDragons']
+        assert len(red_dragons) >= 2
+
+
+class TestCharacterServerAPIResponseFormat:
+    """Test suite for API response format consistency."""
+    
+    def test_character_creation_response_format(self, character_server, valid_character_data):
+        """Test that character creation returns consistent response format."""
+        result = character_server.create_character(valid_character_data)
+        
+        # Verify response has required fields
+        assert 'id' in result
+        assert isinstance(result['id'], (int, str))
+        
+        # Verify all input data is preserved
+        for key, value in valid_character_data.items():
+            assert key in result
+            assert result[key] == value
+        
+        # Verify response is JSON-serializable
+        import json
+        json_str = json.dumps(result)
+        parsed_result = json.loads(json_str)
+        assert parsed_result == result
+    
+    def test_character_update_response_format(self, character_server, valid_character_data):
+        """Test that character updates return consistent response format."""
+        char = character_server.create_character(valid_character_data)
+        
+        update_data = {'level': 50, 'new_field': 'test_value'}
+        result = character_server.update_character(char['id'], update_data)
+        
+        # Verify response format
+        assert result is not None
+        assert 'id' in result
+        assert result['id'] == char['id']
+        
+        # Verify updated fields are present
+        assert result['level'] == 50
+        assert result['new_field'] == 'test_value'
+        
+        # Verify original fields are preserved
+        assert result['name'] == valid_character_data['name']
+        assert result['class'] == valid_character_data['class']
+    
+    def test_character_list_response_format(self, character_server, valid_character_data):
+        """Test that character listing returns consistent response format."""
+        # Create multiple characters
+        for i in range(3):
+            char_data = {**valid_character_data, 'name': f'ListHero_{i}'}
+            character_server.create_character(char_data)
+        
+        result = character_server.list_characters()
+        
+        # Verify response is a list
+        assert isinstance(result, list)
+        assert len(result) >= 3
+        
+        # Verify each character has consistent format
+        for char in result:
+            assert isinstance(char, dict)
+            assert 'id' in char
+            assert 'name' in char
+            assert 'class' in char
+            assert 'level' in char
+        
+        # Verify response is JSON-serializable
+        import json
+        json_str = json.dumps(result)
+        parsed_result = json.loads(json_str)
+        assert parsed_result == result
+
+
+class TestCharacterServerMetricsAndMonitoring:
+    """Test suite for metrics and monitoring simulation."""
+    
+    def test_character_operation_success_metrics(self, character_server, valid_character_data):
+        """Test tracking of successful character operations."""
+        success_count = 0
+        
+        # Track character creation success
+        try:
+            character_server.create_character(valid_character_data)
+            success_count += 1
+        except Exception:
+            pass
+        
+        # Track character retrieval success
+        chars = character_server.list_characters()
+        if chars:
+            try:
+                character_server.get_character(chars[0]['id'])
+                success_count += 1
+            except Exception:
+                pass
+        
+        # Track character update success
+        if chars:
+            try:
+                character_server.update_character(chars[0]['id'], {'level': 99})
+                success_count += 1
+            except Exception:
+                pass
+        
+        assert success_count >= 2  # At least creation and one other operation
+    
+    def test_character_operation_error_metrics(self, character_server):
+        """Test tracking of failed character operations."""
+        error_count = 0
+        
+        # Track invalid character creation errors
+        try:
+            character_server.create_character({'invalid': 'data'})
+        except (ValueError, TypeError):
+            error_count += 1
+        
+        # Track non-existent character retrieval
+        result = character_server.get_character(99999)
+        if result is None:
+            error_count += 1
+        
+        # Track invalid character update
+        result = character_server.update_character(99999, {'level': 10})
+        if result is None:
+            error_count += 1
+        
+        assert error_count >= 2  # Should have multiple tracked errors
+    
+    def test_character_server_performance_metrics(self, character_server, valid_character_data):
+        """Test simulation of performance metric collection."""
+        import time
+        
+        # Measure character creation time
+        start_time = time.time()
+        char = character_server.create_character(valid_character_data)
+        creation_time = time.time() - start_time
+        
+        # Measure character retrieval time
+        start_time = time.time()
+        character_server.get_character(char['id'])
+        retrieval_time = time.time() - start_time
+        
+        # Measure character update time
+        start_time = time.time()
+        character_server.update_character(char['id'], {'level': 50})
+        update_time = time.time() - start_time
+        
+        # Verify measurements are reasonable
+        assert creation_time >= 0
+        assert retrieval_time >= 0
+        assert update_time >= 0
+        
+        # In real monitoring, these would be sent to metrics system
+        metrics = {
+            'character_creation_time': creation_time,
+            'character_retrieval_time': retrieval_time,
+            'character_update_time': update_time
+        }
+        
+        assert all(time >= 0 for time in metrics.values())
+
+
+class TestCharacterServerBackupAndRecovery:
+    """Test suite for backup and recovery simulation."""
+    
+    def test_character_data_backup_simulation(self, character_server, valid_character_data):
+        """Test simulation of character data backup."""
+        # Create characters
+        original_chars = []
+        for i in range(5):
+            char_data = {**valid_character_data, 'name': f'BackupHero_{i}'}
+            char = character_server.create_character(char_data)
+            original_chars.append(char)
+        
+        # Simulate backup (export all character data)
+        backup_data = character_server.list_characters()
+        
+        # Verify backup contains all characters
+        assert len(backup_data) >= 5
+        
+        # Simulate backup serialization
+        import json
+        backup_json = json.dumps(backup_data, default=str)
+        restored_data = json.loads(backup_json)
+        
+        # Verify restored data integrity
+        assert len(restored_data) == len(backup_data)
+        for i, char in enumerate(restored_data):
+            assert char['name'] == backup_data[i]['name']
+            assert char['class'] == backup_data[i]['class']
+    
+    def test_character_data_recovery_simulation(self, character_server):
+        """Test simulation of character data recovery."""
+        # Simulate recovery data
+        recovery_data = [
+            {'id': 1001, 'name': 'RecoveryHero1', 'class': 'Warrior', 'level': 25},
+            {'id': 1002, 'name': 'RecoveryHero2', 'class': 'Mage', 'level': 30},
+            {'id': 1003, 'name': 'RecoveryHero3', 'class': 'Rogue', 'level': 28},
+        ]
+        
+        # Simulate recovery process (would involve restoring from backup)
+        recovered_chars = []
+        for char_data in recovery_data:
+            # Remove ID for creation (would be handled differently in real recovery)
+            create_data = {k: v for k, v in char_data.items() if k != 'id'}
+            recovered_char = character_server.create_character(create_data)
+            recovered_chars.append(recovered_char)
+        
+        # Verify recovery success
+        assert len(recovered_chars) == 3
+        for i, char in enumerate(recovered_chars):
+            assert char['name'] == recovery_data[i]['name']
+            assert char['class'] == recovery_data[i]['class']
+            assert char['level'] == recovery_data[i]['level']
+    
+    def test_character_partial_recovery_simulation(self, character_server):
+        """Test simulation of partial character data recovery."""
+        # Simulate corrupted recovery data
+        corrupted_recovery_data = [
+            {'name': 'PartialHero1', 'class': 'Warrior'},  # Missing level
+            {'name': '', 'class': 'Mage', 'level': 30},   # Invalid name
+            {'name': 'PartialHero3', 'class': 'Rogue', 'level': -5},  # Invalid level
+            {'name': 'PartialHero4', 'class': 'Paladin', 'level': 20},  # Valid
+        ]
+        
+        successful_recoveries = 0
+        failed_recoveries = 0
+        
+        for char_data in corrupted_recovery_data:
+            try:
+                character_server.create_character(char_data)
+                successful_recoveries += 1
+            except (ValueError, TypeError):
+                failed_recoveries += 1
+        
+        # Verify partial recovery behavior
+        assert successful_recoveries >= 1  # At least one should succeed
+        assert failed_recoveries >= 1      # At least one should fail
+
+
+# Add integration-style tests for complex workflows
+class TestCharacterServerWorkflows:
+    """Test suite for complex character management workflows."""
+    
+    def test_character_leveling_workflow(self, character_server):
+        """Test complete character leveling workflow."""
+        # Create new character
+        char = character_server.create_character({
+            'name': 'LevelingHero',
+            'class': 'Adventurer',
+            'level': 1,
+            'experience': 0,
+            'stats': {'strength': 10, 'health': 100}
+        })
+        
+        # Simulate leveling progression
+        level_thresholds = [100, 300, 600, 1000, 1500]
+        
+        for target_level, exp_needed in enumerate(level_thresholds, 2):
+            # Update experience
+            char = character_server.update_character(char['id'], {
+                'experience': exp_needed,
+                'level': target_level,
+                'stats': {
+                    'strength': 10 + target_level * 2,
+                    'health': 100 + target_level * 10
+                }
+            })
+            
+            # Verify progression
+            assert char['level'] == target_level
+            assert char['experience'] == exp_needed
+            assert char['stats']['strength'] == 10 + target_level * 2
+        
+        # Verify final state
+        final_char = character_server.get_character(char['id'])
+        assert final_char['level'] == 6
+        assert final_char['stats']['strength'] == 22
+    
+    def test_character_guild_management_workflow(self, character_server):
+        """Test character guild management workflow."""
+        # Create characters for guild
+        guild_members = []
+        for i in range(5):
+            char = character_server.create_character({
+                'name': f'GuildMember_{i}',
+                'class': 'Various',
+                'level': 20 + i,
+                'guild': None
+            })
+            guild_members.append(char)
+        
+        # Create guild leader
+        leader = character_server.update_character(guild_members[0]['id'], {
+            'guild': 'TestGuild',
+            'guild_role': 'Leader',
+            'guild_permissions': ['invite', 'kick', 'promote']
+        })
+        
+        # Add members to guild
+        for member in guild_members[1:]:
+            character_server.update_character(member['id'], {
+                'guild': 'TestGuild',
+                'guild_role': 'Member',
+                'guild_permissions': ['chat']
+            })
+        
+        # Verify guild setup
+        all_chars = character_server.list_characters()
+        guild_chars = [c for c in all_chars if c.get('guild') == 'TestGuild']
+        
+        assert len(guild_chars) >= 5
+        leader_chars = [c for c in guild_chars if c.get('guild_role') == 'Leader']
+        assert len(leader_chars) == 1
+    
+    def test_character_equipment_management_workflow(self, character_server):
+        """Test character equipment management workflow."""
+        # Create character
+        char = character_server.create_character({
+            'name': 'EquipmentHero',
+            'class': 'Warrior',
+            'level': 25,
+            'equipment': {
+                'weapon': None,
+                'armor': None,
+                'accessories': []
+            },
+            'inventory': []
+        })
+        
+        # Add items to inventory
+        char = character_server.update_character(char['id'], {
+            'inventory': [
+                {'name': 'Iron Sword', 'type': 'weapon', 'stats': {'damage': 15}},
+                {'name': 'Leather Armor', 'type': 'armor', 'stats': {'defense': 10}},
+                {'name': 'Power Ring', 'type': 'accessory', 'stats': {'strength': 5}}
+            ]
+        })
+        
+        # Simulate equipping items
+        char = character_server.update_character(char['id'], {
+            'equipment': {
+                'weapon': {'name': 'Iron Sword', 'type': 'weapon', 'stats': {'damage': 15}},
+                'armor': {'name': 'Leather Armor', 'type': 'armor', 'stats': {'defense': 10}},
+                'accessories': [{'name': 'Power Ring', 'type': 'accessory', 'stats': {'strength': 5}}]
+            },
+            'inventory': []  # Items moved from inventory to equipment
+        })
+        
+        # Verify equipment workflow
+        final_char = character_server.get_character(char['id'])
+        assert final_char['equipment']['weapon']['name'] == 'Iron Sword'
+        assert final_char['equipment']['armor']['name'] == 'Leather Armor'
+        assert len(final_char['equipment']['accessories']) == 1
+        assert len(final_char['inventory']) == 0
+
+
+# Test fixtures for the new test classes
+@pytest.fixture
+def mock_async_character_server():
+    """Fixture providing an async-capable mock character server."""
+    class AsyncMockCharacterServer(MockCharacterServer):
+        async def create_character_async(self, character_data):
+            await asyncio.sleep(0.001)  # Simulate async operation
+            return self.create_character(character_data)
+        
+        async def get_character_async(self, character_id):
+            await asyncio.sleep(0.001)
+            return self.get_character(character_id)
+    
+    return AsyncMockCharacterServer()
+
+
+@pytest.fixture
+def complex_character_data():
+    """Fixture providing complex character data for advanced testing."""
+    return {
+        'name': 'ComplexHero',
+        'class': 'MultiClass',
+        'level': 35,
+        'experience': 50000,
+        'stats': {
+            'strength': 25,
+            'dexterity': 20,
+            'intelligence': 15,
+            'wisdom': 18,
+            'constitution': 22,
+            'charisma': 12
+        },
+        'skills': [
+            {'name': 'Combat', 'level': 50, 'experience': 10000},
+            {'name': 'Magic', 'level': 30, 'experience': 5000},
+            {'name': 'Stealth', 'level': 25, 'experience': 3000}
+        ],
+        'equipment': {
+            'weapon': {'name': 'Legendary Sword', 'damage': 50, 'enchantments': ['fire', 'holy']},
+            'armor': {'name': 'Dragon Scale Mail', 'defense': 35, 'resistances': ['fire', 'physical']},
+            'accessories': [
+                {'name': 'Ring of Power', 'bonus': {'strength': 5}},
+                {'name': 'Amulet of Wisdom', 'bonus': {'wisdom': 3}}
+            ]
+        },
+        'inventory': [
+            {'name': 'Health Potion', 'quantity': 10, 'effect': 'heal'},
+            {'name': 'Mana Potion', 'quantity': 5, 'effect': 'restore_mp'},
+            {'name': 'Rare Gem', 'quantity': 3, 'value': 1000}
+        ],
+        'guild': 'Elite Warriors',
+        'guild_role': 'Officer',
+        'achievements': [
+            'Dragon Slayer',
+            'Master Warrior',
+            'Dungeon Explorer'
+        ],
+        'location': {'x': 100, 'y': 250, 'map': 'Continent_1'},
+        'last_login': '2023-12-01T10:30:00Z',
+        'created_at': '2023-01-15T08:00:00Z'
+    }
+
+
+if __name__ == '__main__':
+    # Run all tests including the new comprehensive additions
+    pytest.main([
+        __file__, 
+        '-v', 
+        '--tb=long', 
+        '--durations=20',
+        '--cov=character_server',
+        '--cov-report=html',
+        '--cov-report=term-missing',
+        '-k', 'not slow'  # Skip slow tests by default
+    ])

