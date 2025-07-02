@@ -8,7 +8,7 @@ import websockets
 from .database import Database
 from .client_manager import ClientManager
 from .dashboard import router as dashboard_router
-from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
+from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH, SESSION_DURATION_HOURS
 import os
 from datetime import datetime, timezone, timedelta
 import secrets
@@ -451,8 +451,8 @@ async def submit_handshake_response(
         client_manager.clear_challenge(Actor_id)  # Clear the used challenge
 
         session_token = secrets.token_hex(32)
-        # Define session duration (e.g., 1 hour)
-        session_duration_hours = 1  # TODO: Make this configurable
+        # Use configurable session duration
+        session_duration_hours = SESSION_DURATION_HOURS
         session_expiry = datetime.now(timezone.utc) + timedelta(
             hours=session_duration_hours
         )
