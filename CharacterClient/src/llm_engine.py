@@ -11,10 +11,12 @@ try:
 except ImportError as e:
     raise ImportError("The 'peft' package is required for LoRA/adapter support. Please install it with 'pip install peft'.") from e
 import asyncio # Added asyncio
+import logging
 
 from .config import CLIENT_LLM_MODELS_PATH, ensure_client_directories
 
-ensure_client_directories()
+logger = logging.getLogger("dreamweaver_client")
+ensure_client_directories() # This in config.py should also be logged if it prints
 DEFAULT_CLIENT_MODEL_NAME = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
 class JsonDataset(torch.utils.data.Dataset):
@@ -81,7 +83,7 @@ class LLMEngine:
         self.model = None
         self.tokenizer = None
         self.is_initialized = False
-        print(f"Client LLMEngine: Initializing for model '{self.model_name}' for Actor_ID '{self.Actor_id}'")
+        logger.info(f"Client LLMEngine: Initializing for model '{self.model_name}' for Actor_ID '{self.Actor_id}'. Base models path: {self.models_base_path}, Adapters path: {self.adapters_path}")
         self._load_model_and_tokenizer()
 
     def _load_model_and_tokenizer(self):
@@ -118,18 +120,21 @@ class LLMEngine:
             adapter_config_file = os.path.join(self.adapters_path, "adapter_config.json")
             if os.path.exists(adapter_config_file) and self.model:
                 try:
+                    logger.info(f"Client LLMEngine ({self.Actor_id}): Found adapter config. Attempting to load LoRA adapters from {self.adapters_path}.")
                     self.model = PeftModel.from_pretrained(self.model, self.adapters_path)
+                    logger.info(f"Client LLMEngine ({self.Actor_id}): Successfully loaded LoRA adapters from {self.adapters_path}.")
                 except Exception as e:
-                    print(f"Client LLMEngine: Error loading LoRA adapters from {self.adapters_path}: {e}. Proceeding with base model.")
+                    logger.warning(f"Client LLMEngine ({self.Actor_id}): Error loading LoRA adapters from {self.adapters_path}: {e}. Proceeding with base model.", exc_info=True)
 
             if self.model:
                 self.model.eval()
                 self.is_initialized = True
-                print(f"Client LLMEngine for {self.Actor_id} initialized successfully.")
+                device_type = self.model.device.type if hasattr(self.model, 'device') else 'unknown'
+                logger.info(f"Client LLMEngine for {self.Actor_id} (model: {self.model_name}) initialized successfully on device: {device_type}.")
             else:
-                print(f"Client LLMEngine: Model failed to load for '{self.model_name}'")
+                logger.error(f"Client LLMEngine ({self.Actor_id}): Model object is None after loading attempt for '{self.model_name}'.")
         except Exception as e:
-            print(f"Client LLMEngine: FATAL Error during model loading for '{self.model_name}': {e}")
+            logger.critical(f"Client LLMEngine ({self.Actor_id}): FATAL Error during model loading for '{self.model_name}': {e}", exc_info=True)
             self.is_initialized = False
 
     async def generate(self, prompt: str, max_new_tokens: int = 150) -> str:
@@ -144,8 +149,10 @@ class LLMEngine:
             str: The generated text continuation, or a special error string if the model is not initialized or generation fails.
         """
         if not self.is_initialized or not self.model or not self.tokenizer:
-            print("Client LLMEngine: Not initialized, cannot generate text.")
-            return "[LLM_NOT_INITIALIZED]"
+            logger.error(f"Client LLMEngine ({self.Actor_id}): Not initialized, cannot generate text for prompt: '{prompt[:50]}...'.")
+            return "[LLM_ERROR:NOT_INITIALIZED]"
+
+        logger.info(f"Client LLMEngine ({self.Actor_id}): Generating text for prompt: '{prompt[:100]}...'")
 
         def _blocking_generate_task():
             """
@@ -171,10 +178,11 @@ class LLMEngine:
 
         try:
             generated_text = await asyncio.to_thread(_blocking_generate_task)
+            logger.info(f"Client LLMEngine ({self.Actor_id}): Generated text: '{generated_text[:100]}...'")
             return generated_text
         except Exception as e:
-            print(f"Client LLMEngine ({self.Actor_id}): Error during async text generation: {e}")
-            return "[LLM_GENERATION_ERROR]"
+            logger.error(f"Client LLMEngine ({self.Actor_id}): Error during async text generation for prompt '{prompt[:50]}...': {e}", exc_info=True)
+            return "[LLM_ERROR:GENERATION_FAILED]"
 
     async def fine_tune_async(self, training_data: dict, Actor_id_override: str = ""):
         """
@@ -187,7 +195,7 @@ class LLMEngine:
             Actor_id_override (str, optional): If provided, overrides the default actor ID for data storage and adapter output.
         """
         current_Actor_id = Actor_id_override if Actor_id_override else self.Actor_id
-        print(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning requested.")
+        logger.info(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning requested with data: {str(training_data)[:100]}...")
 
         def _save_data_blocking():
             """
@@ -202,9 +210,9 @@ class LLMEngine:
             try:
                 with open(data_file, "w", encoding="utf-8") as f:
                     json.dump(training_data, f, ensure_ascii=False, indent=4)
-                print(f"Client LLMEngine ({current_Actor_id}): Saved training data sample to {data_file}")
+                logger.info(f"Client LLMEngine ({current_Actor_id}): Saved training data sample to {data_file}")
             except Exception as e:
-                print(f"Client LLMEngine ({current_Actor_id}): Error saving local training data: {e}")
+                logger.error(f"Client LLMEngine ({current_Actor_id}): Error saving local training data to {data_file}: {e}", exc_info=True)
 
         await asyncio.to_thread(_save_data_blocking)
 
@@ -227,7 +235,8 @@ class LLMEngine:
                             if isinstance(sample, dict) and 'input' in sample and 'output' in sample:
                                 all_data.append(sample)
                     except Exception as e:
-                        print(f"Error loading training sample {fname}: {e}")
+                        logger.error(f"Client LLMEngine ({current_Actor_id}): Error loading training sample {fname}: {e}", exc_info=True)
+            logger.info(f"Client LLMEngine ({current_Actor_id}): Loaded {len(all_data)} training samples from {data_dir}.")
             return all_data
 
         def _train_blocking():
@@ -237,14 +246,21 @@ class LLMEngine:
             If the model or tokenizer is not initialized, or if no training data is found, the function exits without performing training.
             """
             if not self.model or not self.tokenizer:
-                print(f"Client LLMEngine ({current_Actor_id}): Model or tokenizer not initialized, skipping training.")
+                logger.error(f"Client LLMEngine ({current_Actor_id}): Model or tokenizer not initialized, skipping fine-tuning.")
                 return
+
+            logger.info(f"Client LLMEngine ({current_Actor_id}): Loading all training data for fine-tuning...")
             all_data = _load_all_training_data()
             if not all_data:
-                print(f"Client LLMEngine ({current_Actor_id}): No training data found, skipping training.")
+                logger.info(f"Client LLMEngine ({current_Actor_id}): No training data found, skipping fine-tuning.")
                 return
+
             dataset = JsonDataset(all_data, self.tokenizer)
-            output_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "adapters", current_Actor_id, self.model_name.replace('/', '_') + "_finetuned")
+            # Using self.adapters_path which is already defined as ".../CLIENT_LLM_MODELS_PATH/adapters/Actor_id/model_name/"
+            # The "_finetuned" suffix might be redundant if this is the primary adapter path.
+            # For consistency, let's use self.adapters_path directly for saving.
+            output_dir = self.adapters_path
+            # output_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "adapters", current_Actor_id, self.model_name.replace('/', '_') + "_finetuned")
             training_args = TrainingArguments(
                 output_dir=output_dir,
                 overwrite_output_dir=True,
@@ -263,13 +279,17 @@ class LLMEngine:
                 train_dataset=dataset
                 # tokenizer=self.tokenizer  # Removed as Trainer does not accept this argument
             )
-            print(f"Client LLMEngine ({current_Actor_id}): Starting training with {len(dataset)} samples...")
-            trainer.train()
-            trainer.save_model(output_dir)
-            print(f"Client LLMEngine ({current_Actor_id}): Training complete. Model saved to {output_dir}")
+            logger.info(f"Client LLMEngine ({current_Actor_id}): Starting fine-tuning with {len(dataset)} samples. Output directory: {output_dir}")
+            try:
+                trainer.train()
+                trainer.save_model(output_dir) # This saves the full model if not PeftModel, or adapters if PeftModel
+                logger.info(f"Client LLMEngine ({current_Actor_id}): Fine-tuning complete. Model/adapters saved to {output_dir}")
+            except Exception as e_train:
+                 logger.error(f"Client LLMEngine ({current_Actor_id}): Error during model training or saving: {e_train}", exc_info=True)
+
 
         await asyncio.to_thread(_train_blocking)
-        print(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning complete.")
+        logger.info(f"Client LLMEngine ({current_Actor_id}): Async fine-tuning process complete.")
 
     def fine_tune(self, training_data: dict, Actor_id_override: str = ""):
         """
@@ -282,19 +302,19 @@ class LLMEngine:
             Actor_id_override (str, optional): If provided, overrides the default actor ID for data storage.
         """
         current_Actor_id = Actor_id_override if Actor_id_override else self.Actor_id
-        print(f"Client LLMEngine ({current_Actor_id}): Fine-tuning requested (SYNC placeholder).")
+        logger.info(f"Client LLMEngine ({current_Actor_id}): Fine-tuning requested (SYNC placeholder). Data: {str(training_data)[:100]}...")
         data_dir = os.path.join(CLIENT_LLM_MODELS_PATH, "training_data_local", current_Actor_id)
-        os.makedirs(data_dir, exist_ok=True)
-        timestamp = torch.randint(0, 1000000, (1,)).item()
+        os.makedirs(data_dir, exist_ok=True) # Handled by ensure_client_directories or earlier save, but good practice
+        timestamp = torch.randint(0, 1000000, (1,)).item() # Still using torch for this random int
         data_file = os.path.join(data_dir, f"training_sample_sync_{timestamp}.json")
         try:
-            import json
+            # import json # Already imported at top level
             with open(data_file, "w", encoding="utf-8") as f:
                 json.dump(training_data, f, ensure_ascii=False, indent=4)
-            print(f"Client LLMEngine ({current_Actor_id}): Saved SYNC training data to {data_file}")
+            logger.info(f"Client LLMEngine ({current_Actor_id}): Saved SYNC training data (placeholder) to {data_file}")
         except Exception as e:
-            print(f"Client LLMEngine ({current_Actor_id}): Error saving SYNC training data: {e}")
-        print("Client LLMEngine: Actual SYNC fine-tuning not implemented.")
+            logger.error(f"Client LLMEngine ({current_Actor_id}): Error saving SYNC training data (placeholder) to {data_file}: {e}", exc_info=True)
+        logger.warning("Client LLMEngine: Actual SYNC fine-tuning not implemented. Data saved only.")
 
     async def save_adapters_async(self):
         """
@@ -310,37 +330,44 @@ class LLMEngine:
                 If the model is not initialized, logs a message indicating that adapters cannot be saved.
                 """
                 if self.model is not None:
+                    logger.info(f"Client LLMEngine ({self.Actor_id}): Saving adapters to {self.adapters_path}...")
                     self.model.save_pretrained(self.adapters_path)
+                    logger.info(f"Client LLMEngine ({self.Actor_id}): Adapters successfully saved to {self.adapters_path}.")
                 else:
-                    print(f"Client LLMEngine ({self.Actor_id}): Cannot save adapters, model is None.")
+                    logger.error(f"Client LLMEngine ({self.Actor_id}): Cannot save adapters, model is None.")
             try:
                 await asyncio.to_thread(_save_adapters_blocking)
-                print(f"Client LLMEngine ({self.Actor_id}): LoRA adapters saved (async) to {self.adapters_path}")
             except Exception as e:
-                print(f"Client LLMEngine ({self.Actor_id}): Error saving LoRA adapters (async): {e}")
+                logger.error(f"Client LLMEngine ({self.Actor_id}): Error saving LoRA adapters (async) to {self.adapters_path}: {e}", exc_info=True)
         else:
-            print(f"Client LLMEngine ({self.Actor_id}): Model not PeftModel or not init, cannot save adapters (async).")
+            logger.info(f"Client LLMEngine ({self.Actor_id}): Model is not a PeftModel or not initialized. Skipping adapter save (async).")
 
 if __name__ == "__main__":
+    # Setup basic logging for the test runner if this script is run directly
+    if not logger.hasHandlers(): # Check if logger is already configured by main client setup
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s')
+
     async def test_async_llm_engine():
         """
         Asynchronously tests the LLMEngine's text generation and fine-tuning capabilities.
         
         This function initializes an LLMEngine instance, generates a text response to a sample prompt asynchronously, and performs an asynchronous fine-tuning operation with test data. Results and progress are printed to the console.
         """
-        print("--- Client LLMEngine Async Test ---")
-        engine = LLMEngine(Actor_id="test_Actor_async")
+        logger.info("--- Client LLMEngine Async Test ---")
+        engine = LLMEngine(Actor_id="test_Actor_async") # This will log its own init
         if engine.is_initialized:
             prompt = "Write a short poem about asynchronous programming."
-            print(f"\nTest Prompt: {prompt}")
-            response = await engine.generate(prompt, max_new_tokens=60)
-            print(f"Async Response: {response}")
+            logger.info(f"\nTest Prompt: {prompt}")
+            response = await engine.generate(prompt, max_new_tokens=60) # This will log
+            logger.info(f"Async Response from LLM: {response}")
 
-            print("\nTesting async fine_tune (placeholder)...")
-            await engine.fine_tune_async({"input": "Async test input", "output": "Async test output"})
-            # await engine.save_adapters_async() # Test saving (would only work if adapters were loaded/created)
+            logger.info("\nTesting async fine_tune (training placeholder)...")
+            await engine.fine_tune_async({"input": "Async test input", "output": "Async test output"}) # This will log
+
+            logger.info("\nTesting async save_adapters...")
+            await engine.save_adapters_async() # This will log
         else:
-            print("Failed to initialize LLMEngine for async test.")
-        print("\n--- Client LLMEngine Async Test Complete ---")
+            logger.error("Failed to initialize LLMEngine for async test.")
+        logger.info("\n--- Client LLMEngine Async Test Complete ---")
 
     asyncio.run(test_async_llm_engine())

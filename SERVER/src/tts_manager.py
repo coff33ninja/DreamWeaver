@@ -3,14 +3,17 @@ import os
 import torch
 import asyncio # Added asyncio
 from typing import Optional
+import logging
 
 from .config import MODELS_PATH
+
+logger = logging.getLogger("dreamweaver_server")
 
 try:
     from TTS.api import TTS as CoquiTTS
 except ImportError:
     CoquiTTS = None
-    # print("Server TTSManager: Coqui TTS library not found. XTTSv2 will not be available.") # Less verbose
+    logger.info("Server TTSManager: Coqui TTS library not found. XTTSv2 will not be available.")
 
 TTS_MODELS_PATH = os.path.join(MODELS_PATH, "tts")
 
@@ -39,7 +42,7 @@ class TTSManager:
         os.environ['TTS_HOME'] = MODELS_PATH
         os.makedirs(os.path.join(MODELS_PATH, "tts_models"), exist_ok=True) # Common Coqui subfolder
 
-        # print(f"Server TTSManager: Initializing for service '{self.service_name}' with model '{self.model_name}'")
+        logger.info(f"Server TTSManager: Initializing for service '{self.service_name}' with model '{self.model_name}', lang '{self.language}', speaker_wav: '{self.speaker_wav_path}'")
         self._initialize_service()
 
     def _initialize_service(self):
@@ -52,34 +55,38 @@ class TTSManager:
             if gtts:
                 self.tts_instance = self._gtts_synthesize_blocking # Store the blocking method
                 self.is_initialized = True
-                print("Server TTSManager: gTTS initialized.")
+                logger.info("Server TTSManager: gTTS initialized.")
             else:
-                print("Server TTSManager: Error - gTTS service selected but library not found.")
+                logger.error("Server TTSManager: Error - gTTS service selected but gtts library not found.")
             return
 
         if not self.model_name:
-            print(f"Server TTSManager: Warning - No model name provided for TTS service '{self.service_name}'.")
-            return
+            logger.warning(f"Server TTSManager: No model name provided for TTS service '{self.service_name}'. Initialization may fail or use defaults.")
+            # For some services, a model name might be optional if a default is available.
+            # For Coqui, model_name is usually required.
+            # Allow to proceed, specific service init will handle it.
 
         model_path_or_name = self._get_or_download_model_blocking(self.service_name, self.model_name)
-        if not model_path_or_name:
-            print(f"Server TTSManager: Error - Could not find/download model '{self.model_name}' for '{self.service_name}'.")
+        if not model_path_or_name and self.service_name == "xttsv2": # Only critical for xttsv2 if model_name was expected
+            logger.error(f"Server TTSManager: Error - Could not determine model path/name for '{self.model_name}' for service '{self.service_name}'.")
             return
 
         if self.service_name == "xttsv2":
             if CoquiTTS:
                 try:
                     # Coqui TTS model_name is the identifier it uses for its internal cache/downloader
-                    self.tts_instance = CoquiTTS(model_name=model_path_or_name, progress_bar=True)
-                    self.tts_instance.to("cuda" if torch.cuda.is_available() else "cpu")
+                    logger.info(f"Server TTSManager: Initializing Coqui XTTSv2 with model: {model_path_or_name or self.model_name}")
+                    self.tts_instance = CoquiTTS(model_name=model_path_or_name or self.model_name, progress_bar=True)
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    self.tts_instance.to(device)
                     self.is_initialized = True
-                    print(f"Server TTSManager: Coqui XTTSv2 initialized: {model_path_or_name}. Device: {'cuda' if torch.cuda.is_available() else 'cpu'}")
+                    logger.info(f"Server TTSManager: Coqui XTTSv2 initialized: {model_path_or_name or self.model_name}. Device: {device}")
                 except Exception as e:
-                    print(f"Server TTSManager: Error initializing Coqui XTTSv2 model {model_path_or_name}: {e}")
+                    logger.error(f"Server TTSManager: Error initializing Coqui XTTSv2 model {model_path_or_name or self.model_name}: {e}", exc_info=True)
             else:
-                print("Server TTSManager: Error - Coqui TTS library not available for XTTSv2.")
-        else:
-            print(f"Server TTSManager: Unsupported TTS service '{self.service_name}'.")
+                logger.error("Server TTSManager: Error - Coqui TTS library not available for XTTSv2.")
+        elif self.service_name != "gtts": # gtts is handled above
+            logger.error(f"Server TTSManager: Unsupported TTS service '{self.service_name}'.")
 
     def _gtts_synthesize_blocking(self, text: str, output_path: str, lang: str):
         """
@@ -106,7 +113,7 @@ class TTSManager:
             lang (str): Language code for synthesis. Defaults to "en".
         """
         if not self.tts_instance or callable(self.tts_instance) or not hasattr(self.tts_instance, 'tts_to_file'):
-            print("Server TTSManager: XTTSv2 instance is not initialized or invalid.")
+            logger.error("Server TTSManager: XTTSv2 instance is not initialized or invalid for _xttsv2_synthesize_blocking.")
             return
         # Ensure lang is always a string
         lang_to_use = lang or "en"
@@ -116,10 +123,13 @@ class TTSManager:
 
         speaker_to_use = speaker_wav or self.speaker_wav_path
         if speaker_to_use and isinstance(speaker_to_use, str) and os.path.exists(speaker_to_use):
+            logger.debug(f"Server TTSManager: Synthesizing XTTSv2 with speaker_wav: {speaker_to_use}, lang: {lang_to_use}")
             self.tts_instance.tts_to_file(text=text, speaker_wav=speaker_to_use, language=lang_to_use, file_path=output_path)
         else:
-            if speaker_to_use:
-                print(f"Server TTSManager: Warning - XTTSv2 speaker_wav '{speaker_to_use}' not found. Using default voice.")
+            if speaker_to_use: # Only log warning if a speaker_wav was intended but not found
+                logger.warning(f"Server TTSManager: XTTSv2 speaker_wav '{speaker_to_use}' not found or invalid. Using default voice for lang {lang_to_use}.")
+            else:
+                logger.debug(f"Server TTSManager: Synthesizing XTTSv2 with default voice for lang {lang_to_use}.")
             self.tts_instance.tts_to_file(text=text, language=lang_to_use, file_path=output_path)
 
     async def synthesize(self, text: str, output_path: str, speaker_wav_for_synthesis: Optional[str] = None) -> bool:
@@ -135,28 +145,45 @@ class TTSManager:
             bool: True if synthesis succeeds and the audio file is created, False otherwise.
         """
         if not self.is_initialized or not self.tts_instance:
-            print("Server TTSManager: Not initialized, cannot synthesize.")
-            raise RuntimeError("TTSManager is not initialized.")
+            logger.error(f"Server TTSManager ({self.service_name}): Not initialized, cannot synthesize text: '{text[:50]}...'.")
+            raise RuntimeError(f"TTSManager ({self.service_name}) is not initialized.")
 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # Ensure output directory exists
+        output_dir = os.path.dirname(output_path)
+        if not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+                logger.info(f"Server TTSManager: Created output directory {output_dir}")
+            except OSError as e:
+                logger.error(f"Server TTSManager: Could not create output directory {output_dir}: {e}", exc_info=True)
+                return False
+
+        logger.info(f"Server TTSManager: Synthesizing text '{text[:50]}...' to {output_path} using {self.service_name}")
         try:
             if self.service_name == "gtts":
                 await asyncio.to_thread(self._gtts_synthesize_blocking, text, output_path, self.language)
             elif self.service_name == "xttsv2":
                 # Ensure speaker_wav_for_synthesis is a string
-                speaker_wav = speaker_wav_for_synthesis or ""
+                speaker_wav = speaker_wav_for_synthesis or "" # Default to empty string if None
                 await asyncio.to_thread(self._xttsv2_synthesize_blocking, text, output_path, speaker_wav, self.language)
             else:
-                print(f"Server TTSManager: No async synthesis method for '{self.service_name}'.")
+                logger.error(f"Server TTSManager: No async synthesis method for unsupported service '{self.service_name}'.")
                 raise ValueError(f"Unsupported TTS service: {self.service_name}")
-            return True
+
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                logger.info(f"Server TTSManager: Successfully synthesized audio to {output_path}")
+                return True
+            else:
+                logger.error(f"Server TTSManager: Synthesis completed but output file {output_path} is missing or empty.")
+                return False
         except Exception as e:
-            print(f"Server TTSManager: Error during async TTS synthesis with {self.service_name}: {e}")
-            if os.path.exists(output_path):
+            logger.error(f"Server TTSManager: Error during async TTS synthesis with {self.service_name} for text '{text[:50]}...': {e}", exc_info=True)
+            if os.path.exists(output_path): # Attempt to clean up failed/partial file
                 try:
                     os.remove(output_path)
-                except OSError:
-                    pass
+                    logger.info(f"Server TTSManager: Removed partial/failed output file {output_path}")
+                except OSError as e_remove:
+                    logger.error(f"Server TTSManager: Error removing partial/failed output file {output_path}: {e_remove}", exc_info=True)
             return False
 
     def _get_or_download_model_blocking(self, service_name, model_identifier):
@@ -234,8 +261,15 @@ if __name__ == "__main__":
             if tts_x.is_initialized:
                 out_x = os.path.join(test_output_dir, "server_xtts_async_test.wav")
                 if await tts_x.synthesize("Hello from server-side Coqui XTTS, this is an asynchronous test.", out_x):
-                    print(f"XTTSv2 async test audio saved to {out_x}")
+                logger.info(f"XTTSv2 async test audio saved to {out_x}")
+            else:
+                logger.error("XTTSv2 async test synthesis failed.")
+        else:
+            logger.warning("XTTSv2 (async test) was not initialized, skipping synthesis test.")
 
-        print("\n--- Server TTSManager Async Test Complete ---")
 
+        logger.info("\n--- Server TTSManager Async Test Complete ---")
+
+    # Setup basic logging for the test runner if this script is run directly
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     asyncio.run(test_tts_manager())

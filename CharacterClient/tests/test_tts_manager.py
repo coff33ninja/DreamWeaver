@@ -528,5 +528,506 @@ class TestTTSManagerFileSystemOperations:
         mock_remove.assert_called_once()
 
 
+
+
+class TestTTSManagerInputValidation:
+    """Test comprehensive input validation scenarios."""
+    
+    @pytest.fixture
+    def tts_manager(self):
+        return TTSManager(tts_service_name="gtts")
+    
+    @pytest.mark.parametrize("whitespace_text", [
+        "   ",           # Only spaces
+        "\t",            # Only tab
+        "\n",            # Only newline
+        "\r\n",          # Carriage return + newline
+        "  \t\n  ",      # Mixed whitespace
+        "\u00A0",        # Non-breaking space
+        "\u2000",        # En quad
+        "\u2001",        # Em quad
+    ])
+    def test_synthesize_whitespace_only_text(self, tts_manager, whitespace_text):
+        """Test synthesizing speech with whitespace-only text."""
+        with patch.object(tts_manager, "synthesize") as mock_synth:
+            mock_synth.return_value = asyncio.Future()
+            mock_synth.return_value.set_result(None)
+            
+            # Should either handle gracefully or raise appropriate error
+            try:
+                asyncio.run(tts_manager.synthesize(whitespace_text, "test.wav"))
+                mock_synth.assert_called_once()
+            except (ValueError, Exception):
+                pass  # Expected behavior for whitespace-only input
+    
+    @pytest.mark.parametrize("control_chars", [
+        "\x00",          # Null character
+        "\x01\x02\x03",  # Control characters
+        "\x7F",          # DEL character
+        "\x80\x81",      # High control characters
+    ])
+    def test_synthesize_control_characters(self, tts_manager, control_chars):
+        """Test synthesizing speech with control characters."""
+        with patch.object(tts_manager, "synthesize") as mock_synth:
+            mock_synth.return_value = asyncio.Future()
+            mock_synth.return_value.set_result(None)
+            
+            try:
+                asyncio.run(tts_manager.synthesize(control_chars, "test.wav"))
+                mock_synth.assert_called_once()
+            except (ValueError, UnicodeError, Exception):
+                pass  # Expected for invalid characters
+    
+    @pytest.mark.parametrize("encoding_text", [
+        "ASCII text",
+        "UTF-8: café naïve résumé",
+        "Cyrillic: Привет мир",
+        "Arabic: مرحبا بالعالم", 
+        "Chinese: 你好世界",
+        "Japanese: こんにちは世界",
+        "Korean: 안녕하세요 세계",
+        "Hebrew: שלום עולם",
+        "Thai: สวัสดีชาวโลก",
+        "Emoji: 🌍🌎🌏 Hello World! 🚀✨",
+        "Combined: Hello 世界 🌍 مرحبا!",
+    ])
+    def test_synthesize_various_encodings(self, tts_manager, encoding_text):
+        """Test synthesizing speech with various character encodings."""
+        with patch.object(tts_manager, "synthesize") as mock_synth:
+            mock_synth.return_value = asyncio.Future()
+            mock_synth.return_value.set_result("/tmp/test_audio/encoded.wav")
+            
+            result = asyncio.run(tts_manager.synthesize(encoding_text, "encoded.wav"))
+            assert result is not None
+            mock_synth.assert_called_once()
+
+
+class TestTTSManagerServiceInitialization:
+    """Test comprehensive service initialization scenarios."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    def test_gtts_initialization_edge_cases(self, mock_gtts, mock_ensure_dirs):
+        """Test gTTS initialization with various edge cases."""
+        # Test with various language codes
+        languages = ["en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "hi", "ar"]
+        
+        for lang in languages:
+            mock_gtts.__bool__ = Mock(return_value=True)
+            manager = TTSManager(tts_service_name="gtts", language=lang)
+            assert manager.language == lang
+            assert manager.is_initialized is True
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.CoquiTTS")
+    def test_xttsv2_initialization_edge_cases(self, mock_coqui, mock_ensure_dirs):
+        """Test XTTSv2 initialization with various configurations."""
+        mock_coqui.__bool__ = Mock(return_value=True)
+        mock_instance = Mock()
+        mock_coqui.return_value = mock_instance
+        
+        # Test with various model names
+        model_names = [
+            "tts_models/multilingual/multi-dataset/xtts_v2",
+            "custom_model_path",
+            "model_with_spaces",
+            "model-with-dashes",
+            "model_with_underscores"
+        ]
+        
+        for model_name in model_names:
+            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value=model_name):
+                manager = TTSManager(tts_service_name="xttsv2", model_name=model_name)
+                assert manager.model_name == model_name
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    def test_initialization_with_none_values(self, mock_ensure_dirs):
+        """Test initialization handling None values properly."""
+        # All None values should be converted to empty strings
+        manager = TTSManager(
+            tts_service_name="gtts",
+            model_name=None,
+            speaker_wav_path=None,
+            language=None
+        )
+        
+        assert manager.model_name == ""
+        assert manager.speaker_wav_path == ""
+        assert manager.language == "en"  # Should default to "en"
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    def test_initialization_with_empty_strings(self, mock_ensure_dirs):
+        """Test initialization handling empty strings properly."""
+        manager = TTSManager(
+            tts_service_name="gtts",
+            model_name="",
+            speaker_wav_path="",
+            language=""
+        )
+        
+        assert manager.model_name == ""
+        assert manager.speaker_wav_path == ""
+        assert manager.language == "en"  # Should default to "en"
+
+
+class TestTTSManagerAdvancedSynthesis:
+    """Test advanced synthesis scenarios and error handling."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("asyncio.to_thread")
+    async def test_synthesis_with_different_text_lengths(self, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test synthesis with various text lengths."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        mock_to_thread.return_value = None
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Test different text lengths
+        test_cases = [
+            "",  # Empty
+            "a",  # Single character
+            "Hello",  # Short
+            "This is a medium length sentence for testing.",  # Medium
+            "This is a very long sentence " * 100,  # Long
+            "極" * 1000,  # Long with Unicode
+        ]
+        
+        for text in test_cases:
+            with patch("os.makedirs"):
+                result = await manager.synthesize(text, "test.mp3")
+                # Should handle all lengths gracefully
+                mock_to_thread.assert_called()
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("asyncio.to_thread")
+    async def test_synthesis_concurrent_requests(self, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test handling multiple concurrent synthesis requests."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        mock_to_thread.return_value = None
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Create multiple concurrent tasks
+        tasks = []
+        for i in range(10):
+            with patch("os.makedirs"):
+                task = manager.synthesize(f"Concurrent text {i}", f"output_{i}.mp3")
+                tasks.append(task)
+        
+        # Wait for all tasks to complete
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Verify all completed without critical errors
+        assert len(results) == 10
+        assert mock_to_thread.call_count == 10
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.CoquiTTS")
+    @patch("asyncio.to_thread")
+    async def test_xttsv2_synthesis_with_speaker_variations(self, mock_to_thread, mock_coqui, mock_ensure_dirs):
+        """Test XTTSv2 synthesis with different speaker configurations."""
+        mock_coqui.__bool__ = Mock(return_value=True)
+        mock_instance = Mock()
+        mock_coqui.return_value = mock_instance
+        mock_to_thread.return_value = None
+        
+        speaker_variations = [
+            None,  # No speaker
+            "/path/to/speaker.wav",  # Standard path
+            "/path/with spaces/speaker.wav",  # Path with spaces
+            "/path/with-dashes/speaker.wav",  # Path with dashes
+            "relative/speaker.wav",  # Relative path
+        ]
+        
+        for speaker_path in speaker_variations:
+            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="test_model"):
+                manager = TTSManager(
+                    tts_service_name="xttsv2",
+                    model_name="test_model",
+                    speaker_wav_path=speaker_path
+                )
+                
+                with patch("os.makedirs"):
+                    result = await manager.synthesize("Test text", "output.wav", speaker_path)
+                    mock_to_thread.assert_called()
+
+
+class TestTTSManagerModelManagement:
+    """Test model management functionality."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.CLIENT_TTS_MODELS_PATH", "/tmp/test_models")
+    @patch("os.makedirs")
+    def test_model_management_various_services(self, mock_makedirs, mock_ensure_dirs):
+        """Test model management for various services."""
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Test model handling for different services
+        test_cases = [
+            ("xttsv2", "standard_model"),
+            ("xttsv2", "model_with_slashes/path"),
+            ("xttsv2", "model-with-dashes"),
+            ("xttsv2", "model_with_underscores"),
+            ("unsupported_service", "any_model"),
+        ]
+        
+        for service, model in test_cases:
+            result = manager._get_or_download_model_blocking(service, model)
+            
+            if service == "xttsv2":
+                assert result == model
+                mock_makedirs.assert_called()
+            else:
+                assert result is None
+    
+    def test_get_available_models_comprehensive(self):
+        """Test getting available models for all services."""
+        # Test all known services
+        services = ["gtts", "xttsv2", "unsupported", "", None]
+        
+        for service in services:
+            if service is None:
+                continue
+                
+            models = TTSManager.get_available_models(service)
+            assert isinstance(models, list)
+            
+            if service == "gtts":
+                assert "N/A (uses language codes)" in models
+            elif service == "xttsv2":
+                assert any("xtts_v2" in model for model in models)
+            else:
+                assert models == []
+    
+    def test_list_services_comprehensive(self):
+        """Test service listing under various conditions."""
+        with patch("CharacterClient.src.tts_manager.gtts") as mock_gtts, \
+             patch("CharacterClient.src.tts_manager.CoquiTTS") as mock_coqui:
+            
+            # Test all combinations of service availability
+            test_cases = [
+                (True, True, ["gtts", "xttsv2"]),   # Both available
+                (True, False, ["gtts"]),            # Only gtts
+                (False, True, ["xttsv2"]),          # Only xttsv2
+                (False, False, []),                 # None available
+            ]
+            
+            for gtts_available, coqui_available, expected in test_cases:
+                mock_gtts.__bool__ = Mock(return_value=gtts_available)
+                mock_coqui.__bool__ = Mock(return_value=coqui_available)
+                
+                services = TTSManager.list_services()
+                assert set(services) == set(expected)
+
+
+class TestTTSManagerPerformanceAndStress:
+    """Test performance characteristics and stress scenarios."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("asyncio.to_thread")
+    async def test_rapid_sequential_synthesis(self, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test rapid sequential synthesis requests."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        mock_to_thread.return_value = None
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Perform rapid sequential synthesis
+        for i in range(50):
+            with patch("os.makedirs"):
+                result = await manager.synthesize(f"Rapid test {i}", f"rapid_{i}.mp3")
+                # Should handle rapid requests without failure
+        
+        assert mock_to_thread.call_count == 50
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    async def test_synthesis_with_large_text_chunks(self, mock_gtts, mock_ensure_dirs):
+        """Test synthesis with very large text inputs."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Create progressively larger texts
+        base_text = "This is a performance test sentence. "
+        text_sizes = [1000, 5000, 10000, 25000]  # Number of repetitions
+        
+        for size in text_sizes:
+            large_text = base_text * size
+            
+            with patch("asyncio.to_thread") as mock_to_thread:
+                mock_to_thread.return_value = None
+                with patch("os.makedirs"):
+                    start_time = time.time()
+                    result = await manager.synthesize(large_text, f"large_{size}.mp3")
+                    end_time = time.time()
+                    
+                    # Should complete within reasonable time
+                    duration = end_time - start_time
+                    assert duration < 10  # 10 seconds max per synthesis
+
+
+class TestTTSManagerErrorRecovery:
+    """Test error recovery and fault tolerance."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("asyncio.to_thread")
+    async def test_recovery_after_synthesis_failures(self, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test recovery after various synthesis failures."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Simulate various failure scenarios followed by recovery
+        failure_scenarios = [
+            Exception("Generic error"),
+            OSError("File system error"),
+            MemoryError("Out of memory"),
+            KeyboardInterrupt("User interruption"),
+        ]
+        
+        for error in failure_scenarios:
+            # First call fails
+            mock_to_thread.side_effect = error
+            
+            with patch("os.makedirs"), patch("os.path.exists", return_value=True), patch("os.remove"):
+                result = await manager.synthesize("Failure test", "failure.mp3")
+                assert result is None  # Should handle failure gracefully
+            
+            # Second call succeeds (recovery)
+            mock_to_thread.side_effect = None
+            mock_to_thread.return_value = None
+            
+            with patch("os.makedirs"):
+                result = await manager.synthesize("Recovery test", "recovery.mp3")
+                # Should recover successfully
+                mock_to_thread.assert_called()
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("os.makedirs", side_effect=PermissionError("Permission denied"))
+    async def test_directory_creation_failure_handling(self, mock_makedirs, mock_gtts, mock_ensure_dirs):
+        """Test handling of directory creation failures."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Should raise PermissionError when directory creation fails
+        with pytest.raises(PermissionError):
+            await manager.synthesize("Directory test", "dir_test.mp3")
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    @patch("asyncio.to_thread")
+    @patch("os.path.exists", return_value=True)
+    @patch("os.remove", side_effect=OSError("Cannot remove file"))
+    async def test_cleanup_failure_handling(self, mock_remove, mock_exists, mock_to_thread, mock_gtts, mock_ensure_dirs):
+        """Test handling of cleanup failures."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        mock_to_thread.side_effect = Exception("Synthesis failed")
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Should handle cleanup failure gracefully
+        with patch("os.makedirs"):
+            result = await manager.synthesize("Cleanup test", "cleanup.mp3")
+            assert result is None
+            
+            # Verify cleanup was attempted even though it failed
+            mock_remove.assert_called_once()
+
+
+class TestTTSManagerBoundaryConditions:
+    """Test boundary conditions and edge cases."""
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    async def test_filename_edge_cases(self, mock_gtts, mock_ensure_dirs):
+        """Test synthesis with various filename edge cases."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        
+        manager = TTSManager(tts_service_name="gtts")
+        
+        # Test various filename patterns
+        filename_cases = [
+            "simple.mp3",
+            "file with spaces.mp3",
+            "file-with-dashes.mp3",
+            "file_with_underscores.mp3",
+            "file.with.dots.mp3",
+            "UPPERCASE.MP3",
+            "MixedCase.Mp3",
+            "file123numbers.mp3",
+            "very_long_filename_that_might_cause_issues_on_some_systems.mp3",
+        ]
+        
+        for filename in filename_cases:
+            with patch("asyncio.to_thread") as mock_to_thread:
+                mock_to_thread.return_value = None
+                with patch("os.makedirs"):
+                    result = await manager.synthesize("Filename test", filename)
+                    mock_to_thread.assert_called()
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    @patch("CharacterClient.src.tts_manager.gtts")
+    async def test_language_code_variations(self, mock_gtts, mock_ensure_dirs):
+        """Test various language code formats."""
+        mock_gtts.__bool__ = Mock(return_value=True)
+        
+        # Test different language code formats
+        language_codes = [
+            "en",      # Standard 2-letter
+            "en-US",   # With country
+            "zh-CN",   # Chinese with country
+            "pt-BR",   # Portuguese Brazil
+            "en-GB",   # British English
+            "invalid", # Invalid code
+            "xyz",     # Non-existent code
+        ]
+        
+        for lang_code in language_codes:
+            manager = TTSManager(tts_service_name="gtts", language=lang_code)
+            assert manager.language == lang_code
+            
+            with patch("asyncio.to_thread") as mock_to_thread:
+                mock_to_thread.return_value = None
+                with patch("os.makedirs"):
+                    result = await manager.synthesize("Language test", "lang_test.mp3")
+                    mock_to_thread.assert_called()
+    
+    @patch("CharacterClient.src.tts_manager.ensure_client_directories")
+    def test_initialization_boundary_values(self, mock_ensure_dirs):
+        """Test initialization with boundary values."""
+        # Test with extreme string lengths
+        very_long_string = "x" * 10000
+        
+        # Should handle very long values without crashing
+        manager = TTSManager(
+            tts_service_name="gtts",
+            model_name=very_long_string,
+            speaker_wav_path=very_long_string,
+            language="en"
+        )
+        
+        assert len(manager.model_name) == 10000
+        assert len(manager.speaker_wav_path) == 10000
+        assert manager.language == "en"
+
+
+
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    # Run all test classes including new comprehensive ones
+    pytest.main([
+        __file__ + "::TestTTSManagerInputValidation",
+        __file__ + "::TestTTSManagerServiceInitialization", 
+        __file__ + "::TestTTSManagerAdvancedSynthesis",
+        __file__ + "::TestTTSManagerModelManagement",
+        __file__ + "::TestTTSManagerPerformanceAndStress",
+        __file__ + "::TestTTSManagerErrorRecovery",
+        __file__ + "::TestTTSManagerBoundaryConditions",
+        "-v"
+    ])

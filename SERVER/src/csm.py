@@ -7,6 +7,9 @@ from .chaos_engine import ChaosEngine
 from .config import DB_PATH
 import asyncio # Added asyncio
 import os
+import logging
+
+logger = logging.getLogger("dreamweaver_server")
 
 class CSM:
     def __init__(self):
@@ -20,8 +23,8 @@ class CSM:
         self.hardware = Hardware()
         self.chaos_engine = ChaosEngine()
 
-        self.client_manager.start_periodic_health_checks()
-        print("CSM Initialized, client health checks started.")
+        self.client_manager.start_periodic_health_checks() # This will log its own startup
+        logger.info("CSM Initialized.")
 
     async def process_story(self, audio_filepath: str, chaos_level: float):
         """
@@ -34,14 +37,15 @@ class CSM:
         Returns:
             tuple: A tuple containing the final narration text (str) and a dictionary mapping character names to their response texts.
         """
+        logger.info(f"CSM: Starting to process story for audio_filepath: {audio_filepath}, chaos_level: {chaos_level}")
         # Narrator process_narration is now async
-        # print("CSM: Processing narration...")
+        # logger.debug("CSM: Processing narration...")
         narration_data = await self.narrator.process_narration(audio_filepath)
         narration_text = narration_data.get("text", "") if narration_data else ""
         narrator_audio_path_db = narration_data.get("audio_path")
 
         if not narration_text:
-            print("CSM: Narration text empty. Skipping story processing.")
+            logger.warning("CSM: Narration text empty after processing. Skipping further story processing for this turn.")
             return "", {}
 
         character_texts = {}
@@ -49,20 +53,21 @@ class CSM:
         # 1. Server Character (Actor1) Response
         server_character_details = await asyncio.to_thread(self.db.get_character, "Actor1") # DB call in thread
         if server_character_details:
-            # print(f"CSM: Getting response from server character: {server_character_details.get('name', 'Actor1')}")
+            logger.debug(f"CSM: Getting response from server character: {server_character_details.get('name', 'Actor1')}")
             # CharacterServer.generate_response is now async
             server_response_text = await self.character_server.generate_response(narration_text, {})
             if server_response_text:
                 character_texts[server_character_details.get('name', 'Actor1')] = server_response_text
-            # else:
-                # print(f"CSM: Server character {server_character_details.get('name', 'Actor1')} provided no response.")
-        # else:
-            # print("CSM: Actor1 (server character) not configured.")
+                logger.debug(f"CSM: Server character {server_character_details.get('name', 'Actor1')} responded.")
+            else:
+                logger.debug(f"CSM: Server character {server_character_details.get('name', 'Actor1')} provided no response.")
+        else:
+            logger.debug("CSM: Actor1 (server character) not configured or found.")
 
         # 2. Get responses from 'Online_Responsive' clients
         # ClientManager.get_clients_for_story_progression uses DB, run in thread
         responsive_clients = await asyncio.to_thread(self.client_manager.get_clients_for_story_progression)
-        # print(f"CSM: Found {len(responsive_clients)} responsive clients.")
+        logger.info(f"CSM: Found {len(responsive_clients)} responsive clients for story progression.")
 
         client_response_tasks = []
         for client_info in responsive_clients:
@@ -74,17 +79,17 @@ class CSM:
             # For now, keeping it sequential before dispatching the send_to_client task
             client_character_details = await asyncio.to_thread(self.db.get_character, client_actor_id)
             if not client_character_details:
-                print(f"CSM: Warning - No character details for responsive client {client_actor_id}. Skipping.")
+                logger.warning(f"CSM: No character details found for responsive client {client_actor_id}. Skipping.")
                 continue
 
             client_char_name = client_character_details.get("name", client_actor_id)
-            # print(f"CSM: Preparing to get response from client: {client_char_name} ({client_actor_id})")
+            logger.debug(f"CSM: Preparing to get response from client: {client_char_name} ({client_actor_id}) at {client_ip}:{client_port}")
 
             context_for_client = character_texts.copy() # Context up to this point
 
             # Defensive: Ensure no None is passed to send_to_client
-            if client_actor_id is None or client_ip is None or client_port is None:
-                print(f"CSM: Skipping client due to missing info: actor_id={client_actor_id}, ip={client_ip}, port={client_port}")
+            if client_actor_id is None or client_ip is None or client_port is None: # Should ideally not happen if from DB
+                logger.error(f"CSM: Skipping client due to missing info from DB record: actor_id={client_actor_id}, ip={client_ip}, port={client_port}")
                 continue
             # ClientManager.send_to_client is now async
             task = self.client_manager.send_to_client(
@@ -93,35 +98,39 @@ class CSM:
             client_response_tasks.append((client_char_name, client_actor_id, task))
 
         # Gather responses from all clients concurrently
-        # print(f"CSM: Gathering responses from {len(client_response_tasks)} clients...")
+        logger.debug(f"CSM: Gathering responses from {len(client_response_tasks)} clients...")
         for char_name, actor_id, task in client_response_tasks:
             try:
                 client_response_text = await task # await the future
                 if client_response_text:
                     character_texts[char_name] = client_response_text
-                # else:
-                    # print(f"CSM: Client {char_name} ({actor_id}) provided no/empty response.")
+                    logger.debug(f"CSM: Received response from client {char_name} ({actor_id}).")
+                else:
+                    logger.debug(f"CSM: Client {char_name} ({actor_id}) provided no/empty response.")
             except Exception as e:
-                print(f"CSM: Error processing response from client {char_name} ({actor_id}): {e}")
+                logger.error(f"CSM: Error processing/gathering response from client {char_name} ({actor_id}): {e}", exc_info=True)
                 # ClientManager's send_to_client already handles DB status updates on failure
 
         # 3. Apply Chaos (assuming chaos_engine is fast and not I/O bound)
         if chaos_level > 0 and self.chaos_engine.random_factor() < (chaos_level / 10.0):
-            # print(f"CSM: Applying chaos (level {chaos_level})...")
+            logger.info(f"CSM: Applying chaos (level {chaos_level})...")
             # If apply_chaos becomes complex/slow, it could also be run in a thread
             narration_text, character_texts = self.chaos_engine.apply_chaos(narration_text, character_texts)
+            logger.debug(f"CSM: Chaos applied. Narration: '{narration_text[:50]}...', Char texts: { {k: v[:50] for k,v in character_texts.items()} }")
+
 
         # 4. Update Hardware (assuming hardware update is fast or non-critical path)
         # If self.hardware.update_leds is blocking and slow, use asyncio.to_thread
+        logger.debug("CSM: Updating hardware LEDs based on narration.")
         await asyncio.to_thread(self.hardware.update_leds, narration_text)
 
         # 5. Save to Database (DB calls wrapped in to_thread)
         if narration_text or character_texts:
-            # print("CSM: Saving story turn to database...")
+            logger.info("CSM: Saving story turn to database...")
             await asyncio.to_thread(self.db.save_story, narration_text, character_texts, narrator_audio_path_db)
-            # print("CSM: Story turn processed and saved.")
-        # else:
-            # print("CSM: Nothing to save for this story turn.")
+            logger.info("CSM: Story turn processed and saved.")
+        else:
+            logger.info("CSM: Nothing to save for this story turn (empty narration and character texts).")
 
         return narration_text, character_texts
 
@@ -141,19 +150,19 @@ class CSM:
         if narrator_entries:
             last_entry = narrator_entries[-1]
             self.db.update_story_entry(last_entry["id"], new_text=new_text)
-            print(f"CSM: Updated last narrator transcription in DB (id={last_entry['id']})")
+            logger.info(f"CSM: Updated last narrator transcription in DB (id={last_entry['id']}) with new text: {new_text[:100]}...")
             return True
-        print("CSM: No narrator entry found to update.")
+        logger.warning("CSM: No narrator entry found to update.")
         return False
 
     async def shutdown_async(self): # Renamed for clarity
         """
         Asynchronously shuts down CSM resources by stopping client health checks and closing the database connection.
         """
-        print("CSM: Async shutdown initiated...")
-        await asyncio.to_thread(self.client_manager.stop_periodic_health_checks)
-        await asyncio.to_thread(self.db.close)
-        print("CSM: Async shutdown complete.")
+        logger.info("CSM: Async shutdown initiated...")
+        await asyncio.to_thread(self.client_manager.stop_periodic_health_checks) # This method now logs
+        await asyncio.to_thread(self.db.close) # Database close method might also log
+        logger.info("CSM: Async shutdown complete.")
 
     # __del__ is tricky with async, better to rely on explicit shutdown call from main app.
     # If using __del__, ensure it doesn't try to run async code directly without a loop.

@@ -4,7 +4,10 @@ from .config import REFERENCE_VOICES_AUDIO_PATH, CHARACTERS_AUDIO_PATH
 import pygame
 import uuid
 import os
-import asyncio # Added asyncio
+import asyncio
+import logging
+
+logger = logging.getLogger("dreamweaver_server")
 
 class CharacterServer: # This is for Actor1, the server's own character
     def __init__(self, db):
@@ -15,23 +18,29 @@ class CharacterServer: # This is for Actor1, the server's own character
         """
         self.db = db
         self.character_Actor_id = "Actor1" # Explicitly for Actor1
+        logger.info(f"Initializing CharacterServer for {self.character_Actor_id}...")
         self.character = self.db.get_character(self.character_Actor_id)
         if not self.character:
-            print("CharacterServer: WARNING - Actor1 character data not found in DB. Using defaults.")
-            # Define a more complete default, including llm_model
+            logger.warning(f"CharacterServer: {self.character_Actor_id} character data not found in DB. Creating and using defaults.")
             self.character = {
                 "name": "Actor1_Default", "personality": "server_default",
                 "goals": "assist", "backstory": "embedded",
-                "tts": "piper", "tts_model": "en_US-ryan-high",
-                "reference_audio_filename": None, "Actor_id": self.character_Actor_id, # Actor_id was missing in default
+                "tts": "piper", "tts_model": "en_US-ryan-high", # Default TTS
+                "reference_audio_filename": None, "Actor_id": self.character_Actor_id,
                 "llm_model": None # LLMEngine will use its default
             }
-            # Optionally save this default to DB if it's truly missing
-            self.db.save_character(**self.character) # Careful with Actor_id vs Actor key
+            try:
+                self.db.save_character(**self.character)
+                logger.info(f"CharacterServer: Saved default character profile for {self.character_Actor_id} to DB.")
+            except Exception as e:
+                logger.error(f"CharacterServer: Failed to save default character profile for {self.character_Actor_id} to DB: {e}", exc_info=True)
+        else:
+            logger.info(f"CharacterServer: Loaded character data for {self.character_Actor_id} from DB.")
 
-        # LLM and TTS are initialized asynchronously for non-blocking startup
         self.llm = None
         self.tts = None
+        logger.info(f"CharacterServer for {self.character_Actor_id} initialized. LLM and TTS to be initialized asynchronously.")
+
 
     async def async_init(self):
         """
@@ -39,21 +48,55 @@ class CharacterServer: # This is for Actor1, the server's own character
         
         This method offloads blocking initialization tasks for the LLM and TTS engines to background threads to avoid blocking the event loop. It also ensures the pygame mixer is initialized for audio playback, handling errors if initialization fails.
         """
+        logger.info(f"CharacterServer ({self.character_Actor_id}): Starting asynchronous initialization of LLM and TTS...")
         loop = asyncio.get_event_loop()
-        self.llm = await loop.run_in_executor(None, lambda: LLMEngine(model_name=self.character.get("llm_model") or "", db=self.db))
-        self.tts = await loop.run_in_executor(None, lambda: TTSManager(
-            tts_service_name=self.character.get("tts") or "",
-            model_name=self.character.get("tts_model") or "",
-            speaker_wav_path=os.path.join(REFERENCE_VOICES_AUDIO_PATH, self.character["reference_audio_filename"]) if self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename") else None,
-            language=self.character.get("language", "en")
-        ))
+
+        try:
+            llm_model_name = self.character.get("llm_model") or "" # Ensure string
+            logger.info(f"CharacterServer ({self.character_Actor_id}): Initializing LLMEngine with model '{llm_model_name}'...")
+            self.llm = await loop.run_in_executor(None, lambda: LLMEngine(model_name=llm_model_name, db=self.db))
+            if self.llm and self.llm.is_initialized:
+                 logger.info(f"CharacterServer ({self.character_Actor_id}): LLMEngine initialized successfully.")
+            else:
+                 logger.warning(f"CharacterServer ({self.character_Actor_id}): LLMEngine failed to initialize or is_initialized is false.")
+        except Exception as e_llm:
+            logger.error(f"CharacterServer ({self.character_Actor_id}): Error initializing LLMEngine: {e_llm}", exc_info=True)
+            self.llm = None
+
+        try:
+            tts_service = self.character.get("tts") or ""
+            tts_model = self.character.get("tts_model") or ""
+            ref_audio_filename = self.character.get("reference_audio_filename")
+            speaker_wav = None
+            if tts_service == "xttsv2" and ref_audio_filename:
+                speaker_wav = os.path.join(REFERENCE_VOICES_AUDIO_PATH, ref_audio_filename)
+                if not os.path.exists(speaker_wav):
+                    logger.warning(f"CharacterServer ({self.character_Actor_id}): Reference audio {speaker_wav} not found for XTTSv2. Will use default voice.")
+                    speaker_wav = None # Fallback to default voice
+
+            logger.info(f"CharacterServer ({self.character_Actor_id}): Initializing TTSManager with service '{tts_service}', model '{tts_model}'...")
+            self.tts = await loop.run_in_executor(None, lambda: TTSManager(
+                tts_service_name=tts_service,
+                model_name=tts_model,
+                speaker_wav_path=speaker_wav, # Already validated path or None
+                language=self.character.get("language", "en")
+            ))
+            if self.tts and self.tts.is_initialized:
+                logger.info(f"CharacterServer ({self.character_Actor_id}): TTSManager initialized successfully.")
+            else:
+                logger.warning(f"CharacterServer ({self.character_Actor_id}): TTSManager failed to initialize or is_initialized is false.")
+        except Exception as e_tts:
+            logger.error(f"CharacterServer ({self.character_Actor_id}): Error initializing TTSManager: {e_tts}", exc_info=True)
+            self.tts = None
 
         if not pygame.mixer.get_init():
             try:
                 pygame.mixer.init()
-                print("CharacterServer (Actor1): Pygame mixer initialized.")
-            except pygame.error as e:
-                print(f"CharacterServer (Actor1): Pygame mixer could not be initialized: {e}. Audio playback will fail.")
+                logger.info(f"CharacterServer ({self.character_Actor_id}): Pygame mixer initialized for audio playback.")
+            except pygame.error as e_pygame:
+                logger.warning(f"CharacterServer ({self.character_Actor_id}): Pygame mixer could not be initialized: {e_pygame}. Audio playback will fail.", exc_info=True)
+        logger.info(f"CharacterServer ({self.character_Actor_id}): Asynchronous initialization complete.")
+
 
     async def generate_response(self, narration: str, other_texts: dict) -> str:
         """
@@ -66,160 +109,162 @@ class CharacterServer: # This is for Actor1, the server's own character
         Returns:
             str: The generated text response from the character, or an error string if generation fails.
         """
-        if not self.character:
-            print("CharacterServer (Actor1): Character not loaded. Cannot generate response.")
+        char_name = self.character.get('name', self.character_Actor_id)
+        if not self.character: # Should have been caught by __init__
+            logger.error(f"CharacterServer ({char_name}): Character not loaded. Cannot generate response.")
             return ""
         if not self.llm or not self.llm.is_initialized:
-            print("CharacterServer (Actor1): LLM not initialized. Cannot generate response.")
-            return "[Actor1_LLM_ERROR]"
+            logger.error(f"CharacterServer ({char_name}): LLM not initialized. Cannot generate response for narration: '{narration[:50]}...'.")
+            return f"[{char_name}_LLM_ERROR:NOT_INITIALIZED]"
 
-        # Construct prompt
         prompt_parts = [f"Narrator: {narration}"]
         for name, text_val in other_texts.items():
             prompt_parts.append(f"{name}: {text_val}")
-        prompt_parts.append(f"Character: {self.character['name']} responds as {self.character['personality']}:")
+        prompt_parts.append(f"Character: {char_name} responds as {self.character.get('personality', 'default')}:")
         prompt = "\n".join(prompt_parts)
 
-        # LLM generate is now async
-        # print(f"CharacterServer (Actor1): Generating LLM response...")
-        text = await self.llm.generate(prompt, max_new_tokens=120) if self.llm else "[Actor1_LLM_ERROR]"
+        logger.info(f"CharacterServer ({char_name}): Generating LLM response for prompt: '{prompt[:100]}...'")
+        text = await self.llm.generate(prompt, max_new_tokens=120)
 
-        if text and text != "[LLM_ERROR: NOT_INITIALIZED]" and text != "[LLM_ERROR: GENERATION_FAILED]":
-            # Save training data (DB op, could be threaded but usually fast)
-            # For now, keep it blocking as it's quick.
-            self.db.save_training_data({"input": prompt, "output": text}, self.character_Actor_id)
+        if text and not text.startswith(f"[{char_name}_LLM_ERROR") and not text.startswith("[LLM_ERROR"): # Check specific and generic LLM errors
+            logger.info(f"CharacterServer ({char_name}): LLM generated response: '{text[:100]}...'")
+            try:
+                self.db.save_training_data({"input": prompt, "output": text}, self.character_Actor_id)
+                logger.debug(f"CharacterServer ({char_name}): Saved training data.")
+            except Exception as e_db_train:
+                logger.error(f"CharacterServer ({char_name}): Error saving training data: {e_db_train}", exc_info=True)
 
-            if self.llm:
-                # LLM fine_tune is now async
-                # print(f"CharacterServer (Actor1): Initiating fine-tuning...")
+            if self.llm: # LLM is confirmed initialized above
+                logger.debug(f"CharacterServer ({char_name}): Initiating fine-tuning (placeholder in LLMEngine).")
                 await self.llm.fine_tune({"input": prompt, "output": text}, self.character_Actor_id)
 
-            # TTS output is now async
-            # print(f"CharacterServer (Actor1): Synthesizing audio output...")
-            await self.output_audio(text) # Pass only text, speaker_wav is handled by TTSManager instance or this method
+            logger.debug(f"CharacterServer ({char_name}): Synthesizing audio output for response.")
+            await self.output_audio(text)
+        else:
+            logger.error(f"CharacterServer ({char_name}): LLM generation failed or returned error. Response: '{text}'")
+            # text might already be an error string from LLMEngine like "[LLM_ERROR: GENERATION_FAILED]"
+            if not text: text = f"[{char_name}_LLM_ERROR:EMPTY_RESPONSE]"
+
 
         return text
 
-    async def output_audio(self, text: str): # speaker_wav removed, TTSManager instance holds it for XTTS
+    async def output_audio(self, text: str):
         """
         Asynchronously synthesizes speech audio from the given text using the character's TTS engine and plays it back.
         
         If the character uses XTTSv2 and a reference audio file is available, it is used for voice cloning. The synthesized audio is saved to the character's audio directory and played using pygame's mixer if initialized. Logs warnings if TTS is not initialized, reference audio is missing, synthesis fails, or audio playback is unavailable.
         """
-        if not self.tts or not self.tts.is_initialized or not text or not self.character:
-            if not self.tts or not self.tts.is_initialized:
-                print("CharacterServer (Actor1): TTS not initialized or text empty. No audio.")
+        char_name = self.character.get('name', self.character_Actor_id)
+        if not self.tts or not self.tts.is_initialized:
+            logger.warning(f"CharacterServer ({char_name}): TTS not initialized. Cannot output audio for text: '{text[:50]}...'.")
+            return
+        if not text:
+            logger.warning(f"CharacterServer ({char_name}): Text is empty. No audio to output.")
             return
 
-        # TTSManager's synthesize is now async and handles its own speaker_wav logic
-        # It saves to a temporary file and returns the path.
-        # For Actor1, we want to save it to its character directory and then play.
 
-        sane_char_name = "".join(c if c.isalnum() else "_" for c in self.character.get('name', self.character_Actor_id))
+        sane_char_name = "".join(c if c.isalnum() else "_" for c in char_name)
         character_audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
-        os.makedirs(character_audio_dir, exist_ok=True)
+        try:
+            os.makedirs(character_audio_dir, exist_ok=True)
+        except OSError as e_mkdir:
+            logger.error(f"CharacterServer ({char_name}): Could not create audio directory {character_audio_dir}: {e_mkdir}", exc_info=True)
+            return
 
-        # Filename for the final audio in the character's directory
         final_audio_filename = f"{uuid.uuid4()}.wav"
         final_audio_path = os.path.join(character_audio_dir, final_audio_filename)
 
-        # Use speaker_wav_for_synthesis if XTTS and ref audio exists
         speaker_wav_to_use = None
         if self.character.get("tts") == "xttsv2" and self.character.get("reference_audio_filename"):
-            # Construct full path to reference audio for this character
             ref_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, self.character["reference_audio_filename"])
             if os.path.exists(ref_path):
                 speaker_wav_to_use = ref_path
+                logger.debug(f"CharacterServer ({char_name}): Using reference audio {ref_path} for XTTSv2.")
             else:
-                print(f"CharacterServer (Actor1): Warning - Reference audio {ref_path} not found for XTTSv2.")
+                logger.warning(f"CharacterServer ({char_name}): Reference audio {ref_path} not found for XTTSv2. TTS will use default voice.")
 
-        # Synthesize audio (this will save to a temp path managed by TTSManager)
-        # The `synthesize` method in TTSManager has been updated to be async.
-        # It now returns a boolean success status. The actual file is saved to `output_path` passed to it.
-        # We need to pass the final_audio_path here.
+        logger.info(f"CharacterServer ({char_name}): Attempting to synthesize audio to {final_audio_path} for text: '{text[:50]}...'.")
         success = await self.tts.synthesize(text, final_audio_path, speaker_wav_for_synthesis=speaker_wav_to_use)
 
         if success and os.path.exists(final_audio_path):
-            # print(f"CharacterServer (Actor1): Audio synthesized to {final_audio_path}")
-            if pygame.mixer.get_init(): # Check if mixer is still initialized
+            logger.info(f"CharacterServer ({char_name}): Audio successfully synthesized to {final_audio_path}")
+            if pygame.mixer.get_init():
                 try:
-                    # Pygame sound ops are blocking, run in thread
-                    def play_sound():
-                        """
-                        Play an audio file located at `final_audio_path` using pygame's mixer.
-                        
-                        Assumes that the pygame mixer has been initialized and that `final_audio_path` points to a valid audio file.
-                        """
+                    def play_sound_blocking():
                         sound = pygame.mixer.Sound(final_audio_path)
                         sound.play()
-                        # Need to ensure the sound has time to play if script exits or mixer quits.
-                        # For a server, this is less of an issue.
-                        # while pygame.mixer.get_busy():
-                        #     pygame.time.Clock().tick(10)
+                        while pygame.mixer.get_busy(): # Ensure sound plays out in the thread
+                            pygame.time.Clock().tick(10)
 
-                    await asyncio.to_thread(play_sound)
-                    # print(f"CharacterServer (Actor1): Playing audio {final_audio_path}")
-                except Exception as e:
-                    print(f"CharacterServer (Actor1): Error playing audio {final_audio_path}: {e}")
+                    logger.debug(f"CharacterServer ({char_name}): Playing audio {final_audio_path}")
+                    await asyncio.to_thread(play_sound_blocking)
+                    logger.info(f"CharacterServer ({char_name}): Finished playing audio {final_audio_path}")
+                except Exception as e_play:
+                    logger.error(f"CharacterServer ({char_name}): Error playing audio {final_audio_path}: {e_play}", exc_info=True)
             else:
-                print(f"CharacterServer (Actor1): Pygame mixer not initialized. Cannot play audio {final_audio_path}.")
+                logger.warning(f"CharacterServer ({char_name}): Pygame mixer not initialized. Cannot play audio {final_audio_path}.")
         else:
-            print(f"CharacterServer (Actor1): Audio synthesis failed or file not found at {final_audio_path}.")
+            logger.error(f"CharacterServer ({char_name}): Audio synthesis failed or output file not found/empty at {final_audio_path}.")
 
 if __name__ == '__main__':
-    # This test requires a DB with Actor1 configured, and models.
-    # It's more of an integration test component.
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(module)s - %(message)s')
+
     async def test_character_server():
-        """
-        Asynchronously tests the CharacterServer class by initializing it with a dummy database and verifying LLM and TTS functionality.
+        logger.info("Testing CharacterServer (Actor1)...")
         
-        Runs an end-to-end integration test for the Actor1 character, including response generation and audio playback, and prints the results.
-        """
-        print("Testing CharacterServer (Actor1)...")
-        # Mock DB or ensure DB_PATH points to a test DB with Actor1
         class DummyDB:
+            _data = {}
             def get_character(self, Actor_id):
-                """
-                Retrieve character data for the specified actor ID.
-                
-                Parameters:
-                    Actor_id (str): The unique identifier for the actor.
-                
-                Returns:
-                    dict or None: A dictionary containing character attributes if the actor ID is "Actor1"; otherwise, None.
-                """
-                if Actor_id == "Actor1":
-                    return {"name": "TestActor1", "personality": "tester", "tts": "gtts", "language":"en",
-                            "reference_audio_filename": None, "Actor_id": "Actor1", "llm_model": None} # Use gTTS for no model download
+                logger.debug(f"DummyDB: get_character called for {Actor_id}")
+                if Actor_id == "Actor1" and Actor_id in self._data:
+                    return self._data[Actor_id]
+                elif Actor_id == "Actor1": # Default if not saved by save_character
+                     return {"name": "TestActor1", "personality": "tester", "tts": "gtts", "language":"en",
+                            "reference_audio_filename": None, "Actor_id": "Actor1", "llm_model": None}
                 return None
-            def save_training_data(self, data, Actor_id): """
-Simulates saving training data for a specified actor in the dummy database.
+            def save_character(self, **kwargs):
+                actor_id = kwargs.get("Actor_id")
+                logger.debug(f"DummyDB: save_character called for {actor_id} with data: {kwargs}")
+                if actor_id:
+                    self._data[actor_id] = kwargs
+            def save_training_data(self, data, Actor_id):
+                logger.debug(f"DummyDB: Save training data for {Actor_id}: {data}")
 
-Parameters:
-    data: The training data to be saved.
-    Actor_id: Identifier for the actor associated with the training data.
-"""
-print(f"DummyDB: Save training data for {Actor_id}: {data}")
-
-        # Ensure server config paths are valid for this test run
-        # For example, CHARACTERS_AUDIO_PATH needs to be writable.
         os.makedirs(CHARACTERS_AUDIO_PATH, exist_ok=True)
         os.makedirs(REFERENCE_VOICES_AUDIO_PATH, exist_ok=True)
 
+        # Test with a DB that initially has no Actor1
+        dummy_db_instance_empty = DummyDB()
+        logger.info("--- Test Case 1: Initializing CharacterServer with empty DB (should create default Actor1) ---")
+        cs_empty_db = CharacterServer(db=dummy_db_instance_empty)
+        await cs_empty_db.async_init() # Let it try to init LLM/TTS
 
-        cs = CharacterServer(db=DummyDB())
+        # Test with a DB that has Actor1 pre-configured (mimicking a real scenario)
+        dummy_db_instance_filled = DummyDB()
+        actor1_config = {"name": "ConfiguredActor1", "personality": "configured_tester",
+                         "tts": "gtts", "language":"en", "tts_model": "en", # gTTS uses lang code as model effectively
+                         "reference_audio_filename": None, "Actor_id": "Actor1", "llm_model": "some_test_llm"}
+        dummy_db_instance_filled.save_character(**actor1_config)
+
+        logger.info("--- Test Case 2: Initializing CharacterServer with pre-configured Actor1 ---")
+        cs = CharacterServer(db=dummy_db_instance_filled)
         await cs.async_init()
-        if cs.llm and cs.llm.is_initialized and cs.tts and cs.tts.is_initialized:
-            print("CharacterServer initialized with LLM and TTS.")
-            narration = "A test narration for Actor1."
-            response = await cs.generate_response(narration, {})
-            print(f"Actor1 Response to '{narration}': '{response}'")
-        else:
-            print("CharacterServer LLM or TTS failed to initialize.")
-            if cs.llm:
-                print(f"LLM initialized: {cs.llm.is_initialized}")
-            if cs.tts:
-                print(f"TTS initialized: {cs.tts.is_initialized}")
 
+        if cs.llm and cs.llm.is_initialized and cs.tts and cs.tts.is_initialized:
+            logger.info("CharacterServer (Actor1) initialized with LLM and TTS for Test Case 2.")
+            narration = "A test narration for the configured Actor1."
+            response = await cs.generate_response(narration, {})
+            logger.info(f"Actor1 Response to '{narration}': '{response}'")
+        else:
+            logger.error("CharacterServer (Actor1) LLM or TTS failed to initialize for Test Case 2.")
+            if cs.llm:
+                logger.info(f"LLM initialized: {cs.llm.is_initialized}")
+            else:
+                logger.error("LLM object is None.")
+            if cs.tts:
+                logger.info(f"TTS initialized: {cs.tts.is_initialized}")
+            else:
+                logger.error("TTS object is None.")
+        logger.info("CharacterServer test finished.")
 
     asyncio.run(test_character_server())

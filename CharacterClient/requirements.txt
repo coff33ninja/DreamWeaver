@@ -6,3 +6,5 @@ gtts
 requests
 TTS
 huggingface_hub
+python-dotenv
+websockets
