@@ -36,8 +36,7 @@ class WebSocketConnectionManager:
         Sends a JSON message to a specific connected client.
         Returns True if message was sent, False otherwise.
         """
-        websocket = self.active_connections.get(actor_id)
-        if websocket:
+        if websocket := self.active_connections.get(actor_id):
             try:
                 await websocket.send_json(message)
                 logger.info(f"Sent WebSocket message to Actor_id {actor_id}: {str(message)[:100]}...")

@@ -55,7 +55,7 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
     if client_manager_instance is None: raise RuntimeError("ClientManager instance not initialized.")
     progress(0, desc="Initializing character creation...")
     reference_audio_filename = None
-    if reference_audio_file and tts_service == "xttsv2":
+    if tts_service == "xttsv2" and reference_audio_file:
         progress(0.2, desc="Processing reference audio...")
         os.makedirs(REFERENCE_VOICES_AUDIO_PATH, exist_ok=True)
         sane_name = "".join(c if c.isalnum() else "_" for c in name)
@@ -70,7 +70,7 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
         except Exception as e:
             logger.error(f"Error saving reference audio for character {name} ({Actor_id}): {e}", exc_info=True)
             return f"Error saving reference audio: {e}"
-    elif tts_service == "xttsv2" and not reference_audio_file:
+    elif tts_service == "xttsv2":
         logger.warning(f"XTTS-v2 selected for {name} ({Actor_id}) but no reference audio file uploaded.")
         return "Error: XTTS-v2 selected but no reference audio file uploaded."
     progress(0.7, desc="Saving character details to database...")
@@ -155,13 +155,12 @@ async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True
     status, filename = await asyncio.to_thread(checkpoint_manager.export_story, export_format)
     progress(1, desc="Story export finished.")
     logger.info(f"Export story as {export_format} result: {status}, filename: {filename}")
-    return status, gr.update(value=filename if filename else "", visible=bool(filename)) # Use gr.update
+    return status, gr.update(value=filename or "", visible=bool(filename)) # Use gr.update
 
 async def get_env_vars_async():
     status = await asyncio.to_thread(env_manager.get_env_file_status)
     masked_vars = await asyncio.to_thread(env_manager.load_env_vars, mask_sensitive=True)
-    vars_display_str = "\n".join([f"{k}={v}" for k, v in masked_vars.items()])
-    if not vars_display_str: vars_display_str = "# No variables found or .env file does not exist."
+    vars_display_str = "\n".join([f"{k}={v}" for k, v in masked_vars.items()]) or "# No variables found or .env file does not exist."
     return status, vars_display_str
 
 async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):

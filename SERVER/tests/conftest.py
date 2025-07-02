@@ -29,9 +29,9 @@ def temp_config_file(server_config):
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(server_config, f)
         temp_file = f.name
-    
+
     yield temp_file
-    
+
     # Cleanup
     if os.path.exists(temp_file):
         os.unlink(temp_file)
@@ -46,10 +46,10 @@ def mock_server_environment(monkeypatch):
         'SERVER_DEBUG': 'true',
         'SERVER_MAX_CONNECTIONS': '50'
     }
-    
+
     for key, value in test_env.items():
         monkeypatch.setenv(key, value)
-    
+
     return test_env
 
 
@@ -64,17 +64,21 @@ def event_loop():
 @pytest.fixture
 async def running_server(server_config):
     """Fixture providing a running server instance."""
-    from test_server_api import ServerAPI, ServerConfig
-    
+    from .test_server_api import ServerAPI, ServerConfig
+
     config = ServerConfig(server_config)
     server = ServerAPI(config)
-    
+
     await server.start()
     yield server
-    
-    try:
+
+    from contextlib import suppress
+
+    with suppress(Exception):
         await server.stop()
-    except:
+    try:
+        await server.close()
+    except Exception:
         pass
 
 
@@ -108,7 +112,7 @@ def mock_database():
     database.insert.return_value = {'id': 1, 'created': True}
     database.update.return_value = {'updated': True}
     database.delete.return_value = {'deleted': True}
-    
+
     return database
 
 
@@ -120,36 +124,36 @@ def mock_external_api():
     api.post.return_value = {'status': 'created', 'id': 'mock_id'}
     api.put.return_value = {'status': 'updated'}
     api.delete.return_value = {'status': 'deleted'}
-    
+
     return api
 
 
 # Pytest-specific test classes
 class TestServerAPIPytest:
     """Pytest-style tests for Server API."""
-    
+
     @pytest.mark.asyncio
     async def test_server_startup_with_fixture(self, server_config):
         """Test server startup using pytest fixtures."""
-        from test_server_api import ServerAPI, ServerConfig
-        
+        from .test_server_api import ServerAPI, ServerConfig
+
         config = ServerConfig(server_config)
         server = ServerAPI(config)
-        
+
         result = await server.start()
         assert result is True
         assert server.is_running is True
-        
+
         await server.stop()
-    
+
     @pytest.mark.asyncio
     async def test_request_processing_with_mock_data(self, running_server, mock_request_data):
         """Test request processing with mock data."""
         response = await running_server.process_request(mock_request_data)
-        
+
         assert response.status_code == 200
         assert response.data is not None
-    
+
     @pytest.mark.parametrize("port,expected_valid", [
         (80, True),
         (8080, True),
@@ -160,8 +164,8 @@ class TestServerAPIPytest:
     ])
     def test_port_validation(self, port, expected_valid):
         """Test port validation with parametrized values."""
-        from test_server_api import ServerConfig
-        
+        from .test_server_api import ServerConfig
+
         if expected_valid:
             config = ServerConfig({'port': port})
             assert config.get('port') == port
@@ -170,23 +174,22 @@ class TestServerAPIPytest:
             # For now, we just test that the config is created
             config = ServerConfig({'port': port})
             assert isinstance(config, ServerConfig)
-    
+
     @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_high_load_performance(self, running_server):
         """Test server performance under high load."""
-        import asyncio
-        
+
         # Create many concurrent requests
         tasks = []
         for i in range(100):
             request_data = {'action': 'load_test', 'id': i}
             task = running_server.process_request(request_data)
             tasks.append(task)
-        
+
         # Process all requests
         responses = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Check that most requests succeeded
         successful = [r for r in responses if not isinstance(r, Exception)]
         assert len(successful) >= 90  # Allow for some failures under load

@@ -37,7 +37,7 @@ def get_db():
 def get_client_manager(db: Database = Depends(get_db)):
     """
     Provides a `ClientManager` instance initialized with the given database.
-    
+
     Returns:
         ClientManager: An instance for managing client-related operations using the provided database.
     """
@@ -108,10 +108,10 @@ async def get_traits(
 ):
     """
     Retrieve the character traits associated with the specified Actor ID after validating authentication credentials.
-    
+
     Returns:
         dict: The character traits for the given Actor ID if authentication succeeds and the character exists.
-    
+
     Raises:
         HTTPException: If the token is invalid (401) or the character is not found (404).
     """
@@ -135,7 +135,7 @@ async def save_training_data(
 ):
     """
     Save training data for a specified actor after validating authentication.
-    
+
     Validates the provided token for the given actor. If authentication succeeds, stores the supplied training dataset in the database. Returns a success message upon completion or raises an HTTP 500 error if saving fails.
     """
     if not client_manager.authenticate_request_token(request_data.Actor_id, request_data.token):
@@ -160,10 +160,10 @@ async def register_client_endpoint( # Renamed to avoid conflict with db.register
 ):
     """
     Registers or updates a client in the database with the provided Actor ID, client IP address, and port after validating the authentication token.
-    
+
     Returns:
         dict: A message confirming successful registration and client status.
-    
+
     Raises:
         HTTPException: If the token is invalid (401) or registration fails due to a server error (500).
     """
@@ -191,7 +191,7 @@ async def client_heartbeat(
 ):
     """
     Handle client heartbeat requests by updating the client's status to "Online" and recording the current UTC timestamp.
-    
+
     Returns:
         dict: A message confirming receipt of the heartbeat and the updated status.
     """
@@ -219,7 +219,7 @@ async def get_reference_audio(
 ):
     """
     Serves a reference audio file to authenticated clients after validating their token and ensuring secure file access.
-    
+
     Clients must provide a valid `Actor_id` and `token` as query parameters. The function checks for path traversal attempts and ensures the requested file exists within the allowed audio directory. Returns the audio file as a WAV response if all checks pass.
     """
     if not client_manager.authenticate_request_token(Actor_id, token):
@@ -339,7 +339,6 @@ async def submit_handshake_response(
         client_manager.clear_challenge(Actor_id) # Clean up challenge
         raise HTTPException(status_code=500, detail="Internal server error during handshake.")
 
-    import hashlib
     expected_message = primary_token + stored_challenge
     expected_response_hash = hashlib.sha256(expected_message.encode('utf-8')).hexdigest()
 
