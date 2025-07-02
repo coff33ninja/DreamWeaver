@@ -127,7 +127,7 @@ async def get_traits(
     Raises:
         HTTPException: If the token is invalid (401) or the character is not found (404).
     """
-    if not client_manager.authenticate_request_token(Actor_id, token):
+    if not client_manager.authenticate_request(Actor_id, token):
         logger.warning(f"Authentication failed for Actor_id: {Actor_id} in get_traits.")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
@@ -154,7 +154,7 @@ async def save_training_data(
 
     Validates the provided token for the given actor. If authentication succeeds, stores the supplied training dataset in the database. Returns a success message upon completion or raises an HTTP 500 error if saving fails.
     """
-    if not client_manager.authenticate_request_token(
+    if not client_manager.authenticate_request(
         request_data.Actor_id, request_data.token
     ):
         logger.warning(
@@ -237,7 +237,7 @@ async def client_heartbeat(
     Returns:
         dict: A message confirming receipt of the heartbeat and the updated status.
     """
-    if not client_manager.authenticate_request_token(
+    if not client_manager.authenticate_request(
         request_data.Actor_id, request_data.token
     ):
         logger.warning(
@@ -283,7 +283,7 @@ async def get_reference_audio(
 
     Clients must provide a valid `Actor_id` and `token` as query parameters. The function checks for path traversal attempts and ensures the requested file exists within the allowed audio directory. Returns the audio file as a WAV response if all checks pass.
     """
-    if not client_manager.authenticate_request_token(Actor_id, token):
+    if not client_manager.authenticate_request(Actor_id, token):
         logger.warning(
             f"Authentication failed for Actor_id: {Actor_id} in get_reference_audio for file: {filename}."
         )
@@ -512,7 +512,7 @@ async def websocket_endpoint(
         return
 
     # Authenticate using the session token (or primary, as per authenticate_request_token logic)
-    if not client_manager_dep.authenticate_request_token(actor_id, session_token):
+    if not client_manager_dep.authenticate_request(actor_id, session_token):
         logger.warning(
             f"WebSocket: Authentication failed for Actor_id {actor_id} with provided token."
         )
