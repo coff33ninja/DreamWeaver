@@ -1,5 +1,11 @@
 import sys
+import os
 import signal
+
+# Add the project root (SERVER directory) to the Python path
+# This ensures that 'src' can be imported as a module and helps linters find it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from src.gradio_interface import launch_interface
 from src.server_api import app as server_api_app
 import uvicorn

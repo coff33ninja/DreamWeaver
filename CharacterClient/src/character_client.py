@@ -8,10 +8,10 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 import logging
 import hashlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import websockets # Import websockets library
 import json # For parsing JSON messages
-
+from websockets.protocol import WebSocketClientProtocol # Type for WebSocket connection
 from .tts_manager import TTSManager # Now async
 from .llm_engine import LLMEngine  # Now async
 from .config import (
@@ -32,9 +32,9 @@ class CharacterClient:
     def __init__(self, token: str, Actor_id: str, server_url: str, client_port: int):
         """
         Initialize a CharacterClient instance with the provided authentication and connection details.
-        
+
         This constructor sets up the basic attributes for the client but does not perform any blocking or network operations. To complete initialization, call the asynchronous `async_init()` method after construction.
-        
+
         Parameters:
             token (str): Authentication token for server communication.
             Actor_id (str): Unique identifier for the character actor.
@@ -65,7 +65,7 @@ class CharacterClient:
     async def create(cls, token: str, Actor_id: str, server_url: str, client_port: int):
         """
         Asynchronously creates and initializes a CharacterClient instance.
-        
+
         Returns:
             CharacterClient: An initialized CharacterClient object ready for use.
         """
@@ -77,7 +77,7 @@ class CharacterClient:
         # Perform all blocking/model loading operations here, using asyncio.to_thread for blocking I/O
         """
         Asynchronously initializes the CharacterClient by performing registration, fetching character traits, downloading reference audio if needed, and initializing TTS and LLM subsystems.
-        
+
         This method offloads blocking I/O operations to background threads and sets up the client for subsequent character generation and audio synthesis requests.
         """
         def _register():
@@ -85,7 +85,7 @@ class CharacterClient:
         def _fetch():
             """
             Fetches character traits by calling the blocking trait-fetching method.
-            
+
             Returns:
                 dict: The character traits retrieved from the server.
             """
@@ -93,7 +93,7 @@ class CharacterClient:
         def _download():
             """
             Downloads the reference audio file for the character if required.
-            
+
             Returns:
                 str | None: The local file path to the downloaded reference audio, or None if not applicable.
             """
@@ -153,42 +153,45 @@ class CharacterClient:
 
 
     async def _connect_websocket_with_retry_async(self, max_retries=5, delay_seconds=5):
-        """
-        Attempts to connect to the WebSocket server with retries and starts the listener.
-        """
-        if not self.websocket_url:
-            logger.error(f"CharacterClient ({self.Actor_id}): WebSocket URL not set. Cannot connect.")
-            return
+            """
+            Attempts to connect to the WebSocket server with retries and starts the listener.
+            """
+            if not self.websocket_url:
+                logger.error(f"CharacterClient ({self.Actor_id}): WebSocket URL not set. Cannot connect.")
+                return
 
-        attempt = 0
-        while attempt < max_retries and not self._stop_ws_listener.is_set():
-            try:
-                logger.info(f"CharacterClient ({self.Actor_id}): Attempting WebSocket connection to {self.websocket_url} (Attempt {attempt + 1}/{max_retries})")
-                self.ws_connection = await websockets.connect(self.websocket_url) # type: ignore
-                logger.info(f"CharacterClient ({self.Actor_id}): WebSocket connection established.")
+            async def _attempt_connection(attempt):
+                try:
+                    logger.info(f"CharacterClient ({self.Actor_id}): Attempting WebSocket connection to {self.websocket_url} (Attempt {attempt + 1}/{max_retries})")
+                    self.ws_connection = await websockets.connect(self.websocket_url) # type: ignore
+                    logger.info(f"CharacterClient ({self.Actor_id}): WebSocket connection established.")
 
-                # Cancel previous listener if any (e.g. on reconnect)
-                if self.ws_listener_task and not self.ws_listener_task.done():
-                    self.ws_listener_task.cancel()
+                    # Cancel previous listener if any (e.g. on reconnect)
+                    if self.ws_listener_task and not self.ws_listener_task.done():
+                        self.ws_listener_task.cancel()
 
-                self.ws_listener_task = asyncio.create_task(self._websocket_listener_async())
-                return # Successful connection
-            except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.InvalidURI, websockets.exceptions.InvalidHandshake, OSError) as e:
-                logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket connection attempt {attempt + 1} failed: {e}")
-                self.ws_connection = None
+                    self.ws_listener_task = asyncio.create_task(self._websocket_listener_async())
+                    return True  # Successful connection
+                except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.InvalidURI, websockets.exceptions.InvalidHandshake, OSError) as e:
+                    logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket connection attempt {attempt + 1} failed: {e}")
+                    self.ws_connection = None
+                except Exception as e:  # Catch any other unexpected error during connect
+                    logger.error(f"CharacterClient ({self.Actor_id}): Unexpected error during WebSocket connection attempt {attempt+1}: {e}", exc_info=True)
+                    self.ws_connection = None
+                return False
+
+            attempt = 0
+            while attempt < max_retries and not self._stop_ws_listener.is_set():
+                success = await _attempt_connection(attempt)
+                if success:
+                    return
                 attempt += 1
                 if attempt < max_retries and not self._stop_ws_listener.is_set():
                     logger.info(f"CharacterClient ({self.Actor_id}): Retrying WebSocket connection in {delay_seconds} seconds...")
                     await asyncio.sleep(delay_seconds)
-            except Exception as e: # Catch any other unexpected error during connect
-                logger.error(f"CharacterClient ({self.Actor_id}): Unexpected error during WebSocket connection attempt {attempt+1}: {e}", exc_info=True)
-                self.ws_connection = None
-                attempt += 1
-                if attempt < max_retries and not self._stop_ws_listener.is_set():
-                    await asyncio.sleep(delay_seconds)
 
-        if not self.ws_connection:
-            logger.error(f"CharacterClient ({self.Actor_id}): Failed to connect to WebSocket server after {max_retries} retries.")
+            if not self.ws_connection:
+                logger.error(f"CharacterClient ({self.Actor_id}): Failed to connect to WebSocket server after {max_retries} retries.")
 
 
     async def _websocket_listener_async(self):
@@ -305,8 +308,8 @@ class CharacterClient:
             # If tts_service changes, speaker_wav logic might need adjustment.
             final_speaker_wav = current_speaker_wav if final_tts_service == current_tts_service else None
             if final_tts_service == "xttsv2" and not final_speaker_wav and self.local_reference_audio_path:
-                 # If switching TO xtts and we have a local ref audio, use it.
-                 final_speaker_wav = self.local_reference_audio_path
+                # If switching TO xtts and we have a local ref audio, use it.
+                final_speaker_wav = self.local_reference_audio_path
 
 
             try:
@@ -420,7 +423,7 @@ class CharacterClient:
             logger.error(f"CharacterClient ({self.Actor_id}): Unexpected error during handshake: {e}", exc_info=True)
 
         if not self.session_token:
-             logger.warning(f"CharacterClient ({self.Actor_id}): Handshake did not result in a session token. Will use primary token.")
+            logger.warning(f"CharacterClient ({self.Actor_id}): Handshake did not result in a session token. Will use primary token.")
 
 
     def _get_active_token(self) -> str:
@@ -431,10 +434,9 @@ class CharacterClient:
             if datetime.now(timezone.utc) < self.session_token_expiry:
                 # logger.debug(f"CharacterClient ({self.Actor_id}): Using active session token.")
                 return self.session_token
-            else:
-                logger.warning(f"CharacterClient ({self.Actor_id}): Session token expired at {self.session_token_expiry}. Invalidating and falling back to primary token. Re-handshake may be needed.")
-                self.session_token = None
-                self.session_token_expiry = None
+            logger.warning(f"CharacterClient ({self.Actor_id}): Session token expired at {self.session_token_expiry}. Invalidating and falling back to primary token. Re-handshake may be needed.")
+            self.session_token = None
+            self.session_token_expiry = None
                 # TODO: Consider triggering re-handshake automatically here or on next API call failure.
 
         # logger.debug(f"CharacterClient ({self.Actor_id}): Using primary token.")
@@ -446,7 +448,7 @@ class CharacterClient:
         # (Implementation is the same as original _download_reference_audio, just named for clarity)
         """
         Downloads the reference audio file for the character and saves it locally if not already present.
-        
+
         If the character traits or reference audio filename are missing, the method exits without downloading. The downloaded file is stored in a sanitized path based on the actor ID and filename. If an error occurs during download, the local reference audio path is set to None.
         """
         if not self.character:
@@ -498,7 +500,7 @@ class CharacterClient:
         # (Implementation is the same as original fetch_traits, just named for clarity)
         """
         Fetches character traits from the server in a blocking manner.
-        
+
         Returns:
             dict | None: The character traits as a dictionary if the request succeeds, or None if an error occurs.
         """
@@ -508,7 +510,7 @@ class CharacterClient:
             response = requests.get(f"{self.server_url}/get_traits", params={"Actor_id": self.Actor_id, "token": active_token}, timeout=10)
             response.raise_for_status()
             traits = response.json()
-            logger.info(f"CharacterClient ({self.Actor_id}): Successfully fetched traits: {str(traits)[:200]}...")
+            self._log_traits_fetch(traits)
             return traits
         except requests.exceptions.RequestException as e_req:
             logger.error(f"CharacterClient ({self.Actor_id}): HTTP Error fetching traits: {e_req}", exc_info=True)
@@ -520,7 +522,6 @@ class CharacterClient:
         # (Implementation is the same as original _register_with_server with retries, just named for clarity)
         """
         Register the client with the server using a blocking HTTP POST request, retrying with exponential backoff on failure.
-<<<<<<< HEAD
 
         Parameters:
         max_retries (int): Maximum number of retry attempts.
@@ -528,15 +529,6 @@ class CharacterClient:
 
         Returns:
         bool: True if registration succeeds, False if all retries fail.
-=======
-        
-        Parameters:
-        	max_retries (int): Maximum number of retry attempts.
-        	base_delay (float): Initial delay in seconds before retrying, doubled after each failed attempt.
-        
-        Returns:
-        	bool: True if registration succeeds, False if all retries fail.
->>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d
         """
         payload = {"Actor_id": self.Actor_id, "token": self.token, "client_port": self.client_port}
         for attempt in range(max_retries + 1):
@@ -565,16 +557,19 @@ class CharacterClient:
                     logger.critical(f"CharacterClient ({self.Actor_id}): Could not register after {max_retries+1} attempts due to unexpected error. Last error: {e}")
                     return False
         return False # Should be unreachable if logic is correct, but as a fallback
+
+    def _log_traits_fetch(self, traits):
+        logger.info(f"CharacterClient ({self.Actor_id}): Successfully fetched traits: {str(traits)[:200]}...")
     # --- End of blocking I/O methods ---
 
     async def send_heartbeat_async(self, max_retries=DEFAULT_MAX_RETRIES, base_delay=DEFAULT_BASE_DELAY_SECONDS) -> bool:
         """
         Asynchronously sends a heartbeat signal to the server with retry logic and exponential backoff.
-        
+
         Parameters:
         	max_retries (int): Maximum number of retry attempts if the request fails.
         	base_delay (float): Initial delay in seconds before retrying, doubled with each attempt.
-        
+
         Returns:
         	bool: True if the heartbeat was successfully sent, False if all retries failed.
         """
@@ -587,7 +582,7 @@ class CharacterClient:
         def _blocking_heartbeat_call():
             """
             Send a blocking POST request with a JSON payload to the specified URL as part of the heartbeat mechanism.
-            
+
             Returns:
                 Response: The HTTP response object from the POST request.
             """
@@ -623,11 +618,11 @@ class CharacterClient:
     async def generate_response_async(self, narration: str, character_texts: dict) -> str:
         """
         Asynchronously generates a character-specific response using the LLM and saves training data.
-        
+
         Parameters:
             narration (str): The narration text to include in the prompt.
             character_texts (dict): Additional character dialogue or context to include.
-        
+
         Returns:
             str: The generated response text, or a status message if the LLM or character data is not ready.
         """
@@ -677,10 +672,10 @@ class CharacterClient:
     async def synthesize_audio_async(self, text_to_synthesize: str) -> str | None:
         """
         Asynchronously generates an audio file from the provided text using the TTSManager.
-        
+
         Parameters:
             text_to_synthesize (str): The text to convert to speech.
-        
+
         Returns:
             str | None: The file path to the generated audio if successful, or None if TTS is not initialized.
         """
@@ -726,9 +721,9 @@ class CharacterClient:
 async def handle_character_generation_request(data: dict, request: Request):
     """
     Handles character generation requests by generating a character response and synthesizing corresponding audio.
-    
+
     Validates the client instance and token, processes the provided narration and optional character texts, generates a response using the character's LLM, synthesizes audio for the response, encodes the audio in base64, and returns both the generated text and audio data.
-    
+
     Returns:
         dict: A dictionary containing the generated text and base64-encoded audio data.
     """
@@ -760,7 +755,7 @@ async def handle_character_generation_request(data: dict, request: Request):
         def _read_audio_file():
             """
             Read and return the binary contents of the audio file at the specified path.
-            
+
             Returns:
                 bytes: The raw audio data read from the file.
             """
@@ -787,7 +782,7 @@ async def handle_character_generation_request(data: dict, request: Request):
 async def health_check(request: Request):
     """
     Check the readiness status of the character client and its LLM and TTS subsystems.
-    
+
     Returns a JSON object indicating overall system status, the actor ID, and the readiness of the LLM and TTS components. If the client is not initialized, raises a 503 HTTPException.
     """
     client: CharacterClient = request.app.state.character_client_instance # type: ignore
@@ -812,7 +807,7 @@ async def health_check(request: Request):
 async def _heartbeat_task_runner(client: CharacterClient):
     """
     Periodically sends heartbeat signals for the given CharacterClient instance.
-    
+
     Continuously waits for a configured interval and invokes the client's asynchronous heartbeat method to maintain server registration.
     """
     while True:
@@ -847,7 +842,7 @@ def start_heartbeat_task(client: CharacterClient):
                 _heartbeat_task_instance = asyncio.create_task(_heartbeat_task_runner(client))
                 logger.info(f"Asynchronous heartbeat task created (via asyncio.create_task) for {client.Actor_id}.")
             except RuntimeError as e_create_task:
-                 logger.error(f"Failed to create heartbeat task for {client.Actor_id} even with asyncio.create_task: {e_create_task}", exc_info=True)
+                logger.error(f"Failed to create heartbeat task for {client.Actor_id} even with asyncio.create_task: {e_create_task}", exc_info=True)
     else:
         logger.debug(f"Heartbeat task for {client.Actor_id} already running or scheduled.")
 
@@ -855,7 +850,7 @@ def start_heartbeat_task(client: CharacterClient):
 def initialize_character_client(token: str, Actor_id: str, server_url: str, client_port: int):
     """
     Asynchronously initializes the CharacterClient singleton and starts the heartbeat task if not already running.
-    
+
     Ensures required client directories exist, creates and initializes a CharacterClient instance with the provided parameters, stores it in the FastAPI app state, and schedules the heartbeat background task. If the client is already initialized, no action is taken.
     """
     global _heartbeat_task_instance
@@ -866,7 +861,7 @@ def initialize_character_client(token: str, Actor_id: str, server_url: str, clie
         async def _init():
             """
             Asynchronously initializes the CharacterClient instance and schedules the heartbeat task if not already running.
-            
+
             This function creates and stores a CharacterClient in the FastAPI app state, prints initialization status, and ensures the heartbeat task is started for the client.
             """
             client_instance = await CharacterClient.create(token=token, Actor_id=Actor_id, server_url=server_url, client_port=client_port) # create() logs its own completion
