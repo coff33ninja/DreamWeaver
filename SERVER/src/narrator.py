@@ -14,7 +14,7 @@ class Narrator:
     def __init__(self, model_size=None):
         """
         Initialize the Narrator with a Whisper speech-to-text model and optionally a Pyannote diarization pipeline.
-        
+
         Loads the specified or default Whisper model for speech transcription. If diarization is enabled, attempts to load the Pyannote diarization pipeline with retry logic and user prompts for required actions (such as accepting terms or logging in). Sets up internal state for default speaker naming and last transcription storage.
         """
         if model_size is None:
@@ -62,14 +62,14 @@ class Narrator:
                     # break
                     retry_count += 1
                     if retry_count < max_retries:
-                         asyncio.run(asyncio.sleep(5)) # Non-blocking sleep if in async context, but __init__ is sync
+                        asyncio.run(asyncio.sleep(5)) # Non-blocking sleep if in async context, but __init__ is sync
                     else:
                         logger.error("[Narrator] Maximum retries reached for diarization pipeline. Diarization will be skipped.")
                         self.diarization_pipeline = None
                         break # Exit loop
             if retry_count >= max_retries and self.diarization_pipeline is None: # Ensure it's None if all retries failed
-                 logger.error("[Narrator] Maximum retries reached. Diarization will be skipped.")
-                 self.diarization_pipeline = None
+                logger.error("[Narrator] Maximum retries reached. Diarization will be skipped.")
+                self.diarization_pipeline = None
 
 
         self.default_speaker_name = "Narrator"
@@ -78,12 +78,12 @@ class Narrator:
     async def process_narration(self, audio_filepath: str) -> dict:
         """
         Transcribes speech from an audio file and optionally identifies the speaker.
-        
+
         The method saves a uniquely named copy of the input audio file, performs speech-to-text transcription using the loaded Whisper model, and, if enabled and available, applies speaker diarization to determine the speaker label. Returns a dictionary containing the transcribed text, the path to the saved audio copy, and the identified speaker name. If transcription or diarization fails, returns empty text and the default speaker name.
-        
+
         Parameters:
             audio_filepath (str): Path to the input audio file to be processed.
-        
+
         Returns:
             dict: A dictionary with keys:
                 - "text": The transcribed text from the audio.
@@ -143,7 +143,7 @@ class Narrator:
     def correct_last_transcription(self, new_text: str):
         """
         Update the most recent transcription with corrected text provided by the user.
-        
+
         Parameters:
             new_text (str): The corrected transcription text to replace the previous value.
         """
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     async def test_narrator():
         """
         Asynchronously tests the Narrator class by generating a dummy audio file and processing it for transcription.
-        
+
         Creates a 1-second 440 Hz WAV file if it does not exist, initializes a Narrator instance with a small model for fast testing, and prints the transcription result. Skips the test if the STT model fails to load or if the dummy audio file cannot be created.
         """
         logger.info("Testing Narrator...")

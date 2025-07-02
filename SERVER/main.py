@@ -31,7 +31,7 @@ def run_fastapi() -> None:
 def terminate_process(proc: multiprocessing.Process, name: str) -> None:
     """
     Attempt to gracefully terminate a multiprocessing process, forcefully killing it if necessary.
-    
+
     Parameters:
         proc (multiprocessing.Process): The process to terminate.
         name (str): A human-readable name for the process, used in status messages.
@@ -55,7 +55,7 @@ def main():
     # Use 'spawn' for Windows safety and cross-platform compatibility
     """
     Start and manage Gradio and FastAPI servers in separate processes with robust lifecycle and shutdown handling.
-    
+
     This function initializes multiprocessing with the 'spawn' method for cross-platform compatibility, launches the Gradio and FastAPI servers in independent processes, and monitors their status. It registers signal handlers to ensure both servers are terminated gracefully on SIGINT or SIGTERM, and handles unexpected process exits or exceptions by shutting down both servers before exiting.
     """
     multiprocessing.set_start_method("spawn", force=True) # Must be called only once
@@ -73,7 +73,7 @@ def main():
     def shutdown_handler(signum, frame):
         """
         Handles shutdown signals by terminating both the Gradio and FastAPI server processes and exiting the program.
-        
+
         Parameters:
             signum (int): The received signal number.
             frame (FrameType): The current stack frame when the signal was received.
@@ -105,7 +105,7 @@ def main():
             # and the is_alive() check at the start of the loop will catch it.
             # This also makes the loop more responsive to signals than long joins.
             if not gradio_process.is_alive() or not fastapi_process.is_alive():
-                 break # Exit if any process has died
+                break # Exit if any process has died
 
     except KeyboardInterrupt:
         logger.info("\nKeyboardInterrupt received. Shutting down servers.")

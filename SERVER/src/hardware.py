@@ -17,7 +17,7 @@ class Hardware:
             except serial.SerialException as e:
                 logger.warning(f"Could not connect to Arduino on {self.serial_port}: {e}. Hardware features will be disabled.")
             except Exception as e_other: # Catch other potential errors like ValueError for baud_rate
-                 logger.error(f"An unexpected error occurred while trying to connect to Arduino on {self.serial_port}: {e_other}", exc_info=True)
+                logger.error(f"An unexpected error occurred while trying to connect to Arduino on {self.serial_port}: {e_other}", exc_info=True)
 
         else:
             logger.info("ARDUINO_SERIAL_PORT not set. Arduino hardware features disabled.")

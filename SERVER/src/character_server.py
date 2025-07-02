@@ -13,7 +13,7 @@ class CharacterServer: # This is for Actor1, the server's own character
     def __init__(self, db):
         """
         Initialize the CharacterServer for "Actor1", loading character data from the database or creating a default if missing.
-        
+
         If the character data for "Actor1" is not found in the database, a default character profile is created and saved. LLM and TTS engines are not initialized here and must be set up asynchronously.
         """
         self.db = db
@@ -45,7 +45,7 @@ class CharacterServer: # This is for Actor1, the server's own character
     async def async_init(self):
         """
         Asynchronously initializes the LLM and TTS engines for Actor1, preparing the character for text generation and audio synthesis.
-        
+
         This method offloads blocking initialization tasks for the LLM and TTS engines to background threads to avoid blocking the event loop. It also ensures the pygame mixer is initialized for audio playback, handling errors if initialization fails.
         """
         logger.info(f"CharacterServer ({self.character_Actor_id}): Starting asynchronous initialization of LLM and TTS...")
@@ -56,9 +56,9 @@ class CharacterServer: # This is for Actor1, the server's own character
             logger.info(f"CharacterServer ({self.character_Actor_id}): Initializing LLMEngine with model '{llm_model_name}'...")
             self.llm = await loop.run_in_executor(None, lambda: LLMEngine(model_name=llm_model_name, db=self.db))
             if self.llm and self.llm.is_initialized:
-                 logger.info(f"CharacterServer ({self.character_Actor_id}): LLMEngine initialized successfully.")
+                logger.info(f"CharacterServer ({self.character_Actor_id}): LLMEngine initialized successfully.")
             else:
-                 logger.warning(f"CharacterServer ({self.character_Actor_id}): LLMEngine failed to initialize or is_initialized is false.")
+                logger.warning(f"CharacterServer ({self.character_Actor_id}): LLMEngine failed to initialize or is_initialized is false.")
         except Exception as e_llm:
             logger.error(f"CharacterServer ({self.character_Actor_id}): Error initializing LLMEngine: {e_llm}", exc_info=True)
             self.llm = None
@@ -101,11 +101,11 @@ class CharacterServer: # This is for Actor1, the server's own character
     async def generate_response(self, narration: str, other_texts: dict) -> str:
         """
         Asynchronously generates a text response for the character based on narration and other character inputs, then synthesizes and plays the response as audio.
-        
+
         Parameters:
             narration (str): The narration or prompt to which the character should respond.
             other_texts (dict): A mapping of other character names to their spoken text for context.
-        
+
         Returns:
             str: The generated text response from the character, or an error string if generation fails.
         """
@@ -151,7 +151,7 @@ class CharacterServer: # This is for Actor1, the server's own character
     async def output_audio(self, text: str):
         """
         Asynchronously synthesizes speech audio from the given text using the character's TTS engine and plays it back.
-        
+
         If the character uses XTTSv2 and a reference audio file is available, it is used for voice cloning. The synthesized audio is saved to the character's audio directory and played using pygame's mixer if initialized. Logs warnings if TTS is not initialized, reference audio is missing, synthesis fails, or audio playback is unavailable.
         """
         char_name = self.character.get('name', self.character_Actor_id)
@@ -211,7 +211,7 @@ if __name__ == '__main__':
 
     async def test_character_server():
         logger.info("Testing CharacterServer (Actor1)...")
-        
+
         class DummyDB:
             _data = {}
             def get_character(self, Actor_id):
@@ -219,7 +219,7 @@ if __name__ == '__main__':
                 if Actor_id == "Actor1" and Actor_id in self._data:
                     return self._data[Actor_id]
                 elif Actor_id == "Actor1": # Default if not saved by save_character
-                     return {"name": "TestActor1", "personality": "tester", "tts": "gtts", "language":"en",
+                    return {"name": "TestActor1", "personality": "tester", "tts": "gtts", "language":"en",
                             "reference_audio_filename": None, "Actor_id": "Actor1", "llm_model": None}
                 return None
             def save_character(self, **kwargs):
