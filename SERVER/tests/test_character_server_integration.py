@@ -1,315 +1,320 @@
+"""
+Integration tests for character server with external dependencies.
+Testing framework: pytest
+These tests would integrate with real databases, APIs, and external services.
+"""
+
 import pytest
 import json
 import tempfile
 import os
+import sqlite3
 from unittest.mock import Mock, patch, MagicMock
 import sys
 
-# Add the SERVER directory to the path for imports
+# Add the SERVER directory to the path for imports  
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Testing framework: pytest
-# Integration tests for character server functionality
+from test_character_server import MockCharacterServer
 
 
-class TestCharacterServerIntegration:
-    """Integration test suite for character server with external dependencies."""
+class TestCharacterServerDatabaseIntegration:
+    """Integration tests with database systems."""
     
-    def test_character_server_json_serialization(self):
-        """Test character server data serialization to JSON."""
-        from test_character_server import MockCharacterServer
+    @pytest.fixture
+    def temp_database(self):
+        """Create a temporary SQLite database for testing."""
+        db_file = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+        db_path = db_file.name
+        db_file.close()
         
+        # Initialize database with character table
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE characters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                class TEXT NOT NULL,
+                level INTEGER NOT NULL,
+                data TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+        
+        yield db_path
+        
+        # Cleanup
+        os.unlink(db_path)
+    
+    def test_character_persistence_simulation(self, temp_database):
+        """Test character data persistence simulation with SQLite."""
+        # This simulates what real database integration would look like
+        conn = sqlite3.connect(temp_database)
+        cursor = conn.cursor()
+        
+        # Create character data
+        char_data = {
+            'name': 'PersistentHero',
+            'class': 'Warrior',
+            'level': 25,
+            'hp': 250,
+            'mp': 100
+        }
+        
+        # Insert character into database
+        cursor.execute(
+            'INSERT INTO characters (name, class, level, data) VALUES (?, ?, ?, ?)',
+            (char_data['name'], char_data['class'], char_data['level'], json.dumps(char_data))
+        )
+        conn.commit()
+        
+        # Retrieve character from database
+        cursor.execute('SELECT * FROM characters WHERE name = ?', (char_data['name'],))
+        row = cursor.fetchone()
+        
+        assert row is not None
+        assert row[1] == char_data['name']  # name
+        assert row[2] == char_data['class']  # class
+        assert row[3] == char_data['level']  # level
+        
+        retrieved_data = json.loads(row[4])  # data
+        assert retrieved_data['hp'] == char_data['hp']
+        
+        conn.close()
+    
+    def test_character_batch_database_operations(self, temp_database):
+        """Test batch database operations for character management."""
+        conn = sqlite3.connect(temp_database)
+        cursor = conn.cursor()
+        
+        # Batch insert characters
+        characters = []
+        for i in range(100):
+            char_data = {
+                'name': f'BatchHero_{i}',
+                'class': 'BatchClass',
+                'level': i + 1,
+                'batch_id': i // 10
+            }
+            characters.append((
+                char_data['name'],
+                char_data['class'], 
+                char_data['level'],
+                json.dumps(char_data)
+            ))
+        
+        cursor.executemany(
+            'INSERT INTO characters (name, class, level, data) VALUES (?, ?, ?, ?)',
+            characters
+        )
+        conn.commit()
+        
+        # Query batch results
+        cursor.execute('SELECT COUNT(*) FROM characters WHERE class = ?', ('BatchClass',))
+        count = cursor.fetchone()[0]
+        assert count == 100
+        
+        # Test batch update
+        cursor.execute('UPDATE characters SET level = level + 10 WHERE class = ?', ('BatchClass',))
+        conn.commit()
+        
+        # Verify batch update
+        cursor.execute('SELECT AVG(level) FROM characters WHERE class = ?', ('BatchClass',))
+        avg_level = cursor.fetchone()[0]
+        assert avg_level > 50  # Original average was ~50, now should be ~60
+        
+        conn.close()
+
+
+class TestCharacterServerAPIIntegration:
+    """Integration tests with external APIs and services."""
+    
+    @patch('requests.get')
+    def test_character_external_validation_service(self, mock_get):
+        """Test integration with external character validation service."""
+        # Mock external validation API response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'is_valid': True,
+            'validation_score': 95,
+            'suggestions': []
+        }
+        mock_response.status_code = 200
+        mock_get.return_value = mock_response
+        
+        char_data = {
+            'name': 'ExternalValidatedHero',
+            'class': 'Warrior',
+            'level': 10
+        }
+        
+        # Simulate external validation call
+        import requests
+        response = requests.get('https://api.example.com/validate-character', 
+                              json=char_data)
+        
+        validation_result = response.json()
+        assert validation_result['is_valid'] is True
+        assert validation_result['validation_score'] >= 90
+    
+    @patch('requests.post')
+    def test_character_statistics_reporting(self, mock_post):
+        """Test integration with statistics reporting service."""
+        # Mock statistics API response
+        mock_response = Mock()
+        mock_response.json.return_value = {'status': 'success', 'report_id': 'RPT123'}
+        mock_response.status_code = 201
+        mock_post.return_value = mock_response
+        
+        # Create character server with characters
+        server = MockCharacterServer()
+        chars = []
+        for i in range(10):
+            char_data = {
+                'name': f'StatsHero_{i}',
+                'class': 'Warrior',
+                'level': (i + 1) * 10
+            }
+            chars.append(server.create_character(char_data))
+        
+        # Generate statistics
+        stats = {
+            'total_characters': len(chars),
+            'average_level': sum(c['level'] for c in chars) / len(chars),
+            'class_distribution': {'Warrior': len(chars)}
+        }
+        
+        # Send statistics to external service
+        import requests
+        response = requests.post('https://api.example.com/character-stats',
+                               json=stats)
+        
+        result = response.json()
+        assert result['status'] == 'success'
+        assert 'report_id' in result
+
+
+class TestCharacterServerFileSystemIntegration:
+    """Integration tests with file system operations."""
+    
+    @pytest.fixture
+    def temp_directory(self):
+        """Create temporary directory for file operations."""
+        import tempfile
+        import shutil
+        
+        temp_dir = tempfile.mkdtemp()
+        yield temp_dir
+        shutil.rmtree(temp_dir)
+    
+    def test_character_data_export_import(self, temp_directory):
+        """Test character data export and import functionality."""
         server = MockCharacterServer()
         
         # Create test characters
-        test_chars = [
-            {'name': 'Hero1', 'class': 'Warrior', 'level': 10},
-            {'name': 'Hero2', 'class': 'Mage', 'level': 15},
-            {'name': 'Hero3', 'class': 'Rogue', 'level': 8}
-        ]
-        
-        created_chars = []
-        for char_data in test_chars:
+        test_chars = []
+        for i in range(5):
+            char_data = {
+                'name': f'ExportHero_{i}',
+                'class': 'Exporter',
+                'level': (i + 1) * 10,
+                'export_batch': 'batch_001'
+            }
             char = server.create_character(char_data)
-            created_chars.append(char)
+            test_chars.append(char)
         
-        # Serialize to JSON
-        all_chars = server.list_characters()
-        json_data = json.dumps(all_chars, indent=2)
+        # Export characters to JSON file
+        export_file = os.path.join(temp_directory, 'characters_export.json')
+        export_data = {
+            'version': '1.0',
+            'export_timestamp': '2023-01-01T00:00:00Z',
+            'characters': test_chars
+        }
         
-        # Verify JSON is valid and contains expected data
-        parsed_data = json.loads(json_data)
-        assert len(parsed_data) == 3
-        assert parsed_data[0]['name'] == 'Hero1'
-        assert parsed_data[1]['class'] == 'Mage'
-        assert parsed_data[2]['level'] == 8
+        with open(export_file, 'w') as f:
+            json.dump(export_data, f, indent=2)
+        
+        # Verify export file exists and is valid
+        assert os.path.exists(export_file)
+        
+        # Import characters from file (simulate new server)
+        import_server = MockCharacterServer()
+        
+        with open(export_file, 'r') as f:
+            imported_data = json.load(f)
+        
+        imported_chars = []
+        for char_data in imported_data['characters']:
+            # Remove ID for import (will get new ID)
+            import_char_data = {k: v for k, v in char_data.items() if k != 'id'}
+            imported_char = import_server.create_character(import_char_data)
+            imported_chars.append(imported_char)
+        
+        # Verify import success
+        assert len(imported_chars) == len(test_chars)
+        for original, imported in zip(test_chars, imported_chars):
+            assert original['name'] == imported['name']
+            assert original['class'] == imported['class']
+            assert original['level'] == imported['level']
     
-    def test_character_server_file_persistence_simulation(self):
-        """Test character server data persistence to file (simulated)."""
-        from test_character_server import MockCharacterServer
-        
+    def test_character_backup_and_recovery(self, temp_directory):
+        """Test character data backup and recovery operations."""
         server = MockCharacterServer()
         
-        # Create characters
-        char_data = {'name': 'PersistentHero', 'class': 'Paladin', 'level': 25}
-        char = server.create_character(char_data)
+        # Create characters to backup
+        for i in range(20):
+            char_data = {
+                'name': f'BackupHero_{i}',
+                'class': 'Guardian',
+                'level': i + 1
+            }
+            server.create_character(char_data)
         
-        # Simulate saving to file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-            all_chars = server.list_characters()
-            json.dump(all_chars, f)
-            temp_filename = f.name
+        original_chars = server.list_characters()
         
-        try:
-            # Simulate loading from file
-            with open(temp_filename, 'r') as f:
-                loaded_chars = json.load(f)
-            
-            # Verify data integrity
-            assert len(loaded_chars) == 1
-            assert loaded_chars[0]['name'] == 'PersistentHero'
-            assert loaded_chars[0]['class'] == 'Paladin'
-            assert loaded_chars[0]['level'] == 25
-            
-        finally:
-            # Clean up temp file
-            os.unlink(temp_filename)
-    
-    def test_character_server_with_external_validation_service(self):
-        """Test character server integration with external validation service."""
-        from test_character_server import MockCharacterServer
+        # Create backup
+        backup_file = os.path.join(temp_directory, 'character_backup.json')
+        backup_data = {
+            'backup_timestamp': '2023-01-01T12:00:00Z',
+            'character_count': len(original_chars),
+            'characters': original_chars
+        }
         
-        class ExternalValidationService:
-            @staticmethod
-            def validate_character_name(name):
-                """Simulate external name validation service."""
-                forbidden_names = ['admin', 'system', 'root']
-                return name.lower() not in forbidden_names
-            
-            @staticmethod
-            def validate_character_class(char_class):
-                """Simulate external class validation service."""
-                valid_classes = ['Warrior', 'Mage', 'Rogue', 'Paladin', 'Archer']
-                return char_class in valid_classes
+        with open(backup_file, 'w') as f:
+            json.dump(backup_data, f)
         
-        # Extend MockCharacterServer with external validation
-        class ValidatedCharacterServer(MockCharacterServer):
-            def create_character(self, character_data):
-                # Use external validation
-                if not ExternalValidationService.validate_character_name(character_data.get('name', '')):
-                    raise ValueError("Character name not allowed by external service")
-                
-                if not ExternalValidationService.validate_character_class(character_data.get('class', '')):
-                    raise ValueError("Character class not valid according to external service")
-                
-                return super().create_character(character_data)
+        # Simulate data loss (clear server)
+        server.characters.clear()
+        server.next_id = 1
+        assert len(server.list_characters()) == 0
         
-        server = ValidatedCharacterServer()
+        # Restore from backup
+        with open(backup_file, 'r') as f:
+            backup_data = json.load(f)
         
-        # Test valid character creation
-        valid_char = {'name': 'ValidHero', 'class': 'Warrior', 'level': 1}
-        result = server.create_character(valid_char)
-        assert result['name'] == 'ValidHero'
+        for char_data in backup_data['characters']:
+            # Restore character (will get new ID but same data)
+            restore_data = {k: v for k, v in char_data.items() if k != 'id'}
+            server.create_character(restore_data)
         
-        # Test invalid name
-        with pytest.raises(ValueError, match="name not allowed"):
-            server.create_character({'name': 'admin', 'class': 'Warrior', 'level': 1})
+        restored_chars = server.list_characters()
         
-        # Test invalid class
-        with pytest.raises(ValueError, match="class not valid"):
-            server.create_character({'name': 'Hero', 'class': 'InvalidClass', 'level': 1})
-    
-    def test_character_server_with_logging_integration(self):
-        """Test character server integration with logging system."""
-        import logging
-        from io import StringIO
-        from test_character_server import MockCharacterServer
+        # Verify recovery
+        assert len(restored_chars) == len(original_chars)
         
-        # Set up logging capture
-        log_capture = StringIO()
-        handler = logging.StreamHandler(log_capture)
-        logger = logging.getLogger('character_server')
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        
-        # Extend MockCharacterServer with logging
-        class LoggingCharacterServer(MockCharacterServer):
-            def create_character(self, character_data):
-                logger.info(f"Creating character: {character_data.get('name')}")
-                result = super().create_character(character_data)
-                logger.info(f"Created character with ID: {result['id']}")
-                return result
-            
-            def delete_character(self, character_id):
-                logger.info(f"Deleting character ID: {character_id}")
-                result = super().delete_character(character_id)
-                if result:
-                    logger.info(f"Successfully deleted character ID: {character_id}")
-                else:
-                    logger.warning(f"Failed to delete character ID: {character_id}")
-                return result
-        
-        server = LoggingCharacterServer()
-        
-        # Perform operations
-        char_data = {'name': 'LoggedHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        server.delete_character(char['id'])
-        server.delete_character(9999)  # Should log warning
-        
-        # Verify logging
-        log_output = log_capture.getvalue()
-        assert 'Creating character: LoggedHero' in log_output
-        assert f'Created character with ID: {char["id"]}' in log_output
-        assert f'Successfully deleted character ID: {char["id"]}' in log_output
-        assert 'Failed to delete character ID: 9999' in log_output
-    
-    def test_character_server_with_metrics_collection(self):
-        """Test character server integration with metrics collection."""
-        from test_character_server import MockCharacterServer
-        from collections import defaultdict
-        import time
-        
-        # Metrics collector
-        class MetricsCollector:
-            def __init__(self):
-                self.operation_counts = defaultdict(int)
-                self.operation_times = defaultdict(list)
-            
-            def record_operation(self, operation, duration):
-                self.operation_counts[operation] += 1
-                self.operation_times[operation].append(duration)
-            
-            def get_average_time(self, operation):
-                times = self.operation_times[operation]
-                return sum(times) / len(times) if times else 0
-        
-        # Extend MockCharacterServer with metrics
-        class MetricsCharacterServer(MockCharacterServer):
-            def __init__(self):
-                super().__init__()
-                self.metrics = MetricsCollector()
-            
-            def create_character(self, character_data):
-                start_time = time.time()
-                result = super().create_character(character_data)
-                duration = time.time() - start_time
-                self.metrics.record_operation('create', duration)
-                return result
-            
-            def get_character(self, character_id):
-                start_time = time.time()
-                result = super().get_character(character_id)
-                duration = time.time() - start_time
-                self.metrics.record_operation('get', duration)
-                return result
-        
-        server = MetricsCharacterServer()
-        
-        # Perform operations
-        char_data = {'name': 'MetricsHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        server.get_character(char['id'])
-        server.get_character(char['id'])
-        server.create_character({**char_data, 'name': 'MetricsHero2'})
-        
-        # Verify metrics collection
-        assert server.metrics.operation_counts['create'] == 2
-        assert server.metrics.operation_counts['get'] == 2
-        assert server.metrics.get_average_time('create') >= 0
-        assert server.metrics.get_average_time('get') >= 0
-    
-    def test_character_server_with_caching_layer(self):
-        """Test character server integration with caching layer."""
-        from test_character_server import MockCharacterServer
-        
-        # Simple cache implementation
-        class SimpleCache:
-            def __init__(self):
-                self.cache = {}
-                self.hits = 0
-                self.misses = 0
-            
-            def get(self, key):
-                if key in self.cache:
-                    self.hits += 1
-                    return self.cache[key]
-                self.misses += 1
-                return None
-            
-            def set(self, key, value):
-                self.cache[key] = value
-            
-            def delete(self, key):
-                if key in self.cache:
-                    del self.cache[key]
-        
-        # Extend MockCharacterServer with caching
-        class CachedCharacterServer(MockCharacterServer):
-            def __init__(self):
-                super().__init__()
-                self.cache = SimpleCache()
-            
-            def get_character(self, character_id):
-                cache_key = f"char_{character_id}"
-                cached_char = self.cache.get(cache_key)
-                if cached_char:
-                    return cached_char
-                
-                char = super().get_character(character_id)
-                if char:
-                    self.cache.set(cache_key, char)
-                return char
-            
-            def update_character(self, character_id, update_data):
-                result = super().update_character(character_id, update_data)
-                if result:
-                    # Update cache
-                    cache_key = f"char_{character_id}"
-                    self.cache.set(cache_key, result)
-                return result
-            
-            def delete_character(self, character_id):
-                result = super().delete_character(character_id)
-                if result:
-                    # Remove from cache
-                    cache_key = f"char_{character_id}"
-                    self.cache.delete(cache_key)
-                return result
-        
-        server = CachedCharacterServer()
-        
-        # Create character
-        char_data = {'name': 'CachedHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        
-        # First get - should miss cache
-        result1 = server.get_character(char['id'])
-        assert result1 is not None
-        assert server.cache.misses == 1
-        assert server.cache.hits == 0
-        
-        # Second get - should hit cache
-        result2 = server.get_character(char['id'])
-        assert result2 is not None
-        assert server.cache.hits == 1
-        
-        # Update character - should update cache
-        server.update_character(char['id'], {'level': 10})
-        
-        # Get updated character - should hit cache with updated data
-        result3 = server.get_character(char['id'])
-        assert result3['level'] == 10
-        assert server.cache.hits == 2
-        
-        # Delete character - should remove from cache
-        server.delete_character(char['id'])
-        
-        # Try to get deleted character - should miss cache and return None
-        result4 = server.get_character(char['id'])
-        assert result4 is None
-        assert server.cache.misses == 2
+        # Verify character data integrity
+        original_names = {char['name'] for char in original_chars}
+        restored_names = {char['name'] for char in restored_chars}
+        assert original_names == restored_names
 
 
 if __name__ == '__main__':
-    pytest.main([__file__, '-v', '--tb=short'])
+    # Run integration tests
+    pytest.main([
+        __file__,
+        '-v',
+        '--tb=short',
+        '--durations=10'
+    ])

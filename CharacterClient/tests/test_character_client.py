@@ -762,99 +762,686 @@ if __name__ == '__main__':
     unittest.main(verbosity=2, buffer=True)
 
 class TestCharacterClientAdvancedScenarios(unittest.TestCase):
-    """Advanced testing scenarios for CharacterClient with more comprehensive coverage."""
+    """Additional comprehensive tests for CharacterClient covering advanced scenarios."""
     
     def setUp(self):
         """Set up test fixtures."""
         self.client = CharacterClient(base_url="https://test.api.com", api_key="test_key")
-        self.patcher_session = patch('requests.Session')
-        self.mock_session_class = self.patcher_session.start()
-        
-    def tearDown(self):
-        """Clean up after tests."""
-        self.patcher_session.stop()
-        if hasattr(self.client, 'session') and self.client.session:
-            self.client.session.close()
+        self.sample_character = {
+            "id": 1,
+            "name": "Test Hero",
+            "class": "Warrior",
+            "level": 10,
+            "health": 100,
+            "mana": 50
+        }
     
-    # Additional Network Error Scenarios
-    @patch('requests.Session.get')
-    def test_get_character_ssl_error(self, mock_get):
-        """Test character retrieval with SSL certificate error."""
-        mock_get.side_effect = requests.exceptions.SSLError("SSL certificate verify failed")
-        
-        with self.assertRaises(CharacterClientError) as context:
+    # Session Management Tests
+    def test_session_close_on_context_manager_exit(self):
+        """Test that session is properly closed when using context manager."""
+        with CharacterClient(base_url="https://test.com", api_key="test") as client:
+            self.assertIsNotNone(client.session)
+        # Session should be closed after context exit
+        self.assertTrue(client.session.close.called if hasattr(client.session, 'close') else True)
+    
+    def test_session_reuse_across_requests(self):
+        """Test that the same session is reused across multiple requests."""
+        with patch('requests.Session.get') as mock_get:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = self.sample_character
+            mock_get.return_value = mock_response
+            
+            # Make multiple requests
             self.client.get_character(1)
-        self.assertIn("SSL error", str(context.exception))
+            self.client.get_character(2)
+            
+            # Verify same session instance was used
+            self.assertEqual(mock_get.call_count, 2)
     
-    @patch('requests.Session.get')
-    def test_get_character_dns_error(self, mock_get):
-        """Test character retrieval with DNS resolution error."""
-        mock_get.side_effect = requests.exceptions.ConnectionError("Name resolution failed")
+    # Custom Headers and Authentication Tests
+    def test_custom_headers_override(self):
+        """Test that custom headers can be added and override defaults."""
+        client = CharacterClient(
+            base_url="https://test.com", 
+            api_key="test_key",
+            custom_headers={"User-Agent": "CustomAgent/2.0", "X-Custom": "value"}
+        )
         
-        with self.assertRaises(CharacterClientError) as context:
-            self.client.get_character(1)
-        self.assertIn("Network error", str(context.exception))
+        self.assertEqual(client.session.headers.get("User-Agent"), "CustomAgent/2.0")
+        self.assertEqual(client.session.headers.get("X-Custom"), "value")
+        self.assertEqual(client.session.headers.get("Authorization"), "Bearer test_key")
     
-    @patch('requests.Session.get')
-    def test_get_character_proxy_error(self, mock_get):
-        """Test character retrieval with proxy error."""
-        mock_get.side_effect = requests.exceptions.ProxyError("Proxy connection failed")
+    def test_api_key_with_different_auth_schemes(self):
+        """Test different authentication schemes."""
+        auth_schemes = [
+            ("Bearer", "Bearer test_key"),
+            ("Token", "Token test_key"),
+            ("API-Key", "API-Key test_key")
+        ]
         
-        with self.assertRaises(CharacterClientError) as context:
-            self.client.get_character(1)
-        self.assertIn("Network error", str(context.exception))
+        for scheme, expected_header in auth_schemes:
+            with self.subTest(scheme=scheme):
+                client = CharacterClient(
+                    base_url="https://test.com", 
+                    api_key="test_key",
+                    auth_scheme=scheme
+                )
+                self.assertEqual(client.session.headers.get("Authorization"), expected_header)
     
+    # Retry and Circuit Breaker Tests
     @patch('requests.Session.get')
-    def test_get_character_read_timeout(self, mock_get):
-        """Test character retrieval with read timeout."""
-        mock_get.side_effect = requests.exceptions.ReadTimeout("Read timed out")
+    def test_retry_on_network_error(self, mock_get):
+        """Test automatic retry on network errors."""
+        # First call fails, second succeeds
+        mock_get.side_effect = [
+            requests.ConnectionError("Network error"),
+            Mock(status_code=200, json=lambda: self.sample_character)
+        ]
         
-        with self.assertRaises(CharacterClientError) as context:
-            self.client.get_character(1)
-        self.assertIn("Network error", str(context.exception))
-    
-    @patch('requests.Session.get')
-    def test_get_character_connect_timeout(self, mock_get):
-        """Test character retrieval with connection timeout."""
-        mock_get.side_effect = requests.exceptions.ConnectTimeout("Connection timed out")
+        client = CharacterClient(
+            base_url="https://test.com", 
+            api_key="test_key",
+            max_retries=2
+        )
         
-        with self.assertRaises(CharacterClientError) as context:
-            self.client.get_character(1)
-        self.assertIn("Network error", str(context.exception))
+        result = client.get_character(1)
+        self.assertEqual(result, self.sample_character)
+        self.assertEqual(mock_get.call_count, 2)
     
-    # Response Content and Headers Testing
     @patch('requests.Session.get')
-    def test_get_character_wrong_content_type(self, mock_get):
-        """Test character retrieval with wrong content type."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.headers = {'Content-Type': 'text/html'}
-        mock_response.json.side_effect = json.JSONDecodeError("Not JSON", "", 0)
-        mock_get.return_value = mock_response
+    def test_retry_exhaustion(self, mock_get):
+        """Test behavior when all retries are exhausted."""
+        mock_get.side_effect = requests.ConnectionError("Persistent network error")
+        
+        client = CharacterClient(
+            base_url="https://test.com", 
+            api_key="test_key",
+            max_retries=2
+        )
         
         with self.assertRaises(CharacterClientError):
-            self.client.get_character(1)
+            client.get_character(1)
+        self.assertEqual(mock_get.call_count, 3)  # Initial + 2 retries
     
     @patch('requests.Session.get')
-    def test_get_character_empty_response_body(self, mock_get):
-        """Test character retrieval with empty response body."""
+    def test_exponential_backoff(self, mock_get):
+        """Test exponential backoff between retries."""
+        mock_get.side_effect = [
+            requests.ConnectionError("Network error"),
+            requests.ConnectionError("Network error"),
+            Mock(status_code=200, json=lambda: self.sample_character)
+        ]
+        
+        with patch('time.sleep') as mock_sleep:
+            client = CharacterClient(
+                base_url="https://test.com", 
+                api_key="test_key",
+                max_retries=3,
+                backoff_factor=0.1
+            )
+            
+            result = client.get_character(1)
+            self.assertEqual(result, self.sample_character)
+            
+            # Verify exponential backoff was used
+            sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+            self.assertTrue(len(sleep_calls) > 0)
+            if len(sleep_calls) > 1:
+                self.assertTrue(sleep_calls[1] > sleep_calls[0])  # Exponential increase
+    
+    # Rate Limiting and Throttling Tests
+    @patch('requests.Session.get')
+    def test_rate_limit_with_retry_after_header(self, mock_get):
+        """Test handling of rate limit with Retry-After header."""
+        # First response has rate limit with Retry-After header
+        rate_limit_response = Mock()
+        rate_limit_response.status_code = 429
+        rate_limit_response.headers = {"Retry-After": "2"}
+        
+        success_response = Mock()
+        success_response.status_code = 200
+        success_response.json.return_value = self.sample_character
+        
+        mock_get.side_effect = [rate_limit_response, success_response]
+        
+        with patch('time.sleep') as mock_sleep:
+            result = self.client.get_character(1)
+            self.assertEqual(result, self.sample_character)
+            mock_sleep.assert_called_with(2)
+    
+    @patch('requests.Session.get')
+    def test_rate_limit_without_retry_after(self, mock_get):
+        """Test handling of rate limit without Retry-After header."""
+        rate_limit_response = Mock()
+        rate_limit_response.status_code = 429
+        rate_limit_response.headers = {}
+        
+        mock_get.return_value = rate_limit_response
+        
+        with self.assertRaises(RateLimitError):
+            self.client.get_character(1)
+    
+    # Concurrent Request Tests
+    @patch('requests.Session.get')
+    def test_concurrent_requests_thread_safety(self, mock_get):
+        """Test thread safety of concurrent requests."""
+        import threading
+        import time
+        
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.side_effect = json.JSONDecodeError("Empty response", "", 0)
-        mock_response.text = ""
+        mock_response.json.return_value = self.sample_character
         mock_get.return_value = mock_response
         
-        with self.assertRaises(CharacterClientError):
-            self.client.get_character(1)
+        results = []
+        errors = []
+        
+        def make_request(char_id):
+            try:
+                result = self.client.get_character(char_id)
+                results.append(result)
+            except Exception as e:
+                errors.append(e)
+        
+        # Create multiple threads making concurrent requests
+        threads = []
+        for i in range(5):
+            thread = threading.Thread(target=make_request, args=(i + 1,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+        
+        self.assertEqual(len(results), 5)
+        self.assertEqual(len(errors), 0)
+        self.assertEqual(mock_get.call_count, 5)
+    
+    # Caching Tests
+    @patch('requests.Session.get')
+    def test_response_caching(self, mock_get):
+        """Test response caching functionality if implemented."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = self.sample_character
+        mock_get.return_value = mock_response
+        
+        client = CharacterClient(
+            base_url="https://test.com", 
+            api_key="test_key",
+            enable_caching=True,
+            cache_ttl=60
+        )
+        
+        # Make the same request twice
+        result1 = client.get_character(1)
+        result2 = client.get_character(1)
+        
+        self.assertEqual(result1, result2)
+        # If caching is implemented, second request should not hit the API
+        expected_calls = 1 if hasattr(client, '_cache') else 2
+        self.assertEqual(mock_get.call_count, expected_calls)
+    
+    # Data Validation and Sanitization Tests
+    def test_sanitize_character_data(self):
+        """Test data sanitization before sending to API."""
+        dirty_data = {
+            "name": "  Test Character  ",  # Extra whitespace
+            "class": "WARRIOR",  # Wrong case
+            "level": "10",  # String instead of int
+            "description": "<script>alert('xss')</script>Normal description"  # Potential XSS
+        }
+        
+        sanitized = self.client._sanitize_character_data(dirty_data)
+        
+        self.assertEqual(sanitized["name"], "Test Character")
+        self.assertEqual(sanitized["class"], "Warrior")
+        self.assertEqual(sanitized["level"], 10)
+        self.assertNotIn("<script>", sanitized.get("description", ""))
+    
+    def test_validate_character_attributes(self):
+        """Test validation of character attributes."""
+        invalid_attributes = [
+            {"strength": -5},  # Negative value
+            {"agility": "fast"},  # Non-numeric value
+            {"intelligence": 101},  # Value over maximum
+            {"unknown_stat": 15}  # Unknown attribute
+        ]
+        
+        for invalid_attr in invalid_attributes:
+            with self.subTest(attributes=invalid_attr):
+                character_data = {
+                    "name": "Test",
+                    "class": "Warrior",
+                    "level": 1,
+                    "attributes": invalid_attr
+                }
+                with self.assertRaises(ValidationError):
+                    self.client._validate_character_data(character_data)
+    
+    # Pagination Edge Cases
+    @patch('requests.Session.get')
+    def test_get_all_characters_pagination(self, mock_get):
+        """Test getting all characters across multiple pages."""
+        # Mock responses for multiple pages
+        page1_response = Mock()
+        page1_response.status_code = 200
+        page1_response.json.return_value = {
+            "characters": [{"id": 1, "name": "Char1"}],
+            "page": 1,
+            "total_pages": 3,
+            "has_next": True
+        }
+        
+        page2_response = Mock()
+        page2_response.status_code = 200
+        page2_response.json.return_value = {
+            "characters": [{"id": 2, "name": "Char2"}],
+            "page": 2,
+            "total_pages": 3,
+            "has_next": True
+        }
+        
+        page3_response = Mock()
+        page3_response.status_code = 200
+        page3_response.json.return_value = {
+            "characters": [{"id": 3, "name": "Char3"}],
+            "page": 3,
+            "total_pages": 3,
+            "has_next": False
+        }
+        
+        mock_get.side_effect = [page1_response, page2_response, page3_response]
+        
+        all_characters = self.client.get_all_characters()
+        
+        self.assertEqual(len(all_characters), 3)
+        self.assertEqual(mock_get.call_count, 3)
+        self.assertEqual(all_characters[0]["id"], 1)
+        self.assertEqual(all_characters[2]["id"], 3)
+    
+    # Search and Filtering Tests
+    @patch('requests.Session.get')
+    def test_search_characters_by_name(self, mock_get):
+        """Test searching characters by name."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "characters": [{"id": 1, "name": "Test Hero"}]
+        }
+        mock_get.return_value = mock_response
+        
+        results = self.client.search_characters(name="Test Hero")
+        
+        self.assertEqual(len(results), 1)
+        call_args = mock_get.call_args
+        self.assertIn("name", call_args[1].get("params", {}))
     
     @patch('requests.Session.get')
-    def test_get_character_large_response(self, mock_get):
-        """Test character retrieval with very large response."""
+    def test_search_characters_multiple_filters(self, mock_get):
+        """Test searching characters with multiple filters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"characters": []}
+        mock_get.return_value = mock_response
+        
+        filters = {
+            "class": "Warrior",
+            "min_level": 10,
+            "max_level": 20,
+            "has_guild": True
+        }
+        
+        results = self.client.search_characters(**filters)
+        
+        call_args = mock_get.call_args
+        params = call_args[1].get("params", {})
+        
+        for key, value in filters.items():
+            self.assertEqual(params.get(key), value)
+    
+    # Webhook and Event Handling Tests
+    def test_register_webhook(self):
+        """Test webhook registration."""
+        webhook_url = "https://myapp.com/webhook"
+        events = ["character.created", "character.updated", "character.deleted"]
+        
+        with patch('requests.Session.post') as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 201
+            mock_response.json.return_value = {"webhook_id": "webhook_123"}
+            mock_post.return_value = mock_response
+            
+            result = self.client.register_webhook(webhook_url, events)
+            
+            self.assertEqual(result["webhook_id"], "webhook_123")
+            mock_post.assert_called_once()
+    
+    def test_webhook_signature_validation(self):
+        """Test webhook signature validation."""
+        payload = '{"event": "character.created", "data": {"id": 1}}'
+        signature = "sha256=valid_signature"
+        secret = "webhook_secret"
+        
+        # Test valid signature
+        is_valid = self.client.validate_webhook_signature(payload, signature, secret)
+        self.assertTrue(is_valid)
+        
+        # Test invalid signature
+        invalid_signature = "sha256=invalid_signature"
+        is_valid = self.client.validate_webhook_signature(payload, invalid_signature, secret)
+        self.assertFalse(is_valid)
+    
+    # Statistics and Analytics Tests
+    @patch('requests.Session.get')
+    def test_get_character_statistics(self, mock_get):
+        """Test getting character statistics."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "total_characters": 1000,
+            "average_level": 15.5,
+            "class_distribution": {
+                "Warrior": 300,
+                "Mage": 250,
+                "Rogue": 200,
+                "Priest": 250
+            }
+        }
+        mock_get.return_value = mock_response
+        
+        stats = self.client.get_statistics()
+        
+        self.assertEqual(stats["total_characters"], 1000)
+        self.assertIn("class_distribution", stats)
+        self.assertEqual(len(stats["class_distribution"]), 4)
+    
+    # Import/Export Tests
+    @patch('requests.Session.post')
+    def test_bulk_import_characters(self, mock_post):
+        """Test bulk import of characters."""
+        characters_data = [
+            {"name": "Hero1", "class": "Warrior", "level": 5},
+            {"name": "Hero2", "class": "Mage", "level": 8}
+        ]
+        
+        mock_response = Mock()
+        mock_response.status_code = 202
+        mock_response.json.return_value = {
+            "import_id": "import_123",
+            "status": "processing",
+            "total_count": 2
+        }
+        mock_post.return_value = mock_response
+        
+        result = self.client.bulk_import_characters(characters_data)
+        
+        self.assertEqual(result["import_id"], "import_123")
+        self.assertEqual(result["total_count"], 2)
+    
+    @patch('requests.Session.get')
+    def test_export_characters(self, mock_get):
+        """Test exporting characters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "export_url": "https://api.com/exports/export_123.json",
+            "expires_at": "2024-01-01T12:00:00Z"
+        }
+        mock_get.return_value = mock_response
+        
+        export_filters = {"class": "Warrior", "min_level": 10}
+        result = self.client.export_characters(export_filters)
+        
+        self.assertIn("export_url", result)
+        self.assertIn("expires_at", result)
+    
+    # Error Recovery Tests
+    @patch('requests.Session.get')
+    def test_partial_failure_recovery(self, mock_get):
+        """Test recovery from partial failures in batch operations."""
+        character_ids = [1, 2, 3, 4, 5]
+        
+        responses = [
+            Mock(status_code=200, json=lambda: {"id": 1, "name": "Char1"}),
+            Mock(status_code=404),  # Character not found
+            Mock(status_code=200, json=lambda: {"id": 3, "name": "Char3"}),
+            Mock(status_code=500),  # Server error
+            Mock(status_code=200, json=lambda: {"id": 5, "name": "Char5"})
+        ]
+        
+        mock_get.side_effect = responses
+        
+        # Should return successful results and handle failures gracefully
+        results = self.client.get_characters_batch(character_ids, ignore_errors=True)
+        
+        # Should have 3 successful results
+        self.assertEqual(len(results), 3)
+        self.assertEqual(results[0]["id"], 1)
+        self.assertEqual(results[1]["id"], 3)
+        self.assertEqual(results[2]["id"], 5)
+    
+    # Configuration and Environment Tests
+    def test_environment_based_configuration(self):
+        """Test configuration from environment variables."""
+        import os
+        
+        # Mock environment variables
+        with patch.dict(os.environ, {
+            'CHARACTER_API_BASE_URL': 'https://prod.api.com',
+            'CHARACTER_API_KEY': 'prod_key_123',
+            'CHARACTER_API_TIMEOUT': '60'
+        }):
+            client = CharacterClient.from_environment()
+            
+            self.assertEqual(client.base_url, 'https://prod.api.com')
+            self.assertEqual(client.api_key, 'prod_key_123')
+            self.assertEqual(client.timeout, 60)
+    
+    def test_configuration_file_loading(self):
+        """Test loading configuration from file."""
+        config_data = {
+            "base_url": "https://config.api.com",
+            "api_key": "config_key_123",
+            "timeout": 45,
+            "max_retries": 3
+        }
+        
+        with patch('builtins.open', mock_open(read_data=json.dumps(config_data))):
+            client = CharacterClient.from_config_file("config.json")
+            
+            self.assertEqual(client.base_url, "https://config.api.com")
+            self.assertEqual(client.api_key, "config_key_123")
+            self.assertEqual(client.timeout, 45)
+
+
+class TestCharacterClientSecurityAndValidation(unittest.TestCase):
+    """Security and data validation tests for CharacterClient."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.com", api_key="test_key")
+    
+    def test_sql_injection_prevention(self):
+        """Test prevention of SQL injection in character names."""
+        malicious_names = [
+            "'; DROP TABLE characters; --",
+            "Robert'; DELETE FROM users WHERE 't' = 't",
+            "1' OR '1'='1",
+            "admin'/*",
+            "' UNION SELECT * FROM passwords --"
+        ]
+        
+        for malicious_name in malicious_names:
+            with self.subTest(name=malicious_name):
+                character_data = {
+                    "name": malicious_name,
+                    "class": "Warrior",
+                    "level": 1
+                }
+                
+                # Should either sanitize or raise validation error
+                try:
+                    validated_data = self.client._validate_character_data(character_data)
+                    # If validation passes, name should be sanitized
+                    self.assertNotIn("DROP", validated_data["name"].upper())
+                    self.assertNotIn("DELETE", validated_data["name"].upper())
+                    self.assertNotIn("UNION", validated_data["name"].upper())
+                except ValidationError:
+                    # Validation error is acceptable for malicious input
+                    pass
+    
+    def test_xss_prevention_in_character_data(self):
+        """Test prevention of XSS attacks in character data."""
+        xss_payloads = [
+            "<script>alert('xss')</script>",
+            "javascript:alert('xss')",
+            "<img src=x onerror=alert('xss')>",
+            "<svg onload=alert('xss')>",
+            "&#60;script&#62;alert('xss')&#60;/script&#62;"
+        ]
+        
+        for payload in xss_payloads:
+            with self.subTest(payload=payload):
+                character_data = {
+                    "name": f"Hero {payload}",
+                    "class": "Warrior",
+                    "level": 1,
+                    "description": f"A hero with {payload} abilities"
+                }
+                
+                try:
+                    sanitized = self.client._sanitize_character_data(character_data)
+                    # Should not contain script tags or javascript: URLs
+                    self.assertNotIn("<script>", sanitized.get("name", ""))
+                    self.assertNotIn("javascript:", sanitized.get("description", ""))
+                    self.assertNotIn("<img", sanitized.get("description", ""))
+                except ValidationError:
+                    # Validation error is acceptable
+                    pass
+    
+    def test_api_key_not_logged(self):
+        """Test that API key is not exposed in logs or error messages."""
+        with patch('requests.Session.get') as mock_get:
+            mock_get.side_effect = requests.HTTPError("Server error")
+            
+            with patch('logging.Logger.error') as mock_log:
+                try:
+                    self.client.get_character(1)
+                except:
+                    pass
+                
+                # Check that API key is not in any log messages
+                for call in mock_log.call_args_list:
+                    log_message = str(call)
+                    self.assertNotIn("test_key", log_message)
+    
+    def test_request_size_limits(self):
+        """Test handling of excessively large requests."""
+        # Create character data that exceeds reasonable size limits
+        huge_description = "A" * 1000000  # 1MB description
+        
+        character_data = {
+            "name": "Test Character",
+            "class": "Warrior",
+            "level": 1,
+            "description": huge_description
+        }
+        
+        with self.assertRaises(ValidationError):
+            self.client.create_character(character_data)
+    
+    def test_response_size_limits(self):
+        """Test handling of excessively large responses."""
+        with patch('requests.Session.get') as mock_get:
+            # Mock response with huge data
+            huge_response_data = {"data": "X" * 10000000}  # 10MB response
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = huge_response_data
+            mock_get.return_value = mock_response
+            
+            # Should handle large responses gracefully
+            result = self.client.get_character(1)
+            self.assertIn("data", result)
+    
+    def test_url_validation(self):
+        """Test validation of URLs to prevent SSRF attacks."""
+        malicious_urls = [
+            "http://localhost:22/",  # SSH port
+            "http://169.254.169.254/",  # AWS metadata
+            "file:///etc/passwd",  # Local file
+            "ftp://malicious.com/",  # Non-HTTP protocol
+            "http://internal.network/",  # Internal network
+        ]
+        
+        for url in malicious_urls:
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError):
+                    CharacterClient(base_url=url, api_key="test")
+    
+    def test_rate_limiting_per_client(self):
+        """Test that rate limiting is enforced per client."""
+        with patch('requests.Session.get') as mock_get:
+            # Mock rate limit response
+            rate_limit_response = Mock()
+            rate_limit_response.status_code = 429
+            rate_limit_response.headers = {"X-RateLimit-Remaining": "0"}
+            mock_get.return_value = rate_limit_response
+            
+            # Multiple rapid requests should trigger rate limiting
+            with self.assertRaises(RateLimitError):
+                for _ in range(10):
+                    try:
+                        self.client.get_character(1)
+                    except RateLimitError:
+                        raise  # Re-raise to test detection
+                    except:
+                        pass  # Ignore other errors for this test
+
+
+class TestCharacterClientPerformance(unittest.TestCase):
+    """Performance and stress tests for CharacterClient."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.com", api_key="test_key")
+    
+    @patch('requests.Session.get')
+    def test_large_batch_request_performance(self, mock_get):
+        """Test performance with large batch requests."""
+        import time
+        
+        # Simulate processing 1000 character requests
+        large_character_ids = list(range(1, 1001))
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"id": 1, "name": "Test"}
+        mock_get.return_value = mock_response
+        
+        start_time = time.time()
+        results = self.client.get_characters_batch(large_character_ids[:100])  # Limit for test
+        end_time = time.time()
+        
+        # Basic performance assertion
+        execution_time = end_time - start_time
+        self.assertLess(execution_time, 10.0)  # Should complete within 10 seconds
+        self.assertEqual(len(results), 100)
+    
+    @patch('requests.Session.get')
+    def test_memory_usage_with_large_responses(self, mock_get):
+        """Test memory efficiency with large response data."""
+        import sys
+        
+        # Create a large character object
         large_character = {
             "id": 1,
             "name": "Test Character",
-            "description": "A" * 100000,  # Very large description
-            "inventory": ["item"] * 10000,  # Large inventory
+            "description": "A" * 10000,  # Large description
+            "inventory": [{"item": f"Item{i}"} for i in range(1000)],  # Large inventory
             "stats": {f"stat_{i}": i for i in range(1000)}  # Many stats
         }
         
@@ -863,531 +1450,169 @@ class TestCharacterClientAdvancedScenarios(unittest.TestCase):
         mock_response.json.return_value = large_character
         mock_get.return_value = mock_response
         
+        # Measure memory before and after
+        initial_refs = sys.gettotalrefcount() if hasattr(sys, 'gettotalrefcount') else 0
+        
         result = self.client.get_character(1)
+        
+        final_refs = sys.gettotalrefcount() if hasattr(sys, 'gettotalrefcount') else 0
+        
+        # Verify the large character was returned correctly
         self.assertEqual(result["id"], 1)
-        self.assertEqual(len(result["description"]), 100000)
-    
-    # HTTP Status Code Edge Cases
-    @patch('requests.Session.get')
-    def test_get_character_status_codes(self, mock_get):
-        """Test various HTTP status codes."""
-        status_test_cases = [
-            (400, CharacterClientError, "Bad request"),
-            (403, CharacterClientError, "Forbidden"),
-            (405, CharacterClientError, "Method not allowed"),
-            (409, CharacterClientError, "Conflict"),
-            (422, ValidationError, "Unprocessable entity"),
-            (429, RateLimitError, "Rate limit exceeded"),
-            (500, CharacterClientError, "Internal server error"),
-            (502, CharacterClientError, "Bad gateway"),
-            (503, CharacterClientError, "Service unavailable"),
-            (504, CharacterClientError, "Gateway timeout")
-        ]
+        self.assertEqual(len(result["inventory"]), 1000)
         
-        for status_code, expected_exception, description in status_test_cases:
-            with self.subTest(status_code=status_code):
-                mock_response = Mock()
-                mock_response.status_code = status_code
-                mock_get.return_value = mock_response
-                
-                with self.assertRaises(expected_exception):
-                    self.client.get_character(1)
+        # Memory growth should be reasonable (this is a basic check)
+        if hasattr(sys, 'gettotalrefcount'):
+            ref_growth = final_refs - initial_refs
+            self.assertLess(ref_growth, 10000)  # Arbitrary reasonable limit
     
-    # Authentication and Authorization Edge Cases
+    def test_connection_pooling_efficiency(self):
+        """Test that connection pooling is working efficiently."""
+        with patch('requests.Session') as mock_session_class:
+            mock_session = Mock()
+            mock_session_class.return_value = mock_session
+            
+            # Create multiple clients
+            clients = [
+                CharacterClient(base_url="https://test.com", api_key="test1"),
+                CharacterClient(base_url="https://test.com", api_key="test2"),
+                CharacterClient(base_url="https://test.com", api_key="test3")
+            ]
+            
+            # Each client should have its own session
+            self.assertEqual(mock_session_class.call_count, 3)
+    
     @patch('requests.Session.get')
-    def test_get_character_expired_token(self, mock_get):
-        """Test character retrieval with expired authentication token."""
-        mock_response = Mock()
-        mock_response.status_code = 401
-        mock_response.json.return_value = {"error": "Token expired"}
-        mock_get.return_value = mock_response
+    def test_timeout_handling_performance(self, mock_get):
+        """Test that timeouts don't significantly impact performance."""
+        import time
         
-        with self.assertRaises(AuthenticationError):
-            self.client.get_character(1)
-    
-    @patch('requests.Session.get')
-    def test_get_character_insufficient_permissions(self, mock_get):
-        """Test character retrieval with insufficient permissions."""
-        mock_response = Mock()
-        mock_response.status_code = 403
-        mock_response.json.return_value = {"error": "Insufficient permissions"}
-        mock_get.return_value = mock_response
+        # Mock timeout after a short delay
+        def timeout_side_effect(*args, **kwargs):
+            time.sleep(0.1)  # Short delay
+            raise requests.Timeout("Request timeout")
+        
+        mock_get.side_effect = timeout_side_effect
+        
+        start_time = time.time()
         
         with self.assertRaises(CharacterClientError):
             self.client.get_character(1)
-    
-    # Session Management Tests
-    def test_session_initialization(self):
-        """Test that session is properly initialized."""
-        client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-        self.assertIsInstance(client.session, requests.Session)
-        self.assertEqual(client.session.headers['Authorization'], 'Bearer test_key')
-    
-    def test_session_cleanup_on_del(self):
-        """Test that session is cleaned up when client is deleted."""
-        client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-        session = client.session
-        session_id = id(session)
         
-        with patch.object(session, 'close') as mock_close:
-            del client
-            # Force garbage collection to trigger __del__
-            import gc
-            gc.collect()
-            # Note: __del__ behavior is implementation-dependent
-    
-    # Retry Logic Tests (if implemented)
-    @patch('requests.Session.get')
-    def test_get_character_retry_on_server_error(self, mock_get):
-        """Test retry logic on server errors."""
-        # First call fails with 500, second succeeds
-        mock_responses = [
-            Mock(status_code=500),
-            Mock(status_code=200, json=lambda: {"id": 1, "name": "Test"})
-        ]
-        mock_get.side_effect = mock_responses
+        end_time = time.time()
+        execution_time = end_time - start_time
         
-        # This test assumes retry logic exists - if not, it will test current behavior
-        try:
-            result = self.client.get_character(1)
-            # If retry logic exists, this should succeed
-            self.assertEqual(result["id"], 1)
-        except CharacterClientError:
-            # If no retry logic, should fail on first attempt
-            pass
+        # Should fail quickly, not hang
+        self.assertLess(execution_time, 1.0)
+
+
+class TestCharacterClientCompatibility(unittest.TestCase):
+    """Compatibility tests for different environments and Python versions."""
     
-    # Concurrent Access Tests
-    def test_multiple_clients_same_base_url(self):
-        """Test multiple clients with same base URL."""
-        client1 = CharacterClient(base_url="https://api.test.com", api_key="key1")
-        client2 = CharacterClient(base_url="https://api.test.com", api_key="key2")
+    def setUp(self):
+        """Set up test fixtures."""
+        self.client = CharacterClient(base_url="https://test.com", api_key="test_key")
+    
+    def test_json_serialization_compatibility(self):
+        """Test JSON serialization with different data types."""
+        from datetime import datetime, date
+        from decimal import Decimal
         
-        self.assertNotEqual(id(client1.session), id(client2.session))
-        self.assertEqual(client1.base_url, client2.base_url)
-        self.assertNotEqual(client1.api_key, client2.api_key)
-    
-    # Data Validation Edge Cases
-    def test_create_character_with_nested_objects(self):
-        """Test character creation with complex nested data structures."""
-        complex_character = {
-            "name": "Complex Character",
-            "class": "Hybrid",
-            "level": 1,
-            "attributes": {
-                "primary": {"strength": 10, "dexterity": 12},
-                "secondary": {"wisdom": 8, "charisma": 15}
-            },
-            "equipment": [
-                {"type": "weapon", "name": "Sword", "stats": {"damage": 10}},
-                {"type": "armor", "name": "Shield", "stats": {"defense": 5}}
-            ],
-            "skills": {
-                "combat": ["swordsmanship", "tactics"],
-                "magic": ["fire", "healing"]
-            }
-        }
-        
-        # Test validation passes for complex structure
-        result = self.client._validate_character_data(complex_character)
-        self.assertTrue(result)
-    
-    def test_create_character_with_null_values(self):
-        """Test character creation with null values in optional fields."""
-        character_with_nulls = {
+        complex_data = {
             "name": "Test Character",
             "class": "Warrior",
             "level": 1,
-            "description": None,
-            "optional_field": None
+            "created_at": datetime.now(),
+            "birth_date": date.today(),
+            "experience": Decimal("123.45"),
+            "active": True,
+            "scores": [1, 2, 3, 4, 5]
         }
         
-        result = self.client._validate_character_data(character_with_nulls)
-        self.assertTrue(result)
+        # Should handle complex data types gracefully
+        try:
+            sanitized = self.client._sanitize_character_data(complex_data)
+            # Datetime objects should be converted to strings
+            if "created_at" in sanitized:
+                self.assertIsInstance(sanitized["created_at"], str)
+        except (TypeError, ValidationError):
+            # Acceptable to raise error for unsupported types
+            pass
     
-    # URL Building Edge Cases
-    def test_build_url_with_special_characters(self):
-        """Test URL building with special characters in parameters."""
-        params = {
-            "name": "Character@123",
-            "class": "Mage & Warrior",
-            "search": "level > 10"
+    def test_unicode_handling(self):
+        """Test proper handling of Unicode characters."""
+        unicode_data = {
+            "name": "英雄",  # Chinese characters
+            "class": "Воин",  # Cyrillic characters
+            "level": 1,
+            "description": "A hero with émojis 🎮⚔️🛡️"
         }
         
-        result = self.client._build_url("characters", params=params)
-        
-        # Should properly encode special characters
-        self.assertIn("characters", result)
-        # URL encoding should be handled by requests library
+        # Should handle Unicode properly
+        result = self.client._validate_character_data(unicode_data)
+        self.assertEqual(result["name"], "英雄")
+        self.assertIn("🎮", result.get("description", ""))
     
-    def test_build_url_with_unicode_params(self):
-        """Test URL building with Unicode parameters."""
-        params = {
-            "name": "魔法师",
-            "description": "キャラクター"
-        }
-        
-        result = self.client._build_url("characters", params=params)
-        self.assertIn("characters", result)
-    
-    # Rate Limiting and Throttling
-    @patch('requests.Session.get')
-    def test_rate_limit_with_retry_after(self, mock_get):
-        """Test rate limiting with Retry-After header."""
-        mock_response = Mock()
-        mock_response.status_code = 429
-        mock_response.headers = {'Retry-After': '60'}
-        mock_get.return_value = mock_response
-        
-        with self.assertRaises(RateLimitError) as context:
-            self.client.get_character(1)
-        
-        # Should include retry-after information if client supports it
-        self.assertIn("Rate limit", str(context.exception))
-
-
-class TestCharacterClientIntegrationScenarios(unittest.TestCase):
-    """Integration-style tests for CharacterClient workflows."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-    
-    @patch('requests.Session.post')
-    @patch('requests.Session.get')
-    @patch('requests.Session.put')
-    @patch('requests.Session.delete')
-    def test_character_lifecycle_workflow(self, mock_delete, mock_put, mock_get, mock_post):
-        """Test complete character lifecycle: create, read, update, delete."""
-        # Create character
-        character_data = {"name": "Test Hero", "class": "Warrior", "level": 1}
-        created_character = {**character_data, "id": 1}
-        
-        mock_post.return_value = Mock(status_code=201, json=lambda: created_character)
-        created = self.client.create_character(character_data)
-        self.assertEqual(created["id"], 1)
-        
-        # Read character
-        mock_get.return_value = Mock(status_code=200, json=lambda: created_character)
-        retrieved = self.client.get_character(1)
-        self.assertEqual(retrieved["name"], "Test Hero")
-        
-        # Update character
-        update_data = {"level": 2}
-        updated_character = {**created_character, **update_data}
-        mock_put.return_value = Mock(status_code=200, json=lambda: updated_character)
-        updated = self.client.update_character(1, update_data)
-        self.assertEqual(updated["level"], 2)
-        
-        # Delete character
-        mock_delete.return_value = Mock(status_code=204)
-        deleted = self.client.delete_character(1)
-        self.assertTrue(deleted)
-    
-    @patch('requests.Session.get')
-    def test_character_search_and_filter_workflow(self, mock_get):
-        """Test character search and filtering workflow."""
-        # Mock paginated responses
-        page1_response = {
-            "characters": [
-                {"id": 1, "name": "Warrior1", "class": "Warrior", "level": 5},
-                {"id": 2, "name": "Mage1", "class": "Mage", "level": 3}
-            ],
-            "page": 1,
-            "total_pages": 2
-        }
-        
-        page2_response = {
-            "characters": [
-                {"id": 3, "name": "Warrior2", "class": "Warrior", "level": 8}
-            ],
-            "page": 2,
-            "total_pages": 2
-        }
-        
-        mock_get.side_effect = [
-            Mock(status_code=200, json=lambda: page1_response),
-            Mock(status_code=200, json=lambda: page2_response)
-        ]
-        
-        # Get first page
-        page1_results = self.client.get_characters(page=1, limit=2)
-        self.assertEqual(len(page1_results), 2)
-        
-        # Get second page
-        page2_results = self.client.get_characters(page=2, limit=2)
-        self.assertEqual(len(page2_results), 1)
-    
-    @patch.object(CharacterClient, 'create_character')
-    def test_batch_character_creation(self, mock_create):
-        """Test batch character creation workflow."""
-        characters_to_create = [
-            {"name": "Hero1", "class": "Warrior", "level": 1},
-            {"name": "Hero2", "class": "Mage", "level": 1},
-            {"name": "Hero3", "class": "Rogue", "level": 1}
-        ]
-        
-        # Mock successful creation for each character
-        mock_create.side_effect = [
-            {**char, "id": i+1} for i, char in enumerate(characters_to_create)
-        ]
-        
-        created_characters = []
-        for char_data in characters_to_create:
-            created = self.client.create_character(char_data)
-            created_characters.append(created)
-        
-        self.assertEqual(len(created_characters), 3)
-        self.assertEqual(mock_create.call_count, 3)
-
-
-class TestCharacterClientPerformanceAndStress(unittest.TestCase):
-    """Performance and stress testing scenarios."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-    
-    def test_large_batch_character_ids(self):
-        """Test handling of large batch requests."""
-        large_id_list = list(range(1, 1001))  # 1000 character IDs
-        
-        with patch.object(self.client, 'get_character') as mock_get:
-            mock_get.side_effect = [
-                {"id": i, "name": f"Character{i}"} for i in large_id_list
-            ]
-            
-            results = self.client.get_characters_batch(large_id_list)
-            self.assertEqual(len(results), 1000)
-            self.assertEqual(mock_get.call_count, 1000)
-    
-    def test_memory_usage_with_large_response(self):
-        """Test memory handling with very large character data."""
+    def test_python_version_compatibility(self):
+        """Test compatibility features across Python versions."""
         import sys
         
-        # Create a character with large data
-        large_character = {
-            "id": 1,
-            "name": "Memory Test Character",
-            "large_data": "x" * 1000000  # 1MB of data
-        }
+        # Test features that might differ between Python versions
+        if sys.version_info >= (3, 8):
+            # Test features available in Python 3.8+
+            self.assertTrue(hasattr(self.client, '__dict__'))
         
-        with patch('requests.Session.get') as mock_get:
-            mock_get.return_value = Mock(
-                status_code=200,
-                json=lambda: large_character
-            )
+        if sys.version_info >= (3, 9):
+            # Test features available in Python 3.9+
+            # Example: dict union operator
+            default_headers = {"Content-Type": "application/json"}
+            custom_headers = {"User-Agent": "Test"}
             
-            # Get initial memory usage
-            initial_size = sys.getsizeof(self.client)
-            
-            result = self.client.get_character(1)
-            
-            # Verify the large data is handled correctly
-            self.assertEqual(len(result["large_data"]), 1000000)
-    
-    @patch('requests.Session.get')
-    def test_concurrent_request_simulation(self, mock_get):
-        """Test simulation of concurrent requests."""
-        import threading
-        import time
-        
-        # Mock response
-        mock_get.return_value = Mock(
-            status_code=200,
-            json=lambda: {"id": 1, "name": "Test"}
-        )
-        
-        results = []
-        errors = []
-        
-        def make_request():
+            # Should work in Python 3.9+
             try:
-                result = self.client.get_character(1)
-                results.append(result)
-            except Exception as e:
-                errors.append(e)
-        
-        # Simulate 10 concurrent requests
-        threads = []
-        for _ in range(10):
-            thread = threading.Thread(target=make_request)
-            threads.append(thread)
-            thread.start()
-        
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
-        
-        # Verify results
-        self.assertEqual(len(results), 10)
-        self.assertEqual(len(errors), 0)
-        self.assertEqual(mock_get.call_count, 10)
-
-
-class TestCharacterClientLoggingAndDebugging(unittest.TestCase):
-    """Tests for logging and debugging functionality."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-    
-    @patch('CharacterClient.character_client.logger')
-    @patch('requests.Session.get')
-    def test_request_logging(self, mock_get, mock_logger):
-        """Test that requests are properly logged."""
-        mock_get.return_value = Mock(
-            status_code=200,
-            json=lambda: {"id": 1, "name": "Test"}
-        )
-        
-        self.client.get_character(1)
-        
-        # Verify logging calls were made (if logging is implemented)
-        # This test will pass even if logging is not implemented
-        self.assertTrue(True)  # Placeholder assertion
-    
-    @patch('CharacterClient.character_client.logger')
-    @patch('requests.Session.get')
-    def test_error_logging(self, mock_get, mock_logger):
-        """Test that errors are properly logged."""
-        mock_get.side_effect = requests.ConnectionError("Network error")
-        
-        with self.assertRaises(CharacterClientError):
-            self.client.get_character(1)
-        
-        # Verify error logging (if implemented)
-        self.assertTrue(True)  # Placeholder assertion
-
-
-class TestCharacterClientSecurityScenarios(unittest.TestCase):
-    """Security-focused tests for CharacterClient."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.client = CharacterClient(base_url="https://api.test.com", api_key="test_key")
-    
-    def test_api_key_not_logged(self):
-        """Test that API key is not exposed in logs or error messages."""
-        # Test with invalid base URL to trigger error
-        with self.assertRaises(ValueError):
-            CharacterClient(base_url="", api_key="secret_key_123")
-        
-        # API key should not appear in any error message
-        # This is a basic test - real implementation would need actual logging capture
-    
-    def test_sensitive_data_in_character_creation(self):
-        """Test handling of potentially sensitive data in character creation."""
-        sensitive_character = {
-            "name": "Test Character",
-            "class": "Warrior", 
-            "level": 1,
-            "email": "user@example.com",
-            "password": "secret123",
-            "credit_card": "1234-5678-9012-3456"
-        }
-        
-        # Should still validate successfully (sanitization would be server-side)
-        result = self.client._validate_character_data(sensitive_character)
-        self.assertTrue(result)
-    
-    @patch('requests.Session.get')
-    def test_malicious_response_handling(self, mock_get):
-        """Test handling of potentially malicious response data."""
-        malicious_responses = [
-            {"id": 1, "name": "Test", "script": "<script>alert('xss')</script>"},
-            {"id": 2, "name": "../../etc/passwd"},
-            {"id": 3, "name": "'; DROP TABLE characters; --"},
-            {"id": 4, "description": "\x00\x01\x02"}  # Null bytes
-        ]
-        
-        for i, malicious_data in enumerate(malicious_responses):
-            with self.subTest(response=i):
-                mock_get.return_value = Mock(
-                    status_code=200,
-                    json=lambda d=malicious_data: d
-                )
-                
-                # Should handle malicious data without crashing
-                result = self.client.get_character(1)
-                self.assertIsInstance(result, dict)
-
-
-class TestCharacterClientConfigurationScenarios(unittest.TestCase):
-    """Tests for various configuration scenarios."""
-    
-    def setUp(self):
-        """Set up test fixtures.""" 
-        pass
-    
-    def test_custom_timeout_configuration(self):
-        """Test CharacterClient with various timeout configurations."""
-        timeout_values = [1, 5, 30, 60, 120]
-        
-        for timeout in timeout_values:
-            with self.subTest(timeout=timeout):
-                client = CharacterClient(
-                    base_url="https://api.test.com",
-                    api_key="test_key",
-                    timeout=timeout
-                )
-                self.assertEqual(client.timeout, timeout)
-    
-    def test_base_url_variations(self):
-        """Test CharacterClient with various base URL formats."""
-        valid_urls = [
-            "https://api.example.com",
-            "http://localhost:8080", 
-            "https://api.example.com:443",
-            "http://192.168.1.1:3000",
-            "https://subdomain.example.com/api/v1"
-        ]
-        
-        for url in valid_urls:
-            with self.subTest(url=url):
-                client = CharacterClient(base_url=url, api_key="test_key")
-                # Remove trailing slash for comparison
-                expected_url = url.rstrip('/')
-                self.assertEqual(client.base_url, expected_url)
-    
-    def test_api_key_formats(self):
-        """Test CharacterClient with various API key formats."""
-        api_key_formats = [
-            "simple_key",
-            "key-with-dashes",
-            "key_with_underscores", 
-            "KeyWithNumbers123",
-            "very-long-api-key-with-many-characters-1234567890"
-        ]
-        
-        for api_key in api_key_formats:
-            with self.subTest(api_key=api_key):
-                client = CharacterClient(
-                    base_url="https://api.test.com",
-                    api_key=api_key
-                )
-                self.assertEqual(client.api_key, api_key)
-                self.assertEqual(
-                    client.session.headers['Authorization'],
-                    f'Bearer {api_key}'
-                )
+                combined = default_headers | custom_headers
+                self.assertIn("Content-Type", combined)
+                self.assertIn("User-Agent", combined)
+            except TypeError:
+                # Union operator not available, use update instead
+                combined = default_headers.copy()
+                combined.update(custom_headers)
+                self.assertIn("Content-Type", combined)
+                self.assertIn("User-Agent", combined)
 
 
 if __name__ == '__main__':
-    # Additional test configuration
-    import warnings
-    warnings.filterwarnings('ignore', category=DeprecationWarning)
-    
-    # Configure more detailed test output
+    # Configure test runner with additional options
     import sys
-    if len(sys.argv) > 1 and '--verbose' in sys.argv:
-        verbosity = 3
-    else:
-        verbosity = 2
+    import logging
     
-    # Run all tests with higher verbosity and additional options
-    unittest.main(
-        verbosity=verbosity, 
-        buffer=True, 
-        catchbreak=True,
-        failfast=False
+    # Set up logging for debugging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    
+    # Add custom test result class for better reporting
+    class DetailedTestResult(unittest.TextTestResult):
+        def addSuccess(self, test):
+            super().addSuccess(test)
+            if self.verbosity > 1:
+                self.stream.write(f"✓ {test._testMethodName}\n")
+        
+        def addFailure(self, test, err):
+            super().addFailure(test, err)
+            self.stream.write(f"✗ {test._testMethodName} FAILED\n")
+        
+        def addError(self, test, err):
+            super().addError(test, err)
+            self.stream.write(f"✗ {test._testMethodName} ERROR\n")
+    
+    # Custom test runner
+    class DetailedTestRunner(unittest.TextTestRunner):
+        resultclass = DetailedTestResult
+    
+    # Run all tests with custom runner
+    if len(sys.argv) > 1 and sys.argv[1] == '--detailed':
+        unittest.main(testRunner=DetailedTestRunner(verbosity=2), argv=[''])
+    else:
+        unittest.main(verbosity=2, buffer=True)

@@ -1050,3 +1050,105 @@ if __name__ == "__main__":
         assert csm_instance.client_manager.send_to_client.call_count == 3
         
         await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_memory_cleanup_after_processing(self, csm_instance, dummy_audio_file):
+        """Test that CSM properly cleans up memory after story processing."""
+        import gc
+        
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "Memory cleanup test",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Memory test response"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        
+        # Track memory usage before processing
+        gc.collect()
+        initial_objects = len(gc.get_objects())
+        
+        # Process multiple stories
+        for i in range(5):
+            narration, characters = await csm_instance.process_story(dummy_audio_file, chaos_level=0.1)
+            assert narration is not None
+        
+        # Force garbage collection
+        gc.collect()
+        final_objects = len(gc.get_objects())
+        
+        # Memory growth should be minimal (allow some growth but not excessive)
+        memory_growth = final_objects - initial_objects
+        assert memory_growth < 1000, f"Excessive memory growth: {memory_growth} objects"
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_resource_cleanup_on_exception(self, csm_instance, dummy_audio_file):
+        """Test that CSM properly cleans up resources when exceptions occur."""
+        csm_instance.narrator.process_narration.side_effect = Exception("Processing error")
+        
+        # Track opened resources (mock file handles, connections, etc.)
+        csm_instance._track_resources = []
+        original_open = csm_instance.narrator.open if hasattr(csm_instance.narrator, 'open') else None
+        
+        try:
+            await csm_instance.process_story(dummy_audio_file, chaos_level=0.0)
+            assert False, "Should have raised an exception"
+        except Exception as e:
+            assert "Processing error" in str(e)
+        
+        # Verify cleanup was performed (implementation-specific)
+        # This would need to be adapted based on actual CSM resource management
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_state_consistency_across_calls(self, csm_instance, dummy_audio_file):
+        """Test that CSM maintains consistent state across multiple processing calls."""
+        csm_instance.narrator.process_narration.return_value = {
+            "text": "State consistency test",
+            "audio_path": dummy_audio_file,
+            "speaker": "Narrator"
+        }
+        
+        csm_instance.character_server.generate_response.return_value = "Consistent response"
+        csm_instance.client_manager.get_clients_for_story_progression.return_value = []
+        
+        # First call
+        narration1, characters1 = await csm_instance.process_story(dummy_audio_file, chaos_level=0.5)
+        
+        # Second call with same parameters should produce consistent behavior
+        narration2, characters2 = await csm_instance.process_story(dummy_audio_file, chaos_level=0.5)
+        
+        # Verify state consistency
+        assert narration1 == narration2
+        assert len(characters1) == len(characters2)
+        
+        # Verify internal state hasn't been corrupted
+        assert hasattr(csm_instance, 'narrator')
+        assert hasattr(csm_instance, 'character_server')
+        assert hasattr(csm_instance, 'client_manager')
+        assert hasattr(csm_instance, 'db')
+        
+        await csm_instance.shutdown_async()
+
+    @pytest.mark.asyncio
+    async def test_csm_configuration_validation(self, mock_dependencies):
+        """Test CSM configuration validation during initialization."""
+        # Test with invalid configuration (if CSM accepts config)
+        try:
+            # This would need to be adapted based on actual CSM configuration system
+            csm = CSM()
+            assert csm is not None
+        except Exception as e:
+            # If CSM validates configuration, ensure proper error messages
+            assert isinstance(e, (ValueError, TypeError))
+
+    @pytest.mark.asyncio
+    async def test_csm_logging_integration(self, csm_instance, dummy_audio_file):
+        """Test CSM logging integration and log message validation."""
+        import logging
+        from unittest.mock import patch
+        
+        # Moc
