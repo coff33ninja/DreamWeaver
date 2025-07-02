@@ -186,7 +186,7 @@ class Narrator:
                             speaker_durations.get(label, 0) + duration
                         )
                     if speaker_durations:
-                        speaker = max(speaker_durations, key=speaker_durations.get)
+                        speaker = max(speaker_durations, key=lambda k: speaker_durations[k])
                     logger.info(
                         f"Narrator: Diarization complete. Determined speaker: {speaker}"
                     )

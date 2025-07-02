@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 import threading
 import asyncio  # Added asyncio
 import logging
+from typing import Any
 
 from .config import CHARACTERS_AUDIO_PATH
 from .database import Database
@@ -38,12 +39,12 @@ class ClientManager:
                     f"ClientManager: Pygame mixer could not be initialized: {e}.",
                     exc_info=True,
                 )
-
         self.health_check_thread = None
         self.stop_health_check_event = threading.Event()
-        self.active_challenges: dict[str, dict[str, any]] = (
+        self.active_challenges: dict[str, dict[str, Any]] = (
             {}
         )  # Actor_id -> {"challenge": str, "timestamp": datetime}
+        self.CHALLENGE_EXPIRY_SECONDS = 60
         self.CHALLENGE_EXPIRY_SECONDS = 60
 
     def generate_token(self, Actor_id: str) -> str:
@@ -64,7 +65,7 @@ class ClientManager:
             not char and Actor_id == "Actor1"
         ):  # Should Actor1 even have a token generated this way?
             logger.info(
-                f"Actor1 character not found, creating default server character for token generation."
+                "Actor1 character not found, creating default server character for token generation."
             )
             self.db.save_character(
                 name="ServerChar_Actor1",

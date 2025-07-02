@@ -87,6 +87,52 @@ class WebSocketConnectionManager:
         for actor_id in disconnected_clients:
             self.disconnect(actor_id)
 
+    async def broadcast_concurrent(self, message: dict):
+        """
+        Broadcasts a JSON message to all connected clients concurrently using asyncio.gather.
+        """
+        logger.info(
+            f"Broadcasting (concurrent) WebSocket message to {len(self.active_connections)} clients: {str(message)[:100]}..."
+        )
+        tasks = []
+        for actor_id, websocket in self.active_connections.items():
+            tasks.append(websocket.send_json(message))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for idx, result in enumerate(results):
+            if isinstance(result, Exception):
+                actor_id = list(self.active_connections.keys())[idx]
+                logger.error(
+                    f"Error broadcasting (concurrent) to Actor_id {actor_id}: {result}", exc_info=True
+                )
+                self.disconnect(actor_id)
+
+    async def send_personal_message_raw(self, message: str, actor_id: str) -> bool:
+        """
+        Sends a raw JSON string message to a specific connected client using json.loads for validation.
+        Returns True if message was sent, False otherwise.
+        """
+        if websocket := self.active_connections.get(actor_id):
+            try:
+                # Validate message is valid JSON
+                json.loads(message)
+                await websocket.send_text(message)
+                logger.info(
+                    f"Sent raw WebSocket message to Actor_id {actor_id}: {message[:100]}..."
+                )
+                return True
+            except Exception as e:
+                logger.error(
+                    f"Error sending raw WebSocket message to Actor_id {actor_id}: {e}",
+                    exc_info=True,
+                )
+                self.disconnect(actor_id)
+                return False
+        else:
+            logger.warning(
+                f"No active WebSocket connection found for Actor_id {actor_id} to send raw message: {message[:100]}..."
+            )
+            return False
+
     def get_active_clients(self) -> List[str]:
         """
         Returns a list of Actor_ids for all currently active WebSocket connections.
