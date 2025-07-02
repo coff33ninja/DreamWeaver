@@ -84,7 +84,7 @@ class TestTTSManagerInitialization:
         mock_torch = MagicMock()
         mock_torch.cuda.is_available.return_value = True # Simulate GPU
         monkeypatch.setattr("CharacterClient.src.tts_manager.torch", mock_torch)
-        
+
         with patch("os.makedirs"):
             with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="gpu_model"):
                 manager = TTSManager(tts_service_name="xttsv2", model_name="gpu_model")
@@ -326,4 +326,3 @@ class TestTTSManagerPrivateHelpers:
 # Configure logging for pytest capture if needed
 import logging
 logging.basicConfig(level=logging.DEBUG) # Or use pytest's caplog fixture
-```

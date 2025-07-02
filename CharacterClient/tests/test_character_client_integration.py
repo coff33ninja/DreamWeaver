@@ -8,9 +8,7 @@ import sys
 import os
 
 # Import the modules to test
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
-
-from character_client import CharacterClient
+from src.character_client import CharacterClient  # Updated import
 
 
 class TestCharacterClientIntegration:

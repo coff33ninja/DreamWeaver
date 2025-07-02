@@ -10,7 +10,7 @@ import sys
 # Add the src directory to path to import config
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import config
+from src.config import CLIENT_LOGS_PATH  # Updated import
 from logging_config import setup_client_logging, get_logger, CLIENT_LOG_FILE
 
 

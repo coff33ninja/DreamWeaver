@@ -16,6 +16,7 @@ from logging_config import (
     CLIENT_LOG_FILE,
     LOGGER_NAME,
 )
+from src.config import CLIENT_LOGS_PATH  # Updated import
 
 
 class TestLoggingConfiguration:

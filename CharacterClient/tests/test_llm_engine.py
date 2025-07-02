@@ -111,4 +111,4 @@ class TestLLMEngineFineTuneAsync:
         engine = llm_engine_no_init_client
         engine.is_initialized = True
         engine.model = MockGetPeftModel.return_value # This is already a PeftModel mock
-        engine.tokenizer = MagicMock(eos_token="<EOS>",
+        engine.tokenizer = MagicMock(eos_token="<EOS>")

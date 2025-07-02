@@ -4,7 +4,7 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from CharacterClient.character_client import CharacterClient
+from src.character_client import CharacterClient  # Updated import
 from CharacterClient.exceptions import CharacterClientError
 
 

@@ -11,7 +11,7 @@ import hashlib
 from datetime import datetime, timezone
 import websockets  # Import websockets library
 import json  # For parsing JSON messages
-from websockets.client import WebSocketClientProtocol  # Type for WebSocket connection
+from websockets.client import WebSocketClientProtocol  # Updated import
 from .tts_manager import TTSManager  # Now async
 from .llm_engine import LLMEngine  # Now async
 from .config import CLIENT_TTS_REFERENCE_VOICES_PATH, ensure_client_directories
