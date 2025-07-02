@@ -10,6 +10,9 @@ import shutil
 import os
 import asyncio # Added asyncio
 import sys
+import logging
+
+logger = logging.getLogger("dreamweaver_server")
 
 # --- Instances ---
 # These are now initialized inside launch_interface for process safety.
@@ -103,13 +106,14 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
 
         try:
             await asyncio.to_thread(shutil.copyfile, original_filename, destination_path)
-            print(f"Saved reference audio to: {destination_path}")
+            logger.info(f"Saved reference audio for character {name} ({Actor_id}) to: {destination_path}")
             if hasattr(progress, '__call__'):
                 progress(0.5, desc="Reference audio saved.")
         except Exception as e:
-            print(f"Error saving reference audio: {e}")
+            logger.error(f"Error saving reference audio for character {name} ({Actor_id}): {e}", exc_info=True)
             return f"Error saving reference audio: {e}"
     elif tts_service == "xttsv2" and not reference_audio_file:
+        logger.warning(f"XTTS-v2 selected for {name} ({Actor_id}) but no reference audio file uploaded.")
         return "Error: XTTS-v2 selected but no reference audio file uploaded."
 
     if hasattr(progress, '__call__'):
@@ -127,9 +131,11 @@ async def create_character_async(name, personality, goals, backstory, tts_servic
         token = await asyncio.to_thread(client_manager_instance.generate_token, Actor_id)
         if token:
             token_msg_part = f" Token for {Actor_id}: {token}"
+            logger.info(f"Generated token for {Actor_id}.")
 
     if hasattr(progress, '__call__'):
         progress(1, desc="Character created!")
+    logger.info(f"Character '{name}' for '{Actor_id}' created successfully. Token part: {token_msg_part}")
     return f"Character '{name}' for '{Actor_id}' created successfully.{token_msg_part}"
 
 
@@ -157,9 +163,10 @@ async def story_interface_async(audio_input_path, chaos_level_value, progress=gr
             progress(1, desc="Story turn processed.")
         if not isinstance(character_texts, dict):
             character_texts = {"error": "Invalid character text format from CSM"}
+        logger.info(f"Story processed with audio: {audio_input_path}, chaos: {chaos_level_value}.")
         return narration, character_texts
     except Exception as e:
-        print(f"Error in story_interface_async: {e}")
+        logger.error(f"Error in story_interface_async with audio {audio_input_path}: {e}", exc_info=True)
         if hasattr(progress, '__call__'):
             progress(1, desc="Error during story processing.")
         return f"Error: {e}", {}, {}
@@ -175,12 +182,15 @@ async def save_checkpoint_async(name_prefix, progress=gr.Progress(track_tqdm=Tru
         tuple: A status message and a dictionary containing updated checkpoint dropdown choices and the default value.
     """
     if checkpoint_manager is None:
+        logger.error("CheckpointManager instance not initialized in save_checkpoint_async.")
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
         progress(0, desc="Saving checkpoint...")
+    logger.info(f"Attempting to save checkpoint with prefix: {name_prefix}")
     status, new_choices = await asyncio.to_thread(checkpoint_manager.save_checkpoint, name_prefix)
     if hasattr(progress, '__call__'):
         progress(1, desc="Checkpoint saved.")
+    logger.info(f"Save checkpoint '{name_prefix}' result: {status}")
     return status, {"choices": new_choices, "value": new_choices[0] if new_choices else None}
 
 async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm=True)):
@@ -194,17 +204,23 @@ async def load_checkpoint_async(checkpoint_name, progress=gr.Progress(track_tqdm
     	tuple: A tuple containing the status message (str) and the updated story playback data (list).
     """
     if checkpoint_manager is None:
+        logger.error("CheckpointManager instance not initialized in load_checkpoint_async.")
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if not checkpoint_name:
+        logger.warning("Load checkpoint attempted without selecting a checkpoint name.")
         return "Please select a checkpoint to load.", []
     if hasattr(progress, '__call__'):
         progress(0, desc=f"Loading checkpoint '{checkpoint_name}'...")
+    logger.info(f"Attempting to load checkpoint: {checkpoint_name}")
     status = await asyncio.to_thread(checkpoint_manager.load_checkpoint, checkpoint_name)
     new_story_data = []
     if status and "loaded" in status.lower() and "restart" not in status.lower():
+        logger.info(f"Checkpoint '{checkpoint_name}' loaded successfully. Refreshing story history.")
         if hasattr(progress, '__call__'):
             progress(0.8, desc="Refreshing story history...")
         new_story_data = await get_story_playback_data_async()
+    else:
+        logger.warning(f"Checkpoint '{checkpoint_name}' load status: {status}. Story history not refreshed.")
     if hasattr(progress, '__call__'):
         progress(1, desc=f"Checkpoint '{checkpoint_name}' load attempt finished.")
     return status, new_story_data
@@ -221,12 +237,15 @@ async def export_story_async(export_format, progress=gr.Progress(track_tqdm=True
         dict: A dictionary containing the exported filename and its visibility status.
     """
     if checkpoint_manager is None:
+        logger.error("CheckpointManager instance not initialized in export_story_async.")
         raise RuntimeError("CheckpointManager instance not initialized. Call launch_interface() first.")
     if hasattr(progress, '__call__'):
         progress(0, desc=f"Exporting story as {export_format}...")
+    logger.info(f"Attempting to export story as {export_format}.")
     status, filename = await asyncio.to_thread(checkpoint_manager.export_story, export_format)
     if hasattr(progress, '__call__'):
         progress(1, desc="Story export finished.")
+    logger.info(f"Export story as {export_format} result: {status}, filename: {filename}")
     return status, {"value": filename if filename else "", "visible": bool(filename)}
 
 async def get_env_vars_async():
@@ -259,8 +278,10 @@ async def save_env_vars_async(new_vars_str: str, progress=gr.Progress()):
         new_vars_display (str): The refreshed display of environment variables with sensitive values masked.
     """
     progress(0, desc="Saving .env file...")
+    logger.info("Attempting to save .env variables.")
     status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_vars_str)
     progress(1, desc="Save complete.")
+    logger.info(f".env file save result: {status_msg}")
 
     # After saving, refresh the display
     new_status, new_vars_display = await get_env_vars_async()
@@ -282,8 +303,10 @@ async def set_api_provider_async(selected_provider, progress=gr.Progress()):
     """
     progress(0, desc="Updating API provider...")
     new_var = f"API_PROVIDER={selected_provider}"
+    logger.info(f"Attempting to set API_PROVIDER to: {selected_provider}")
     status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
     progress(1, desc="Provider updated.")
+    logger.info(f"API_PROVIDER update result: {status_msg}")
     # After saving, refresh the display
     new_status, new_vars_display = await get_env_vars_async()
     return status_msg, new_status, new_vars_display, selected_provider
@@ -296,11 +319,13 @@ async def restart_server_async(progress=gr.Progress()):
         str: Status message indicating the server is restarting.
     """
     progress(0, desc="Restarting server...")
-    await asyncio.sleep(1)
+    logger.info("Server restart requested via Gradio UI.")
+    await asyncio.sleep(1) # Give time for the message to show in UI
     progress(1, desc="Server restarting now.")
     # Attempt to restart the current process
+    logger.info(f"Executing os.execv: {sys.executable} {sys.argv}")
     os.execv(sys.executable, [sys.executable] + sys.argv)
-    return "Server is restarting..."
+    return "Server is restarting..." # This line might not be reached if execv is successful
 
 # --- Gradio UI Launch ---
 def launch_interface():
@@ -340,6 +365,14 @@ def launch_interface():
                 create_char_btn = gr.Button("Save Character", variant="primary")
                 char_creation_status = gr.Textbox(label="Status", interactive=False)
 
+                with gr.Accordion("Client Configuration Download", open=False):
+                    client_config_server_url = gr.Textbox(label="Server URL for Client", placeholder="E.g., http://192.168.1.100:8000 or http://your.domain.com:8000")
+                    download_client_config_btn = gr.Button("Download Client .env File")
+                    # Hidden File component for download trick
+                    client_config_file_download = gr.File(label="Download Link", visible=False, interactive=False)
+                    client_config_download_status = gr.Textbox(label="Download Status", interactive=False, visible=False)
+
+
                 char_tts_service.change(fn=update_model_dropdown, inputs=char_tts_service, outputs=char_tts_model)
                 char_tts_service.change(lambda service: {"visible": (service == "xttsv2")}, inputs=char_tts_service, outputs=char_ref_audio)
 
@@ -348,6 +381,82 @@ def launch_interface():
                     inputs=[char_name, char_personality, char_goals, char_backstory, char_tts_service, char_tts_model, char_ref_audio, char_Actor_id],
                     outputs=char_creation_status
                 )
+
+                async def handle_download_client_config(actor_id, server_url_for_client, progress=gr.Progress()):
+                    """
+                    Prepares and triggers the download of a client configuration .env file.
+                    """
+                    if not actor_id or actor_id == "Actor1":
+                        logger.warning(f"Client config download requested for invalid actor_id: {actor_id}")
+                        return {client_config_download_status: gr.update(value="Select a valid Client Actor ID (not Actor1).", visible=True),
+                                client_config_file_download: gr.update(visible=False)}
+                    if not server_url_for_client:
+                        logger.warning(f"Client config download requested for actor_id: {actor_id} without server_url.")
+                        return {client_config_download_status: gr.update(value="Please enter the Server URL for the client.", visible=True),
+                                client_config_file_download: gr.update(visible=False)}
+
+                    progress(0, desc="Preparing download link...")
+                    logger.info(f"Preparing client config download for Actor_id: {actor_id} with server_url: {server_url_for_client}")
+
+                    # Construct the download URL for the FastAPI endpoint
+                    # Ensure server_url_for_client is URL-encoded if it contains special characters, though Gradio might handle this.
+                    # For direct URL construction, it's safer.
+                    from urllib.parse import quote
+                    encoded_server_url = quote(server_url_for_client, safe=':/')
+
+                    # Assuming Gradio server is running on http://localhost:7860 and FastAPI on http://localhost:8000 (or as configured)
+                    # The download URL needs to point to the FastAPI endpoint.
+                    # We need the actual base URL of the FastAPI server as seen by the user's browser.
+                    # This is tricky if Gradio and FastAPI are on different ports or hosts from browser's perspective.
+                    # For now, let's assume they are on the same host and FastAPI is on port 8000.
+                    # This might need to be configurable or determined more robustly.
+                    # For now, let's hardcode the relative path to the API, assuming Gradio proxies or they are on same host.
+                    # A better way would be to get this from a config or request object if possible.
+                    # Simplest for now: assume FastAPI is reachable from where Gradio UI is served.
+                    # The API endpoint itself is on the FastAPI server, not Gradio.
+                    # So the URL should be like "http://actual_fastapi_host:fastapi_port/download_client_config/..."
+                    # If Gradio is served from say 0.0.0.0:7860 and API from 0.0.0.0:8000 (defaults)
+                    # the user's browser needs to be able to hit 0.0.0.0:8000.
+                    # Let's assume the user knows the correct FastAPI base URL.
+                    # The `server_url_for_client` is what the *client* will use.
+                    # The download link itself is for the *browser* interacting with Gradio/FastAPI.
+
+                    # The FastAPI app is available at the root of its own server (e.g. http://localhost:8000)
+                    # This needs to be the actual URL to the FastAPI server.
+                    # For testing locally, if Gradio is 7860 and FastAPI is 8000:
+                    fastapi_base_url = "http://localhost:8000" # This should ideally be configurable or derived
+
+                    download_url = f"{fastapi_base_url}/download_client_config/{actor_id}?server_url={encoded_server_url}"
+
+                    progress(1, desc="Link generated. Starting download...")
+
+                    # Use gr.File to trigger download. Value is the URL.
+                    # Make it visible briefly then hide again.
+                    # This is a bit of a hack. A direct gr.DownloadButton would be ideal if it could be dynamically targeted.
+                    logger.info(f"Triggering download for {actor_id} with URL: {download_url}")
+                    return {
+                        client_config_download_status: gr.update(value=f"Preparing download for {actor_id}...", visible=True),
+                        client_config_file_download: gr.update(value=download_url, visible=True) # This should trigger download
+                    }
+
+                async def hide_download_link_after_trigger():
+                    logger.debug("Hiding client config download link elements after delay.")
+                    await asyncio.sleep(2) # Keep it visible for a couple of seconds
+                    return {
+                        client_config_file_download: gr.update(visible=False),
+                        client_config_download_status: gr.update(visible=False)
+                    }
+
+                download_client_config_btn.click(
+                    handle_download_client_config,
+                    inputs=[char_Actor_id, client_config_server_url],
+                    outputs=[client_config_download_status, client_config_file_download]
+                ).then(
+                    hide_download_link_after_trigger,
+                    inputs=[],
+                    outputs=[client_config_file_download, client_config_download_status]
+                )
+
 
             with gr.TabItem("Story Progression"):
                 # ... (Story Progression UI definition - use story_interface_async) ...
@@ -383,14 +492,18 @@ def launch_interface():
                     progress(0, desc="Saving correction...")
                     # Persist correction to DB
                     if csm_instance is not None:
+                        logger.info(f"Attempting to save narration correction: {correction_text[:100]}...") # Log first 100 chars
                         updated = await asyncio.to_thread(csm_instance.update_last_narration_text, correction_text)
                         if updated:
                             progress(1, desc="Correction saved.")
+                            logger.info("Narration correction saved successfully.")
                             return "Correction saved and persisted!"
                         else:
                             progress(1, desc="No narrator entry found.")
+                            logger.warning("No narrator entry found to update for correction.")
                             return "No narrator entry found to update."
                     progress(1, desc="CSM not initialized.")
+                    logger.error("CSM instance not initialized in save_correction_async.")
                     return "CSM not initialized."
                 save_correction_btn.click(save_correction_async, inputs=[narration_output_text], outputs=[correction_status])
 
@@ -539,9 +652,11 @@ def launch_interface():
                     """
                     progress(0, desc="Saving token...")
                     var, _, _ = provider_token_vars.get(provider, ("API_TOKEN", "API Token", "token..."))
-                    new_var = f"{var}={token}"
+                    new_var = f"{var}={token}" # Token itself is not logged for security
+                    logger.info(f"Attempting to save token for provider: {provider} (variable: {var})")
                     status_msg = await asyncio.to_thread(env_manager.save_env_vars, new_var)
                     progress(1, desc="Token saved.")
+                    logger.info(f"Save token for {provider} result: {status_msg}")
                     new_status, new_vars_display = await get_env_vars_async()
                     return status_msg, new_status, new_vars_display, ""
                 save_token_btn = gr.Button("Save API Token", variant="primary")
@@ -609,8 +724,10 @@ def launch_interface():
                     lines = []
                     for k, v in zip(config_keys, new_values):
                         lines.append(f"{k}={v}")
+                    logger.info(f"Attempting to save config changes to .env: {lines}")
                     # Save to .env for persistence
                     status_msg = await asyncio.to_thread(env_manager.save_env_vars, "\n".join(lines))
+                    logger.info(f"Save config changes result: {status_msg}")
                     return status_msg
                 save_config_btn.click(save_config_async, inputs=config_inputs, outputs=[config_status])
 

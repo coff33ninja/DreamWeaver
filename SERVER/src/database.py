@@ -1,6 +1,9 @@
 import sqlite3
 import threading
 from datetime import datetime, timezone, timedelta
+import logging
+
+logger = logging.getLogger("dreamweaver_server")
 
 class Database:
     def __init__(self, db_path):
@@ -13,7 +16,7 @@ class Database:
         # Other threads will create their own connections on first use.
         self._get_conn()
         self._ensure_schema()
-        print("Database schema ensured.")
+        logger.info("Database schema ensured and connection initialized.")
 
     def _get_conn(self):
         """
@@ -29,7 +32,7 @@ class Database:
                 conn.row_factory = sqlite3.Row
                 self._thread_local.conn = conn
             except sqlite3.Error as e:
-                print(f"Error connecting to database in thread {threading.get_ident()}: {e}")
+                logger.error(f"Error connecting to database in thread {threading.get_ident()}: {e}", exc_info=True)
                 raise
         return self._thread_local.conn
 
@@ -59,7 +62,7 @@ class Database:
                 return cursor.fetchall()
             return cursor
         except sqlite3.Error as e:
-            print(f"Database error: {e}\nQuery: {query}\nParams: {params}")
+            logger.error(f"Database error: {e}\nQuery: {query}\nParams: {params}", exc_info=True)
             return None
 
     def _ensure_column(self, table_name, column_name, column_definition):
@@ -75,18 +78,18 @@ class Database:
             # Check if column exists (more robust way for SQLite)
             cursor = self._execute_query(f"PRAGMA table_info({table_name});", fetchall=True)
             if cursor is None: # Error in _execute_query
-                print(f"Database: Could not get table_info for {table_name}. Column '{column_name}' check skipped.")
+                logger.warning(f"Database: Could not get table_info for {table_name}. Column '{column_name}' check skipped.")
                 return
 
             columns = [row['name'] for row in cursor]
             if column_name not in columns:
                 self._execute_query(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition};", commit=True)
-                print(f"Database: Added '{column_name}' column to '{table_name}' table.")
+                logger.info(f"Database: Added '{column_name}' column to '{table_name}' table.")
             # else: # For debugging
-            #    print(f"Database: Column '{column_name}' already exists in '{table_name}'.")
+            #    logger.debug(f"Database: Column '{column_name}' already exists in '{table_name}'.")
 
         except sqlite3.OperationalError as e: # Should be caught by _execute_query mostly
-            print(f"Database: Error ensuring column '{column_name}' in '{table_name}': {e}")
+            logger.error(f"Database: Error ensuring column '{column_name}' in '{table_name}': {e}", exc_info=True)
 
 
     def _ensure_schema(self):
@@ -165,7 +168,7 @@ class Database:
                 llm_model=excluded.llm_model
         """
         self._execute_query(query, (name, personality, goals, backstory, tts, tts_model, reference_audio_filename, Actor_id, llm_model), commit=True)
-        print(f"Character '{name}' for Actor_id '{Actor_id}' saved/updated.")
+        logger.info(f"Character '{name}' for Actor_id '{Actor_id}' saved/updated.")
 
     def get_character(self, Actor_id):
         # Ensure llm_model is selected
@@ -197,7 +200,7 @@ class Database:
         self.save_story_entry("Narrator", narration_text, narrator_audio_path)
         for char_name, char_text in character_texts.items():
             self.save_story_entry(char_name, char_text)
-        # print("Story progress saved.") # Can be too verbose
+        # logger.debug("Story progress saved.") # Can be too verbose if not needed
 
     def get_story_history(self):
         """
@@ -249,7 +252,7 @@ class Database:
             ON CONFLICT(Actor_id) DO UPDATE SET token=excluded.token, status='Registered', last_seen=excluded.last_seen
         """
         self._execute_query(query, (Actor_id, token, datetime.now(timezone.utc).isoformat()), commit=True)
-        print(f"Token for '{Actor_id}' saved. Status: Registered.")
+        logger.info(f"Token for '{Actor_id}' saved. Status: Registered.")
 
     def get_client_token_details(self, Actor_id):
         """
@@ -288,7 +291,7 @@ class Database:
             WHERE Actor_id = ?
         """
         self._execute_query(query, (ip_address, client_port, timestamp_utc_iso, Actor_id), commit=True)
-        print(f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
+        logger.info(f"Client '{Actor_id}' registered from {ip_address}:{client_port}. Status: Online_Heartbeat.")
 
     def update_client_status(self, Actor_id, new_status, last_seen_iso=None):
         """
@@ -304,7 +307,7 @@ class Database:
 
         query = "UPDATE client_tokens SET status = ?, last_seen = ? WHERE Actor_id = ?"
         self._execute_query(query, (new_status, last_seen_iso, Actor_id), commit=True)
-        # print(f"Status for {Actor_id} updated to {new_status}.")
+        # logger.debug(f"Status for {Actor_id} updated to {new_status}.") # Use debug for potentially verbose logs
 
 
     def get_clients_for_story_progression(self):

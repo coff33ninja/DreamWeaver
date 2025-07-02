@@ -7,10 +7,12 @@ import base64
 from datetime import datetime, timezone, timedelta
 import threading
 import asyncio # Added asyncio
+import logging
 
 from .config import CHARACTERS_AUDIO_PATH
 from .database import Database
 
+logger = logging.getLogger("dreamweaver_server")
 
 CLIENT_HEALTH_CHECK_INTERVAL_SECONDS = 60 * 2
 CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS = 5
@@ -32,7 +34,7 @@ class ClientManager:
             try:
                 pygame.mixer.init()
             except pygame.error as e:
-                print(f"ClientManager: Warning - Pygame mixer could not be initialized: {e}.")
+                logger.warning(f"ClientManager: Pygame mixer could not be initialized: {e}.", exc_info=True)
 
         self.health_check_thread = None
         self.stop_health_check_event = threading.Event()
@@ -53,11 +55,13 @@ class ClientManager:
         token = secrets.token_hex(24)
         char = self.db.get_character(Actor_id)
         if not char and Actor_id == "Actor1": # Should Actor1 even have a token generated this way?
+            logger.info(f"Actor1 character not found, creating default server character for token generation.")
             self.db.save_character(name="ServerChar_Actor1", personality="Host", goals="Manage", backstory="Server internal char",
                                    tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, Actor_id="Actor1", llm_model=None)
         elif not char:
-             print(f"ClientManager: Warning - Generating token for '{Actor_id}' but character does not exist.")
+             logger.warning(f"ClientManager: Generating token for '{Actor_id}' but character does not exist in DB.")
         self.db.save_client_token(Actor_id, token)
+        logger.info(f"Generated and saved token for Actor_id: {Actor_id}")
         return token
 
     def get_clients_for_story_progression(self):
@@ -77,53 +81,56 @@ class ClientManager:
             bool: True if the token is valid and the client is active; otherwise, False.
         """
         client_details = self.db.get_client_token_details(Actor_id)
-        return bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
+        is_valid = bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
+        if not is_valid:
+            logger.warning(f"Token validation failed for Actor_id: {Actor_id}. Provided token: {'***' if token else 'None'}. Stored details: {client_details}")
+        return is_valid
 
     def _perform_single_health_check_blocking(self, client_info: dict):
-<<<<<<< HEAD
-        """Blocking /health check and DB-status update."""
-=======
         """
         Performs a blocking health check on a client by querying its `/health` endpoint and updates the client's status in the database based on the response.
         
         Parameters:
             client_info (dict): Dictionary containing client connection details, including "Actor_id", "ip_address", and "client_port".
         """
->>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d
         Actor_id = client_info.get("Actor_id")
         ip_address = client_info.get("ip_address")
         client_port = client_info.get("client_port")
 
         if not all([Actor_id, ip_address, client_port]):
+            logger.warning(f"Attempted health check with incomplete client_info: {client_info}")
             return
 
         health_url = f"http://{ip_address}:{client_port}/health"
         new_status = "Error_API" # Default to error if checks fail
         try:
+            # logger.debug(f"Performing health check for {Actor_id} at {health_url}")
             response = requests.get(health_url, timeout=CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS)
-            response.raise_for_status()
+            response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
             health_data = response.json()
 
             if health_data.get("status") == "ok":
                 new_status = "Online_Responsive"
             elif health_data.get("status") == "degraded":
                 new_status = "Error_API_Degraded"
-            # else:
-            #     print(f"Health Check ({Actor_id}): Unexpected health status '{health_data.get('status')}'")
+                logger.warning(f"Health Check ({Actor_id}): Client reported degraded status. Health data: {health_data}")
+            else:
+                logger.warning(f"Health Check ({Actor_id}): Unexpected health status '{health_data.get('status')}' from {health_url}. Data: {health_data}")
 
         except requests.exceptions.Timeout:
-            # print(f"Health Check ({Actor_id}): Timeout at {health_url}")
-            new_status = "Error_API" # Or more specific timeout status
-        except requests.exceptions.ConnectionError:
-            # print(f"Health Check ({Actor_id}): Connection error at {health_url}")
-            new_status = "Error_Unreachable"
-        except requests.exceptions.RequestException:
-            # print(f"Health Check ({Actor_id}): Request error at {health_url}")
+            logger.warning(f"Health Check ({Actor_id}): Timeout at {health_url}")
             new_status = "Error_API"
-        except Exception:
-            # print(f"Health Check ({Actor_id}): Unexpected error")
+        except requests.exceptions.ConnectionError:
+            logger.warning(f"Health Check ({Actor_id}): Connection error at {health_url}")
+            new_status = "Error_Unreachable"
+        except requests.exceptions.RequestException as e: # Includes HTTPError
+            logger.warning(f"Health Check ({Actor_id}): Request error at {health_url}: {e}")
+            new_status = "Error_API"
+        except Exception as e: # Catch any other unexpected error, like JSONDecodeError
+            logger.error(f"Health Check ({Actor_id}): Unexpected error during health check for {health_url}: {e}", exc_info=True)
             new_status = "Error_API"
 
+        # logger.debug(f"Health check for {Actor_id} completed. New status: {new_status}")
         self.db.update_client_status(Actor_id, new_status)
 
     def _periodic_health_check_loop(self):
@@ -132,26 +139,39 @@ class ClientManager:
         
         This loop runs in a background thread, periodically checking each client's status. It performs health checks for clients in certain error or heartbeat states, and marks clients as offline if their last heartbeat is stale. The loop continues until signaled to stop.
         """
-        print("ClientManager: Periodic health check thread started.")
+        logger.info("ClientManager: Periodic health check thread started.")
         while not self.stop_health_check_event.is_set():
             try:
                 clients_to_check = self.db.get_all_client_statuses()
                 if clients_to_check:
                     for client_data in clients_to_check:
+                        if self.stop_health_check_event.is_set(): break # Exit early if stopped
+
                         current_status = client_data.get("status")
+                        actor_id = client_data.get("Actor_id")
+                        # logger.debug(f"Health Check Loop: Evaluating client {actor_id} with status {current_status}")
+
                         if current_status in ["Online_Heartbeat", "Error_API", "Error_API_Degraded", "Error_Unreachable"]:
+                            # logger.debug(f"Health Check Loop: Performing direct health check for {actor_id} (Status: {current_status})")
                             self._perform_single_health_check_blocking(client_data)
                         elif current_status == "Online_Responsive":
                             last_seen_iso = client_data.get("last_seen")
                             if last_seen_iso:
-                                last_seen_dt = datetime.fromisoformat(last_seen_iso)
-                                if datetime.now(timezone.utc) - last_seen_dt > timedelta(seconds=CLIENT_HEALTH_CHECK_INTERVAL_SECONDS * 2.5):
-                                    print(f"Health Check: Client {client_data.get('Actor_id')} unresponsive (stale heartbeat). Status: Offline.")
-                                    self.db.update_client_status(client_data.get('Actor_id'), "Offline")
+                                try:
+                                    last_seen_dt = datetime.fromisoformat(last_seen_iso)
+                                    if datetime.now(timezone.utc) - last_seen_dt > timedelta(seconds=CLIENT_HEALTH_CHECK_INTERVAL_SECONDS * 2.5):
+                                        logger.warning(f"Health Check: Client {actor_id} unresponsive (stale heartbeat while Online_Responsive). Marking Offline.")
+                                        self.db.update_client_status(actor_id, "Offline")
+                                except ValueError:
+                                    logger.error(f"Health Check: Could not parse last_seen timestamp '{last_seen_iso}' for client {actor_id}", exc_info=True)
             except Exception as e:
-                print(f"ClientManager: Error in health check loop: {e}")
+                logger.error(f"ClientManager: Error in health check loop: {e}", exc_info=True)
+
+            # Wait for the interval or until stop event is set
+            # Use wait with a timeout to make the loop check self.stop_health_check_event more frequently
+            # than CLIENT_HEALTH_CHECK_INTERVAL_SECONDS if needed, but not busy-wait.
             self.stop_health_check_event.wait(CLIENT_HEALTH_CHECK_INTERVAL_SECONDS)
-        print("ClientManager: Periodic health check thread stopped.")
+        logger.info("ClientManager: Periodic health check thread stopped.")
 
     def start_periodic_health_checks(self):
         """
@@ -163,6 +183,10 @@ class ClientManager:
             self.stop_health_check_event.clear()
             self.health_check_thread = threading.Thread(target=self._periodic_health_check_loop, daemon=True)
             self.health_check_thread.start()
+            logger.info("Periodic health check thread initiated.")
+        else:
+            logger.info("Periodic health check thread already running.")
+
 
     def stop_periodic_health_checks(self):
         """
@@ -170,9 +194,16 @@ class ClientManager:
         
         Signals the health check loop to terminate and waits for the thread to finish execution.
         """
+        logger.info("Stopping periodic health checks...")
         self.stop_health_check_event.set()
         if self.health_check_thread and self.health_check_thread.is_alive():
             self.health_check_thread.join(timeout=max(1, CLIENT_HEALTH_REQUEST_TIMEOUT_SECONDS + 1))
+            if self.health_check_thread.is_alive():
+                logger.warning("Health check thread did not join in time.")
+            else:
+                logger.info("Health check thread joined successfully.")
+        else:
+            logger.info("Health check thread was not running or already stopped.")
 
 
     async def send_to_client(self, client_Actor_id: str, client_ip: str, client_port: int, narration: str, character_texts: dict) -> str:
@@ -193,13 +224,13 @@ class ClientManager:
         """
         character = self.db.get_character(client_Actor_id) # Blocking DB call
         if not character:
-            print(f"send_to_client: No character data for {client_Actor_id}.")
+            logger.warning(f"send_to_client: No character data for {client_Actor_id}. Cannot send.")
             self.db.update_client_status(client_Actor_id, "Error_API")
             return ""
 
         token = self.db.get_token(client_Actor_id) # Blocking DB call
         if not token:
-            print(f"send_to_client: No token for {client_Actor_id}.")
+            logger.warning(f"send_to_client: No token for {client_Actor_id}. Cannot send.")
             self.db.update_client_status(client_Actor_id, "Error_API")
             return ""
 
@@ -207,76 +238,76 @@ class ClientManager:
         request_payload = {"narration": narration, "character_texts": character_texts, "token": token}
 
         def _blocking_post_request():
-<<<<<<< HEAD
-            """POST to client with timeout."""
-=======
             """
             Send a blocking HTTP POST request with the specified payload and timeout.
             
             Returns:
                 Response: The HTTP response object from the POST request.
             """
->>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d
             return requests.post(url, json=request_payload, timeout=SEND_TO_CLIENT_REQUEST_TIMEOUT_SECONDS)
 
         for attempt in range(SEND_TO_CLIENT_MAX_RETRIES + 1):
             try:
-                # print(f"send_to_client (Attempt {attempt+1}): Sending to {client_Actor_id} at {url}") # Verbose
+                logger.info(f"send_to_client (Attempt {attempt+1}/{SEND_TO_CLIENT_MAX_RETRIES+1}): Sending to {client_Actor_id} at {url}")
                 response = await asyncio.to_thread(_blocking_post_request)
-                response.raise_for_status()
+                response.raise_for_status() # Raises HTTPError for 4xx/5xx status
                 response_data = response.json()
                 client_text_response = response_data.get("text")
                 encoded_audio_data = response_data.get("audio_data")
+                logger.info(f"send_to_client: Received response from {client_Actor_id}. Text: '{str(client_text_response)[:50]}...', Audio present: {bool(encoded_audio_data)}")
+
 
                 if encoded_audio_data and pygame.mixer.get_init():
                     # This part (decode, save, play) is also blocking
                     def _handle_audio():
-<<<<<<< HEAD
-                        """Decode, save, and play audio response."""
-=======
                         """
                         Decodes base64-encoded audio data, saves it as a WAV file in a character-specific directory, and plays the audio using pygame.
                         
                         The audio file is named using the client Actor ID and a unique identifier to avoid collisions.
                         """
->>>>>>> 96fc77cc2cce22f1a9028bf0e9399df2f81b2e3d
                         sane_char_name = "".join(c if c.isalnum() else "_" for c in character.get('name', client_Actor_id))
                         audio_dir = os.path.join(CHARACTERS_AUDIO_PATH, sane_char_name)
                         os.makedirs(audio_dir, exist_ok=True)
                         audio_filename = f"{client_Actor_id}_{uuid.uuid4()}.wav"
                         audio_path = os.path.join(audio_dir, audio_filename)
-                        decoded_audio_data = base64.b64decode(encoded_audio_data)
-                        with open(audio_path, "wb") as f:
-                            f.write(decoded_audio_data)
-                        pygame.mixer.Sound(audio_path).play()
+                        try:
+                            decoded_audio_data = base64.b64decode(encoded_audio_data)
+                            with open(audio_path, "wb") as f:
+                                f.write(decoded_audio_data)
+                            logger.info(f"Saved client audio for {client_Actor_id} to {audio_path}")
+                            pygame.mixer.Sound(audio_path).play()
+                            logger.info(f"Playing audio for {client_Actor_id} from {audio_path}")
+                        except Exception as e_audio:
+                            logger.error(f"Error handling audio for {client_Actor_id} (path: {audio_path}): {e_audio}", exc_info=True)
+
                     await asyncio.to_thread(_handle_audio)
 
                 self.db.update_client_status(client_Actor_id, "Online_Responsive") # Blocking DB call
                 return client_text_response
 
             except requests.exceptions.Timeout:
-                print(f"send_to_client (Attempt {attempt+1}): Timeout for {client_Actor_id} at {url}.")
+                logger.warning(f"send_to_client (Attempt {attempt+1}): Timeout for {client_Actor_id} at {url}.")
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
                     self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
             except requests.exceptions.ConnectionError:
-                print(f"send_to_client (Attempt {attempt+1}): Connection error for {client_Actor_id} at {url}.")
+                logger.warning(f"send_to_client (Attempt {attempt+1}): Connection error for {client_Actor_id} at {url}.")
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
                     self.db.update_client_status(client_Actor_id, "Error_Unreachable") # Blocking
-            except requests.exceptions.RequestException as e:
-                print(f"send_to_client (Attempt {attempt+1}): Request error for {client_Actor_id} at {url}: {e}")
+            except requests.exceptions.RequestException as e: # Includes HTTPError
+                logger.warning(f"send_to_client (Attempt {attempt+1}): Request error for {client_Actor_id} at {url}: {e}")
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
                     self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
-            except Exception as e:
-                print(f"send_to_client (Attempt {attempt+1}): Unexpected error for {client_Actor_id}: {e}")
+            except Exception as e: # Catch other errors like JSONDecodeError from response.json()
+                logger.error(f"send_to_client (Attempt {attempt+1}): Unexpected error for {client_Actor_id} at {url}: {e}", exc_info=True)
                 if attempt == SEND_TO_CLIENT_MAX_RETRIES:
                     self.db.update_client_status(client_Actor_id, "Error_API") # Blocking
 
             if attempt < SEND_TO_CLIENT_MAX_RETRIES:
                 delay = SEND_TO_CLIENT_BASE_DELAY_SECONDS * (2 ** attempt)
-                # print(f"send_to_client: Waiting {delay}s before retry for {client_Actor_id}...") # Verbose
+                logger.info(f"send_to_client: Waiting {delay}s before retry for {client_Actor_id}...")
                 await asyncio.sleep(delay) # Use asyncio.sleep for async context
 
-        print(f"send_to_client for {client_Actor_id} failed after all retries.")
+        logger.error(f"send_to_client for {client_Actor_id} failed after all retries.")
         return "" # Return empty if all retries fail
 
     def deactivate_client_Actor(self, Actor_id: str): # Blocking DB call
@@ -287,10 +318,11 @@ class ClientManager:
             Actor_id (str): The identifier of the client to deactivate.
         """
         self.db.update_client_status(Actor_id, "Deactivated")
-        print(f"Client {Actor_id} marked as Deactivated.")
+        logger.info(f"Client {Actor_id} marked as Deactivated.")
 
     def __del__(self):
         """
         Ensures that periodic health checks are stopped when the ClientManager instance is destroyed.
         """
+        logger.debug("ClientManager instance being deleted. Stopping health checks.")
         self.stop_periodic_health_checks()
