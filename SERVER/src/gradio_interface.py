@@ -133,8 +133,11 @@ async def create_character_async(
                 # Try to get the selected IP from the UI (Gradio passes it as an argument if wired)
                 import inspect
                 frame = inspect.currentframe()
-                args, _, _, values = inspect.getargvalues(frame)
-                selected_ip = values.get('selected_server_ip', None)
+                if frame is not None:
+                    args, _, _, values = inspect.getargvalues(frame)
+                    selected_ip = values.get('selected_server_ip', None)
+                else:
+                    selected_ip = None
             except Exception:
                 selected_ip = None
             if selected_ip:
