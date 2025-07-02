@@ -2550,6 +2550,23 @@
         "documentation": {}
     },
     {
+        "label": "sounddevice",
+        "kind": 6,
+        "isExtraImport": true,
+        "importPath": "sounddevice",
+        "description": "sounddevice",
+        "detail": "sounddevice",
+        "documentation": {}
+    },
+    {
+        "label": "TTS",
+        "importPath": "TTS.api",
+        "description": "TTS.api",
+        "isExtraImport": true,
+        "detail": "TTS.api",
+        "documentation": {}
+    },
+    {
         "label": "walk_dir",
         "kind": 2,
         "importPath": ".venv.Scripts.find-corrupt-whisper-files",
@@ -12888,6 +12905,33 @@
         "description": "SERVER.main",
         "peekOfCode": "def main():\n    \"\"\"\n    Start and manage Gradio and FastAPI servers in separate processes with robust lifecycle and shutdown handling.\n    This function initializes multiprocessing with the 'spawn' method for cross-platform compatibility, launches the Gradio and FastAPI servers in independent processes, and monitors their status. It registers signal handlers to ensure both servers are terminated gracefully on SIGINT or SIGTERM, and handles unexpected process exits or exceptions by shutting down both servers before exiting.\n    \"\"\"\n    # Call setup_logging here for the main process\n    setup_logging()\n    logger = get_logger()\n    # Use 'spawn' for Windows safety and cross-platform compatibility\n    multiprocessing.set_start_method(\"spawn\", force=True)  # Must be called only once",
         "detail": "SERVER.main",
+        "documentation": {}
+    },
+    {
+        "label": "initialize_tts",
+        "kind": 2,
+        "importPath": "voice_assistant.tts_service",
+        "description": "voice_assistant.tts_service",
+        "peekOfCode": "def initialize_tts():\n    global tts_instance\n    print(f\"TTS Service: Initializing with configured device: {TTS_DEVICE}\") # Added logging\n    # TTS_MODEL_NAME is loaded from .env (set during setup_tts) or defaults from config.py\n    if not TTS_MODEL_NAME:\n        print(\"Error: TTS model identifier is not configured. Cannot initialize TTS.\")\n        raise RuntimeError(\"TTS model not configured.\")\n    try:\n        # --- Add this block to handle PyTorch 2.6+ weights_only=True issue for XTTS ---\n        # torch is already imported at the top of this file",
+        "detail": "voice_assistant.tts_service",
+        "documentation": {}
+    },
+    {
+        "label": "text_to_speech",
+        "kind": 2,
+        "importPath": "voice_assistant.tts_service",
+        "description": "voice_assistant.tts_service",
+        "peekOfCode": "def text_to_speech(text: str): # Sync version\n    if tts_instance is None:\n        raise RuntimeError(\"TTS not initialized\")\n    # Replicate XTTS logic for sync version (simplified, assumes tts_instance is already XTTS if configured)\n    tts_call_kwargs = {\"text\": text, \"speed\": TTS_SPEED_RATE}\n    if \"xtts\" in TTS_MODEL_NAME.lower(): # Use configured model name\n        tts_call_kwargs[\"language\"] = \"en\"\n        if os.path.exists(DEFAULT_SPEAKER_WAV_PATH_TTS_SERVICE): # Check speaker wav\n            tts_call_kwargs[\"speaker_wav\"] = DEFAULT_SPEAKER_WAV_PATH_TTS_SERVICE\n    audio = tts_instance.tts(**tts_call_kwargs)",
+        "detail": "voice_assistant.tts_service",
+        "documentation": {}
+    },
+    {
+        "label": "tts_instance",
+        "kind": 5,
+        "importPath": "voice_assistant.tts_service",
+        "description": "voice_assistant.tts_service",
+        "peekOfCode": "tts_instance = None\ndef initialize_tts():\n    global tts_instance\n    print(f\"TTS Service: Initializing with configured device: {TTS_DEVICE}\") # Added logging\n    # TTS_MODEL_NAME is loaded from .env (set during setup_tts) or defaults from config.py\n    if not TTS_MODEL_NAME:\n        print(\"Error: TTS model identifier is not configured. Cannot initialize TTS.\")\n        raise RuntimeError(\"TTS model not configured.\")\n    try:\n        # --- Add this block to handle PyTorch 2.6+ weights_only=True issue for XTTS ---",
+        "detail": "voice_assistant.tts_service",
         "documentation": {}
     }
 ]

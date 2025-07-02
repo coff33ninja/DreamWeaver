@@ -324,21 +324,90 @@ class TTSManager:
         return services
 
     @staticmethod
-    def get_available_models(service_name: str):  # This is mostly for UI hints
+    def discover_models():
         """
-        Return a list of available model identifiers or descriptors for the specified TTS service.
-
-        Parameters:
-            service_name (str): The name of the TTS service ("gtts" or "xttsv2").
-
+        Scan the TTS models directory for available models for all supported backends.
         Returns:
-            list: A list of model identifiers or UI hints relevant to the service, or an empty list if unsupported.
+            dict: {service_name: [model_names]}
+        """
+        models = {}
+        if os.path.exists(TTS_MODELS_PATH):
+            for service in os.listdir(TTS_MODELS_PATH):
+                service_path = os.path.join(TTS_MODELS_PATH, service)
+                if os.path.isdir(service_path):
+                    models[service] = []
+                    for model in os.listdir(service_path):
+                        model_path = os.path.join(service_path, model)
+                        if os.path.isdir(model_path) or model.endswith(('.pth', '.onnx', '.bin')):
+                            models[service].append(model)
+        # Always include default XTTSv2 if CoquiTTS is available
+        if CoquiTTS:
+            models.setdefault('xttsv2', []).append('tts_models/multilingual/multi-dataset/xtts_v2')
+        return models
+
+    @staticmethod
+    def get_available_models(service_name: str):
+        """
+        Return a list of available model identifiers for the specified TTS service.
+        Parameters:
+            service_name (str): The name of the TTS service (e.g., "gtts", "xttsv2", "piper").
+        Returns:
+            list: List of model identifiers or UI hints relevant to the service.
         """
         if service_name == "gtts":
             return ["N/A (uses language codes)"]
-        if service_name == "xttsv2":
-            return ["tts_models/multilingual/multi-dataset/xtts_v2"]
-        return []
+        discovered = TTSManager.discover_models().get(service_name, [])
+        # Always include default XTTSv2 if CoquiTTS is available
+        if service_name == "xttsv2" and CoquiTTS:
+            if "tts_models/multilingual/multi-dataset/xtts_v2" not in discovered:
+                discovered.append("tts_models/multilingual/multi-dataset/xtts_v2")
+        return discovered
+
+    @staticmethod
+    def get_available_voices(service_name: str, model_name: str = None):
+        """
+        Return a list of available voices/speakers for a given service/model.
+        Parameters:
+            service_name (str): The TTS backend name.
+            model_name (str): The model identifier (if required by backend).
+        Returns:
+            list: List of available voices/speakers, or an empty list if not supported.
+        """
+        voices = []
+        if service_name == "gtts":
+            # gTTS supports language codes as "voices"
+            try:
+                import gtts.lang
+                voices = list(gtts.lang.tts_langs().keys())
+            except Exception:
+                voices = ["en"]
+        elif service_name == "xttsv2" and CoquiTTS:
+            try:
+                tts = CoquiTTS(model_name=model_name or "tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False)
+                if hasattr(tts, "speakers") and tts.speakers:
+                    voices = list(tts.speakers)
+                elif hasattr(tts, "languages") and tts.languages:
+                    voices = list(tts.languages)
+            except Exception:
+                voices = []
+        # Future: add Piper or other TTS backends here
+        return voices
+
+    @staticmethod
+    def get_default_model(service_name: str):
+        """
+        Return the default model for a given service, for UI selection.
+        """
+        models = TTSManager.get_available_models(service_name)
+        return models[0] if models else None
+
+    @staticmethod
+    def get_default_voice(service_name: str, model_name: str = None):
+        """
+        Return the default voice for a given service/model, for UI selection.
+        """
+        voices = TTSManager.get_available_voices(service_name, model_name)
+        return voices[0] if voices else None
 
 
 if __name__ == "__main__":
