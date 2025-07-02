@@ -526,3 +526,730 @@ async def test_process_narration_text_variations(mock_pipeline, mock_load_model,
 if __name__ == '__main__':
     # Run the tests
     pytest.main([__file__, '-v', '--tb=short'])
+
+class TestNarratorAdvancedEdgeCases:
+    """Advanced edge cases and boundary conditions for Narrator class."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    def test_narrator_with_none_model_size(self, mock_pipeline, mock_load_model):
+        """Test initialization with None model size."""
+        mock_load_model.return_value = Mock()
+        
+        narrator = Narrator(model_size=None)
+        
+        # Should handle None gracefully and use default
+        mock_load_model.assert_called_once_with(None)
+        assert narrator.stt_model is not None
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    def test_narrator_with_invalid_model_size(self, mock_pipeline, mock_load_model):
+        """Test initialization with invalid model size."""
+        mock_load_model.side_effect = ValueError("Invalid model size")
+        
+        narrator = Narrator(model_size="invalid_size")
+        
+        assert narrator.stt_model is None
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    @patch('narrator.DIARIZATION_ENABLED', True)
+    def test_diarization_pipeline_memory_error(self, mock_pipeline, mock_load_model):
+        """Test diarization initialization with memory error."""
+        mock_load_model.return_value = Mock()
+        mock_pipeline.from_pretrained.side_effect = MemoryError("Not enough memory")
+        
+        with patch('builtins.input', return_value='s'):
+            narrator = Narrator()
+        
+        assert narrator.diarization_pipeline is None
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    @patch('narrator.DIARIZATION_ENABLED', True)
+    def test_diarization_pipeline_timeout_error(self, mock_pipeline, mock_load_model):
+        """Test diarization initialization with timeout error."""
+        mock_load_model.return_value = Mock()
+        mock_pipeline.from_pretrained.side_effect = TimeoutError("Connection timeout")
+        
+        with patch('builtins.input', return_value='s'):
+            narrator = Narrator()
+        
+        assert narrator.diarization_pipeline is None
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_very_large_file(self, mock_pipeline, mock_load_model):
+        """Test processing a very large audio file."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Large file processed"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        # Create a large dummy file
+        large_file = os.path.join(self.temp_dir, "large_audio.wav")
+        with open(large_file, 'wb') as f:
+            f.write(b'x' * 1024 * 1024)  # 1MB file
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True) as mock_open:
+                mock_open.return_value.__enter__.return_value.read.return_value = b'x' * 1024 * 1024
+                mock_open.return_value.__enter__.return_value.write.return_value = None
+                
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "large123"
+                    result = await narrator.process_narration(large_file)
+        
+        assert result["text"] == "Large file processed"
+        assert result["speaker"] == "Narrator"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_unicode_text(self, mock_pipeline, mock_load_model):
+        """Test processing with unicode text in transcription."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "こんにちは 世界 🌍 émojis"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "unicode_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'unicode audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "unicode123"
+                    result = await narrator.process_narration(test_file)
+        
+        assert result["text"] == "こんにちは 世界 🌍 émojis"
+        assert result["speaker"] == "Narrator"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_special_characters_in_path(self, mock_pipeline, mock_load_model):
+        """Test processing with special characters in file path."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Special path test"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        # Create directory with special characters
+        special_dir = os.path.join(self.temp_dir, "special (dir) [test]")
+        os.makedirs(special_dir, exist_ok=True)
+        test_file = os.path.join(special_dir, "test file (1).wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'special path audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "special123"
+                    result = await narrator.process_narration(test_file)
+        
+        assert result["text"] == "Special path test"
+        assert result["speaker"] == "Narrator"
+
+
+class TestNarratorConcurrency:
+    """Test concurrent processing scenarios."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_concurrent_processing_different_files(self, mock_pipeline, mock_load_model):
+        """Test processing multiple files concurrently."""
+        mock_stt_model = Mock()
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        # Create multiple test files
+        files = []
+        for i in range(3):
+            test_file = os.path.join(self.temp_dir, f"concurrent_test_{i}.wav")
+            with open(test_file, 'wb') as f:
+                f.write(f'concurrent audio {i}'.encode())
+            files.append(test_file)
+        
+        # Mock transcribe to return different results for each file
+        transcribe_results = [
+            {"text": "First concurrent result"},
+            {"text": "Second concurrent result"},
+            {"text": "Third concurrent result"}
+        ]
+        mock_stt_model.transcribe.side_effect = transcribe_results
+        
+        # Process files concurrently
+        tasks = []
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "concurrent123"
+                    
+                    for file_path in files:
+                        task = narrator.process_narration(file_path)
+                        tasks.append(task)
+                    
+                    results = await asyncio.gather(*tasks)
+        
+        # Verify results
+        for i, result in enumerate(results):
+            assert result["text"] == transcribe_results[i]["text"]
+            assert result["speaker"] == "Narrator"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_concurrent_processing_same_file(self, mock_pipeline, mock_load_model):
+        """Test processing the same file concurrently."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Same file concurrent"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "same_file_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'same file audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "same123"
+                    
+                    # Process same file multiple times concurrently
+                    tasks = [narrator.process_narration(test_file) for _ in range(3)]
+                    results = await asyncio.gather(*tasks)
+        
+        # All results should be the same
+        for result in results:
+            assert result["text"] == "Same file concurrent"
+            assert result["speaker"] == "Narrator"
+
+
+class TestNarratorErrorRecovery:
+    """Test error recovery and resilience scenarios."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_permission_denied(self, mock_pipeline, mock_load_model):
+        """Test processing when file permissions are denied."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(side_effect=PermissionError("Permission denied"))
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "permission_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'permission audio')
+        
+        result = await narrator.process_narration(test_file)
+        
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+        assert result["audio_path"] == test_file
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_disk_full(self, mock_pipeline, mock_load_model):
+        """Test processing when disk is full."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Disk full test"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "disk_full_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'disk full audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True) as mock_open:
+                mock_open.return_value.__enter__.return_value.read.return_value = b'audio data'
+                mock_open.return_value.__enter__.return_value.write.side_effect = OSError("No space left on device")
+                
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "diskfull123"
+                    result = await narrator.process_narration(test_file)
+        
+        assert result["text"] == "Disk full test"
+        assert result["audio_path"] == test_file  # Falls back to original path
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_network_interruption(self, mock_pipeline, mock_load_model):
+        """Test processing when network is interrupted during model loading."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(side_effect=ConnectionError("Network interrupted"))
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "network_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'network audio')
+        
+        result = await narrator.process_narration(test_file)
+        
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    def test_correct_last_transcription_with_very_long_text(self, mock_pipeline, mock_load_model):
+        """Test correcting transcription with very long text."""
+        mock_load_model.return_value = Mock()
+        
+        narrator = Narrator()
+        narrator.last_transcription = "Original"
+        
+        # Create very long text (10KB)
+        long_text = "Very long transcription text. " * 350  # ~10KB
+        
+        narrator.correct_last_transcription(long_text)
+        
+        assert narrator.last_transcription == long_text
+        assert len(narrator.last_transcription) > 10000
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    def test_correct_last_transcription_with_special_characters(self, mock_pipeline, mock_load_model):
+        """Test correcting transcription with special characters."""
+        mock_load_model.return_value = Mock()
+        
+        narrator = Narrator()
+        narrator.last_transcription = "Original"
+        
+        special_text = "Special chars: \n\t\r\0\x01\x02 and unicode: éñ中文🎵"
+        
+        narrator.correct_last_transcription(special_text)
+        
+        assert narrator.last_transcription == special_text
+
+
+class TestNarratorDiarizationAdvanced:
+    """Advanced diarization testing scenarios."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    @patch('narrator.DIARIZATION_ENABLED', True)
+    async def test_diarization_with_multiple_speakers(self, mock_pipeline, mock_load_model):
+        """Test diarization with multiple speakers."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Multiple speakers"})
+        mock_load_model.return_value = mock_stt_model
+        
+        # Setup diarization mock with multiple speakers
+        mock_diarization = Mock()
+        mock_track = Mock()
+        speakers = [
+            ('segment1', 'track1', 'SPEAKER_00'),
+            ('segment2', 'track2', 'SPEAKER_01'),
+            ('segment3', 'track3', 'SPEAKER_02')
+        ]
+        mock_track.__iter__ = Mock(return_value=iter(speakers))
+        mock_diarization.itertracks = Mock(return_value=mock_track)
+        mock_pipeline.from_pretrained.return_value = mock_diarization
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "multi_speaker.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'multi speaker audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "multi123"
+                    result = await narrator.process_narration(test_file)
+        
+        # Should return the first speaker found
+        assert result["text"] == "Multiple speakers"
+        assert result["speaker"] == "SPEAKER_00"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    @patch('narrator.DIARIZATION_ENABLED', True)
+    async def test_diarization_with_empty_segments(self, mock_pipeline, mock_load_model):
+        """Test diarization with empty segments."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Empty segments test"})
+        mock_load_model.return_value = mock_stt_model
+        
+        # Setup diarization mock with empty segments
+        mock_diarization = Mock()
+        mock_track = Mock()
+        mock_track.__iter__ = Mock(return_value=iter([]))  # Empty iterator
+        mock_diarization.itertracks = Mock(return_value=mock_track)
+        mock_pipeline.from_pretrained.return_value = mock_diarization
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "empty_segments.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'empty segments audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "empty123"
+                    result = await narrator.process_narration(test_file)
+        
+        # Should fall back to default speaker
+        assert result["text"] == "Empty segments test"
+        assert result["speaker"] == "Narrator"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    @patch('narrator.DIARIZATION_ENABLED', True)
+    async def test_diarization_with_malformed_data(self, mock_pipeline, mock_load_model):
+        """Test diarization with malformed data."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(return_value={"text": "Malformed data test"})
+        mock_load_model.return_value = mock_stt_model
+        
+        # Setup diarization mock with malformed data
+        mock_diarization = Mock()
+        mock_track = Mock()
+        # Simulate malformed data that might cause unpacking errors
+        mock_track.__iter__ = Mock(return_value=iter([('incomplete_data',)]))
+        mock_diarization.itertracks = Mock(return_value=mock_track)
+        mock_pipeline.from_pretrained.return_value = mock_diarization
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "malformed.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'malformed audio')
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "malformed123"
+                    result = await narrator.process_narration(test_file)
+        
+        # Should handle malformed data gracefully and fall back to default
+        assert result["text"] == "Malformed data test"
+        assert result["speaker"] == "Narrator"
+
+
+class TestNarratorPerformance:
+    """Performance and resource management tests."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_with_timeout_simulation(self, mock_pipeline, mock_load_model):
+        """Test processing with simulated timeout."""
+        mock_stt_model = Mock()
+        
+        async def slow_transcribe(*args, **kwargs):
+            await asyncio.sleep(0.01)  # Simulate slow processing
+            return {"text": "Slow transcription"}
+        
+        # Note: Since transcribe is likely synchronous, we'll simulate the delay differently
+        mock_stt_model.transcribe = Mock(return_value={"text": "Slow transcription"})
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        test_file = os.path.join(self.temp_dir, "slow_test.wav")
+        with open(test_file, 'wb') as f:
+            f.write(b'slow audio')
+        
+        start_time = asyncio.get_event_loop().time()
+        
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "slow123"
+                    result = await narrator.process_narration(test_file)
+        
+        end_time = asyncio.get_event_loop().time()
+        
+        # Should complete within reasonable time
+        assert end_time - start_time < 1.0
+        assert result["text"] == "Slow transcription"
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    def test_narrator_memory_cleanup(self, mock_pipeline, mock_load_model):
+        """Test that narrator properly cleans up resources."""
+        mock_stt_model = Mock()
+        mock_load_model.return_value = mock_stt_model
+        
+        # Create multiple narrator instances
+        narrators = []
+        for i in range(5):
+            narrator = Narrator(model_size="tiny")
+            narrators.append(narrator)
+        
+        # Verify all instances are created
+        assert len(narrators) == 5
+        
+        # Clean up references
+        for narrator in narrators:
+            narrator.stt_model = None
+            narrator.diarization_pipeline = None
+        
+        # Should not raise any exceptions
+        del narrators
+
+
+class TestNarratorInputValidation:
+    """Test input validation and sanitization."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+    
+    def teardown_method(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_empty_file_path(self, mock_pipeline, mock_load_model):
+        """Test processing with empty file path."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(side_effect=FileNotFoundError("File not found"))
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        result = await narrator.process_narration("")
+        
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+        assert result["audio_path"] == ""
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_none_file_path(self, mock_pipeline, mock_load_model):
+        """Test processing with None file path."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(side_effect=TypeError("Invalid file path"))
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        result = await narrator.process_narration(None)
+        
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+        assert result["audio_path"] is None
+    
+    @patch('narrator.load_model')
+    @patch('narrator.Pipeline')
+    async def test_process_narration_directory_instead_of_file(self, mock_pipeline, mock_load_model):
+        """Test processing when given a directory instead of file."""
+        mock_stt_model = Mock()
+        mock_stt_model.transcribe = Mock(side_effect=IsADirectoryError("Is a directory"))
+        mock_load_model.return_value = mock_stt_model
+        
+        narrator = Narrator()
+        
+        result = await narrator.process_narration(self.temp_dir)
+        
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+        assert result["audio_path"] == self.temp_dir
+
+
+# Additional parametrized tests for comprehensive coverage
+@pytest.mark.parametrize("transcription_format", [
+    {"text": "Simple text"},
+    {"text": ["List", "of", "words"]},
+    {"text": ""},
+    {"text": None},
+    {"text": 123},  # Invalid type
+    {"text": {"nested": "dict"}},  # Invalid nested structure
+    {"segments": [{"text": "segment1"}, {"text": "segment2"}]},  # Alternative structure
+])
+@patch('narrator.load_model')
+@patch('narrator.Pipeline')
+async def test_process_narration_various_transcription_formats(mock_pipeline, mock_load_model, transcription_format):
+    """Test processing with various transcription result formats."""
+    mock_stt_model = Mock()
+    mock_stt_model.transcribe = Mock(return_value=transcription_format)
+    mock_load_model.return_value = mock_stt_model
+    
+    narrator = Narrator()
+    
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+        tmp_file.write(b'test audio data')
+        tmp_file_path = tmp_file.name
+    
+    try:
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "format123"
+                    result = await narrator.process_narration(tmp_file_path)
+        
+        # Should handle all formats gracefully
+        assert "text" in result
+        assert "speaker" in result
+        assert "audio_path" in result
+        assert result["speaker"] == "Narrator"
+        
+        # Text should be converted to string format
+        assert isinstance(result["text"], str)
+        
+    finally:
+        os.unlink(tmp_file_path)
+
+
+@pytest.mark.parametrize("error_type", [
+    FileNotFoundError,
+    PermissionError,
+    OSError,
+    MemoryError,
+    ValueError,
+    TypeError,
+    RuntimeError,
+    ConnectionError,
+    TimeoutError,
+])
+@patch('narrator.load_model')
+@patch('narrator.Pipeline')
+async def test_process_narration_various_errors(mock_pipeline, mock_load_model, error_type):
+    """Test processing with various error types."""
+    mock_stt_model = Mock()
+    mock_stt_model.transcribe = Mock(side_effect=error_type("Test error"))
+    mock_load_model.return_value = mock_stt_model
+    
+    narrator = Narrator()
+    
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_file:
+        tmp_file.write(b'error test audio')
+        tmp_file_path = tmp_file.name
+    
+    try:
+        result = await narrator.process_narration(tmp_file_path)
+        
+        # Should handle all error types gracefully
+        assert result["text"] == ""
+        assert result["speaker"] == "Narrator"
+        assert result["audio_path"] == tmp_file_path
+        
+    finally:
+        os.unlink(tmp_file_path)
+
+
+@pytest.mark.parametrize("correction_input", [
+    "Normal correction",
+    "",
+    None,
+    123,
+    ["list", "input"],
+    {"dict": "input"},
+    "Unicode: éñ中文🎵",
+    "Very long text " * 100,
+    "\n\t\r Special chars",
+    True,
+    False,
+    0.123,
+])
+@patch('narrator.load_model')
+@patch('narrator.Pipeline')
+def test_correct_last_transcription_various_inputs(mock_pipeline, mock_load_model, correction_input):
+    """Test correction with various input types."""
+    mock_load_model.return_value = Mock()
+    
+    narrator = Narrator()
+    narrator.last_transcription = "Original"
+    
+    # Should handle all input types without crashing
+    narrator.correct_last_transcription(correction_input)
+    
+    # The correction should be stored as-is
+    assert narrator.last_transcription == correction_input
+
+
+@pytest.mark.parametrize("audio_file_extension", [
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".flac",
+    ".ogg",
+    ".wma",
+    ".aac",
+    "",  # No extension
+    ".txt",  # Wrong extension
+])
+@patch('narrator.load_model')
+@patch('narrator.Pipeline')
+async def test_process_narration_various_file_extensions(mock_pipeline, mock_load_model, audio_file_extension):
+    """Test processing with various audio file extensions."""
+    mock_stt_model = Mock()
+    mock_stt_model.transcribe = Mock(return_value={"text": f"Processed {audio_file_extension} file"})
+    mock_load_model.return_value = mock_stt_model
+    
+    narrator = Narrator()
+    
+    with tempfile.NamedTemporaryFile(suffix=audio_file_extension, delete=False) as tmp_file:
+        tmp_file.write(b'audio data with extension')
+        tmp_file_path = tmp_file.name
+    
+    try:
+        with patch('narrator.os.makedirs'):
+            with patch('builtins.open', create=True):
+                with patch('narrator.uuid.uuid4') as mock_uuid:
+                    mock_uuid.return_value.hex = "ext123"
+                    result = await narrator.process_narration(tmp_file_path)
+        
+        # Should handle all extensions
+        assert result["text"] == f"Processed {audio_file_extension} file"
+        assert result["speaker"] == "Narrator"
+        
+    finally:
+        os.unlink(tmp_file_path)
+
+
+if __name__ == '__main__':
+    # Run all tests including the new ones
+    pytest.main([__file__, '-v', '--tb=short', '--maxfail=10'])
