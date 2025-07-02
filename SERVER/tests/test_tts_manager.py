@@ -266,4 +266,107 @@ class TestTTSManagerBlockingSynthesis(unittest.TestCase):
             mock_gtts_instance.save.assert_called_once_with("/tmp/output.wav")
     
     def test_xttsv2_synthesize_blocking_with_speaker_wav(self):
-        """Test XTTSv2 blocking synthesis wit
+        """Test XTTSv2 blocking synthesis with speaker wav file."""
+        with patch('tts_manager.CoquiTTS') as mock_coqui:
+            mock_coqui_instance = Mock()
+            mock_coqui_instance.tts_to_file.return_value = None
+            mock_coqui.return_value = mock_coqui_instance
+            mock_coqui.__bool__ = Mock(return_value=True)
+            
+            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
+                with patch('tts_manager.torch') as mock_torch:
+                    mock_torch.cuda.is_available.return_value = False
+                    manager = TTSManager(tts_service_name="xttsv2", model_name="test_model")
+                    
+                    manager._xttsv2_synthesize_blocking(
+                        "test text", 
+                        "/tmp/output.wav", 
+                        "en", 
+                        speaker_wav_for_synthesis="/path/to/speaker.wav"
+                    )
+                    
+                    mock_coqui_instance.tts_to_file.assert_called_once()
+    
+    def test_xttsv2_synthesize_blocking_without_speaker_wav(self):
+        """Test XTTSv2 blocking synthesis without speaker wav file."""
+        with patch('tts_manager.CoquiTTS') as mock_coqui:
+            mock_coqui_instance = Mock()
+            mock_coqui_instance.tts_to_file.return_value = None
+            mock_coqui.return_value = mock_coqui_instance
+            mock_coqui.__bool__ = Mock(return_value=True)
+            
+            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
+                with patch('tts_manager.torch') as mock_torch:
+                    mock_torch.cuda.is_available.return_value = False
+                    manager = TTSManager(tts_service_name="xttsv2", model_name="test_model")
+                    
+                    manager._xttsv2_synthesize_blocking("test text", "/tmp/output.wav", "en")
+                    
+                    mock_coqui_instance.tts_to_file.assert_called_once()
+
+    def test_xttsv2_synthesize_blocking_with_configured_speaker_wav(self):
+        """Test XTTSv2 blocking synthesis with configured speaker wav path."""
+        with patch('tts_manager.CoquiTTS') as mock_coqui:
+            mock_coqui_instance = Mock()
+            mock_coqui_instance.tts_to_file.return_value = None
+            mock_coqui.return_value = mock_coqui_instance
+            mock_coqui.__bool__ = Mock(return_value=True)
+            
+            with patch.object(TTSManager, '_get_or_download_model_blocking', return_value="test_model"):
+                with patch('tts_manager.torch') as mock_torch:
+                    mock_torch.cuda.is_available.return_value = False
+                    manager = TTSManager(
+                        tts_service_name="xttsv2", 
+                        model_name="test_model",
+                        speaker_wav_path="/configured/speaker.wav"
+                    )
+                    
+                    manager._xttsv2_synthesize_blocking("test text", "/tmp/output.wav", "en")
+                    
+                    # Should use configured speaker wav
+                    mock_coqui_instance.tts_to_file.assert_called_once_with(
+                        text="test text",
+                        file_path="/tmp/output.wav",
+                        speaker_wav="/configured/speaker.wav",
+                        language="en"
+                    )
+
+
+class TestTTSManagerEdgeCases(unittest.TestCase):
+    """Test edge cases and error conditions."""
+    
+    def test_synthesize_empty_text(self):
+        """Test synthesis with empty text."""
+        with patch('tts_manager.gtts') as mock_gtts:
+            mock_gtts.__bool__ = Mock(return_value=True)
+            manager = TTSManager(tts_service_name="gtts")
+            
+            async def run_test():
+                with patch('tts_manager.asyncio.to_thread') as mock_to_thread:
+                    mock_to_thread.return_value = None
+                    with patch('tts_manager.os.makedirs'):
+                        result = await manager.synthesize("", "/tmp/test.wav")
+                        self.assertTrue(result)
+                        mock_to_thread.assert_called_once()
+            
+            asyncio.run(run_test())
+    
+    def test_synthesize_whitespace_only_text(self):
+        """Test synthesis with whitespace-only text."""
+        with patch('tts_manager.gtts') as mock_gtts:
+            mock_gtts.__bool__ = Mock(return_value=True)
+            manager = TTSManager(tts_service_name="gtts")
+            
+            async def run_test():
+                with patch('tts_manager.asyncio.to_thread') as mock_to_thread:
+                    mock_to_thread.return_value = None
+                    with patch('tts_manager.os.makedirs'):
+                        result = await manager.synthesize("   \n\t   ", "/tmp/test.wav")
+                        self.assertTrue(result)
+            
+            asyncio.run(run_test())
+    
+    def test_synthesize_very_long_text(self):
+        """Test synthesis with very long text."""
+        long_text = "Hello world! " * 1000  # Very long text (13,000 characters)
+        with patch('tts_manager.gtts') as moc

