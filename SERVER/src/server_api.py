@@ -107,7 +107,8 @@ class HandshakeResponseSubmit(BaseModel):
 
 # --- API Endpoints ---
 
-# TODO: Update all existing endpoints to use the new ClientManager.authenticate_request method
+# TODO: Standardize all authentication to use ClientManager.authenticate_request_token (or validate_token for primary token endpoints)
+# Note: authenticate_request method does not exist; using authenticate_request_token as the standard for endpoints that accept either session or primary token.
 
 
 @app.get("/get_traits", summary="Fetch Character Traits")
