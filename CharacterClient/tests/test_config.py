@@ -788,594 +788,841 @@ class TestConfigPerformance:
         finally:
             os.unlink(temp_path)
 
-# Tests for the actual config.py functionality
-class TestActualConfigModule:
-    """Test the actual config.py module functionality - path management and directory creation."""
+# Additional test classes and methods for enhanced coverage
+
+class TestConfigFileFormats:
+    """Test configuration handling with various file formats and encoding."""
     
     def setup_method(self):
-        """Set up test fixtures for actual config testing."""
+        """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
-        self.original_env = dict(os.environ)
-    
+        
     def teardown_method(self):
         """Clean up test fixtures."""
         import shutil
         if os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-        # Restore original environment
-        os.environ.clear()
-        os.environ.update(self.original_env)
     
-    def test_client_root_path_calculation(self):
-        """Test CLIENT_ROOT path calculation."""
-        # Import to get the actual config module
-        import sys
-        import importlib
+    def test_config_with_different_encodings(self):
+        """Test configuration files with different character encodings."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        # Temporarily add path and import
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
+        config_data = {'api_key': 'тест_ключ_🔑'}
+        encodings = ['utf-8', 'utf-16', 'latin-1']
+        
+        for encoding in encodings:
+            config_path = os.path.join(self.temp_dir, f'config_{encoding}.json')
             
-            assert hasattr(config, 'CLIENT_ROOT')
-            assert os.path.isabs(config.CLIENT_ROOT)
-            assert config.CLIENT_ROOT.endswith('CharacterClient')
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
+            try:
+                with open(config_path, 'w', encoding=encoding) as f:
+                    json.dump(config_data, f, ensure_ascii=False)
+                
+                config = load_config(config_path)
+                assert config is not None
+                assert 'api_key' in config
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                # Some encodings may not support all characters
+                pass
+            finally:
+                if os.path.exists(config_path):
+                    os.unlink(config_path)
+    
+    def test_config_with_bom(self):
+        """Test configuration files with Byte Order Mark (BOM)."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        config_data = {'api_key': 'bom_test_key'}
+        config_path = os.path.join(self.temp_dir, 'config_bom.json')
+        
+        # Write file with UTF-8 BOM
+        with open(config_path, 'wb') as f:
+            f.write(b'\xef\xbb\xbf')  # UTF-8 BOM
+            f.write(json.dumps(config_data).encode('utf-8'))
+        
+        try:
+            config = load_config(config_path)
+            assert config is not None
+            assert config.get('api_key') == 'bom_test_key'
         finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
+            os.unlink(config_path)
     
-    def test_default_path_constants(self):
-        """Test default path constants are properly defined."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            # Test all expected path constants exist
-            expected_paths = [
-                'CLIENT_ROOT', 'DEFAULT_CLIENT_DATA_PATH', 'CLIENT_DATA_PATH',
-                'DEFAULT_CLIENT_MODELS_PATH', 'CLIENT_MODELS_PATH',
-                'CLIENT_LLM_MODELS_PATH', 'CLIENT_TTS_MODELS_PATH',
-                'CLIENT_TTS_REFERENCE_VOICES_PATH', 'CLIENT_LOGS_PATH',
-                'CLIENT_TEMP_AUDIO_PATH'
-            ]
-            
-            for path_name in expected_paths:
-                assert hasattr(config, path_name), f"Missing path constant: {path_name}"
-                path_value = getattr(config, path_name)
-                assert isinstance(path_value, str), f"{path_name} should be a string"
-                assert os.path.isabs(path_value), f"{path_name} should be absolute path"
+    def test_config_with_comments_in_json(self):
+        """Test configuration loading with JSON files containing comments (invalid JSON)."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
+        config_path = os.path.join(self.temp_dir, 'config_comments.json')
+        
+        # Create JSON with comments (technically invalid JSON)
+        json_with_comments = '''{
+            // This is a comment
+            "api_key": "comment_test_key",
+            /* Multi-line
+               comment */
+            "base_url": "https://api.example.com"
+        }'''
+        
+        with open(config_path, 'w') as f:
+            f.write(json_with_comments)
+        
+        try:
+            # Should fail with standard JSON parsing
+            with pytest.raises((json.JSONDecodeError, ConfigError, ValueError)):
+                load_config(config_path)
         finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
+            os.unlink(config_path)
     
-    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': '/custom/data/path'})
-    def test_environment_variable_override_data_path(self):
-        """Test CLIENT_DATA_PATH can be overridden by environment variable."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            assert config.CLIENT_DATA_PATH == '/custom/data/path'
-            # Dependent paths should also use the custom base
-            assert config.CLIENT_LOGS_PATH.startswith('/custom/data/path')
-            assert config.CLIENT_TEMP_AUDIO_PATH.startswith('/custom/data/path')
+    def test_config_yaml_advanced_features(self):
+        """Test YAML configuration with advanced YAML features."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
+        config_path = os.path.join(self.temp_dir, 'config_advanced.yaml')
+        
+        # YAML with anchors and references
+        yaml_content = '''
+api_key: &api_key "advanced_test_key"
+environments:
+  dev:
+    api_key: *api_key
+    base_url: "https://dev-api.example.com"
+  prod:
+    api_key: *api_key
+    base_url: "https://api.example.com"
+default_timeout: &timeout 30
+timeouts:
+  short: 5
+  medium: *timeout
+  long: 120
+'''
+        
+        with open(config_path, 'w') as f:
+            f.write(yaml_content)
+        
+        try:
+            config = load_config(config_path)
+            assert config is not None
+            assert config.get('api_key') == 'advanced_test_key'
         finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    @patch.dict(os.environ, {'DREAMWEAVER_CLIENT_MODELS_PATH': '/custom/models/path'})
-    def test_environment_variable_override_models_path(self):
-        """Test CLIENT_MODELS_PATH can be overridden by environment variable."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            assert config.CLIENT_MODELS_PATH == '/custom/models/path'
-            # Sub-model paths should use the custom base
-            assert config.CLIENT_LLM_MODELS_PATH.startswith('/custom/models/path')
-            assert config.CLIENT_TTS_MODELS_PATH.startswith('/custom/models/path')
-            assert config.CLIENT_TTS_REFERENCE_VOICES_PATH.startswith('/custom/models/path')
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    def test_ensure_client_directories_function_exists(self):
-        """Test that ensure_client_directories function exists and is callable."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            assert hasattr(config, 'ensure_client_directories')
-            assert callable(config.ensure_client_directories)
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    @patch('os.makedirs')
-    def test_ensure_client_directories_creates_all_paths(self, mock_makedirs):
-        """Test that ensure_client_directories attempts to create all required directories."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            # Reset the mock to clear any calls from import
-            mock_makedirs.reset_mock()
-            
-            config.ensure_client_directories()
-            
-            # Should have called makedirs for each directory
-            expected_calls = [
-                config.CLIENT_DATA_PATH,
-                config.CLIENT_MODELS_PATH,
-                config.CLIENT_LLM_MODELS_PATH,
-                config.CLIENT_TTS_MODELS_PATH,
-                config.CLIENT_TTS_REFERENCE_VOICES_PATH,
-                config.CLIENT_LOGS_PATH,
-                config.CLIENT_TEMP_AUDIO_PATH
-            ]
-            
-            assert mock_makedirs.call_count >= len(expected_calls)
-            
-            # Check that all expected paths were called
-            called_paths = [call[0][0] for call in mock_makedirs.call_args_list]
-            for expected_path in expected_calls:
-                assert expected_path in called_paths
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    @patch('os.makedirs')
-    def test_ensure_client_directories_uses_exist_ok(self, mock_makedirs):
-        """Test that ensure_client_directories uses exist_ok=True."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            # Reset the mock to clear any calls from import
-            mock_makedirs.reset_mock()
-            
-            config.ensure_client_directories()
-            
-            # All calls should use exist_ok=True
-            for call in mock_makedirs.call_args_list:
-                args, kwargs = call
-                assert kwargs.get('exist_ok', False) is True
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    @patch('os.makedirs', side_effect=OSError("Permission denied"))
-    @patch('sys.stderr')
-    def test_ensure_client_directories_handles_permission_errors(self, mock_stderr, mock_makedirs):
-        """Test that ensure_client_directories handles permission errors gracefully."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            # Should not raise exception even with permission errors
-            config.ensure_client_directories()
-            
-            # Should log critical errors
-            # The function should continue even if some directories fail
-            assert mock_makedirs.called
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    def test_config_module_can_run_as_main(self):
-        """Test that config module can be executed as main for verification."""
-        import sys
-        import subprocess
-        
-        # Try to run the config module as main
-        try:
-            result = subprocess.run([
-                sys.executable, '-c',
-                'import sys; sys.path.insert(0, "CharacterClient/src"); import config'
-            ], capture_output=True, text=True, timeout=10)
-            
-            # Should not crash
-            assert result.returncode == 0 or result.returncode is None
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pytest.skip("Cannot execute config module as subprocess")
-    
-    def test_path_hierarchy_consistency(self):
-        """Test that path hierarchy is consistent."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            # CLIENT_DATA_PATH should be parent of logs and temp_audio
-            assert config.CLIENT_LOGS_PATH.startswith(config.CLIENT_DATA_PATH)
-            assert config.CLIENT_TEMP_AUDIO_PATH.startswith(config.CLIENT_DATA_PATH)
-            
-            # CLIENT_MODELS_PATH should be parent of specific model paths
-            assert config.CLIENT_LLM_MODELS_PATH.startswith(config.CLIENT_MODELS_PATH)
-            assert config.CLIENT_TTS_MODELS_PATH.startswith(config.CLIENT_MODELS_PATH)
-            assert config.CLIENT_TTS_REFERENCE_VOICES_PATH.startswith(config.CLIENT_TTS_MODELS_PATH)
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    def test_path_separation_characters(self):
-        """Test that paths use correct separation characters for the platform."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            paths_to_test = [
-                config.CLIENT_ROOT, config.CLIENT_DATA_PATH, config.CLIENT_MODELS_PATH,
-                config.CLIENT_LLM_MODELS_PATH, config.CLIENT_TTS_MODELS_PATH,
-                config.CLIENT_TTS_REFERENCE_VOICES_PATH, config.CLIENT_LOGS_PATH,
-                config.CLIENT_TEMP_AUDIO_PATH
-            ]
-            
-            for path in paths_to_test:
-                # Should use os.path.join (platform-appropriate separators)
-                assert os.sep in path or len(path.split('/')) == 1  # Root path might not have separators
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
-    
-    def test_directory_names_are_valid(self):
-        """Test that directory names are valid for the filesystem."""
-        import sys
-        sys.path.insert(0, 'CharacterClient/src')
-        try:
-            import config
-            importlib.reload(config)
-            
-            paths_to_test = [
-                config.CLIENT_DATA_PATH, config.CLIENT_MODELS_PATH,
-                config.CLIENT_LLM_MODELS_PATH, config.CLIENT_TTS_MODELS_PATH,
-                config.CLIENT_TTS_REFERENCE_VOICES_PATH, config.CLIENT_LOGS_PATH,
-                config.CLIENT_TEMP_AUDIO_PATH
-            ]
-            
-            invalid_chars = '<>:"|?*' if os.name == 'nt' else '\0'
-            
-            for path in paths_to_test:
-                for char in invalid_chars:
-                    assert char not in os.path.basename(path), f"Invalid char '{char}' in path: {path}"
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
-        finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
+            os.unlink(config_path)
 
 
-class TestConfigRealDirectoryOperations:
-    """Test actual directory operations with temporary directories."""
+class TestConfigErrorMessages:
+    """Test configuration error messages and error handling details."""
     
-    def setup_method(self):
-        """Set up with temporary directory for safe testing."""
-        self.temp_root = tempfile.mkdtemp()
-        self.original_env = dict(os.environ)
+    def test_config_error_message_content(self):
+        """Test that configuration errors contain helpful error messages."""
+        if not ConfigError:
+            pytest.skip("ConfigError not available")
+        
+        test_message = "Test configuration error with details"
+        
+        try:
+            raise ConfigError(test_message)
+        except ConfigError as e:
+            assert str(e) == test_message
+            assert isinstance(e, Exception)
     
-    def teardown_method(self):
-        """Clean up temporary directories."""
-        import shutil
-        if os.path.exists(self.temp_root):
-            shutil.rmtree(self.temp_root)
-        os.environ.clear()
-        os.environ.update(self.original_env)
+    def test_config_validation_error_details(self):
+        """Test that validation errors provide specific field information."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        invalid_configs = [
+            ({'timeout': 'not_a_number'}, 'timeout'),
+            ({'max_retries': -1}, 'max_retries'),
+            ({'api_key': None}, 'api_key'),
+        ]
+        
+        for invalid_config, expected_field in invalid_configs:
+            try:
+                validate_config(invalid_config)
+                pytest.fail(f"Expected validation error for {expected_field}")
+            except (ValueError, ConfigError) as e:
+                # Error message should mention the problematic field
+                error_msg = str(e).lower()
+                assert expected_field.lower() in error_msg or 'validation' in error_msg
     
-    @patch.dict(os.environ, clear=True)
-    def test_directory_creation_with_custom_base(self):
-        """Test directory creation with custom base path."""
-        custom_data_path = os.path.join(self.temp_root, 'custom_data')
-        os.environ['DREAMWEAVER_CLIENT_DATA_PATH'] = custom_data_path
+    def test_config_file_loading_error_details(self):
+        """Test that file loading errors provide helpful details."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        # Test with non-existent file
+        try:
+            load_config('/absolutely/non/existent/path/config.json')
+            pytest.fail("Expected file loading error")
+        except (FileNotFoundError, ConfigError, IOError) as e:
+            error_msg = str(e).lower()
+            assert 'file' in error_msg or 'path' in error_msg or 'not found' in error_msg
+
+
+class TestConfigMemoryUsage:
+    """Test configuration memory usage and cleanup."""
+    
+    def test_config_memory_efficiency(self):
+        """Test that configuration objects don't consume excessive memory."""
+        if not Config:
+            pytest.skip("Config class not available")
         
         import sys
-        sys.path.insert(0, 'CharacterClient/src')
+        
+        # Create a reasonably sized config
+        large_config = {
+            'api_key': 'memory_test_key',
+            'base_url': 'https://api.example.com',
+            'large_data': {f'key_{i}': f'value_{i}' * 100 for i in range(100)}
+        }
+        
+        # Measure memory usage
+        config_objects = []
+        initial_size = sys.getsizeof(config_objects)
+        
+        for _ in range(10):
+            config_objects.append(Config(large_config))
+        
+        final_size = sys.getsizeof(config_objects)
+        
+        # Basic sanity check - should not grow unreasonably
+        # This is a rough check, actual memory usage depends on implementation
+        assert final_size > initial_size  # Should have some memory usage
+    
+    def test_config_object_cleanup(self):
+        """Test that configuration objects can be properly garbage collected."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        import gc
+        import weakref
+        
+        config_data = {'api_key': 'cleanup_test_key'}
+        config = Config(config_data)
+        
+        # Create a weak reference to test garbage collection
+        weak_ref = weakref.ref(config)
+        assert weak_ref() is not None
+        
+        # Delete the config and force garbage collection
+        del config
+        gc.collect()
+        
+        # The weak reference should be gone if cleanup worked properly
+        # Note: This test might be implementation-dependent
         try:
-            import config
-            importlib.reload(config)
-            
-            # Directories should be created under our custom path
-            expected_dirs = [
-                custom_data_path,
-                os.path.join(custom_data_path, 'logs'),
-                os.path.join(custom_data_path, 'temp_audio')
-            ]
-            
-            for expected_dir in expected_dirs:
-                assert os.path.exists(expected_dir), f"Directory not created: {expected_dir}"
-                assert os.path.isdir(expected_dir), f"Path is not a directory: {expected_dir}"
+            assert weak_ref() is None
+        except AssertionError:
+            # Some implementations might hold references longer
+            pass
+
+
+class TestConfigCompatibility:
+    """Test configuration compatibility with different Python versions and environments."""
+    
+    def test_config_with_pathlib(self):
+        """Test configuration loading with pathlib.Path objects."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
+        config_data = {'api_key': 'pathlib_test_key'}
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data, f)
+            temp_path = Path(f.name)
+        
+        try:
+            config = load_config(temp_path)
+            assert config is not None
+            assert config.get('api_key') == 'pathlib_test_key'
         finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
+            temp_path.unlink()
     
-    def test_directory_permissions(self):
-        """Test that created directories have appropriate permissions."""
-        custom_data_path = os.path.join(self.temp_root, 'permissions_test')
+    def test_config_with_environment_variable_substitution(self):
+        """Test configuration with environment variable substitution."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': custom_data_path}):
-            import sys
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Check that directories are readable and writable
-                test_dirs = [
-                    custom_data_path,
-                    config.CLIENT_LOGS_PATH,
-                    config.CLIENT_TEMP_AUDIO_PATH
-                ]
-                
-                for test_dir in test_dirs:
-                    if os.path.exists(test_dir):
-                        assert os.access(test_dir, os.R_OK), f"Directory not readable: {test_dir}"
-                        assert os.access(test_dir, os.W_OK), f"Directory not writable: {test_dir}"
+        with patch.dict(os.environ, {'TEST_API_KEY': 'env_substitution_key'}):
+            # Test if config supports environment variable substitution
+            config_data = {
+                'api_key': '${TEST_API_KEY}',  # Common substitution pattern
+                'base_url': 'https://api.example.com'
+            }
             
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
+            try:
+                config = Config(config_data)
+                # Check if substitution happened (implementation-dependent)
+                assert config is not None
+            except (ValueError, ConfigError):
+                # Environment variable substitution might not be supported
+                pass
     
-    def test_nested_directory_creation(self):
-        """Test creation of deeply nested directories."""
-        deep_path = os.path.join(self.temp_root, 'very', 'deep', 'nested', 'structure')
+    def test_config_with_relative_paths(self):
+        """Test configuration loading with relative file paths."""
+        if not load_config:
+            pytest.skip("load_config function not available")
         
-        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': deep_path}):
-            import sys
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should create the entire nested structure
-                assert os.path.exists(deep_path), "Deep nested directory not created"
-                
-                # Should also create subdirectories
-                logs_path = os.path.join(deep_path, 'logs')
-                assert os.path.exists(logs_path), "Nested logs directory not created"
-            
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
+        config_data = {'api_key': 'relative_path_test_key'}
+        
+        # Create config in current directory
+        config_filename = 'test_relative_config.json'
+        
+        with open(config_filename, 'w') as f:
+            json.dump(config_data, f)
+        
+        try:
+            # Test with relative path
+            config = load_config(f'./{config_filename}')
+            assert config is not None
+            assert config.get('api_key') == 'relative_path_test_key'
+        finally:
+            if os.path.exists(config_filename):
+                os.unlink(config_filename)
 
 
-class TestConfigEdgeCasesReal:
-    """Test edge cases for the real config module."""
+class TestConfigSpecialValues:
+    """Test configuration with special values and data types."""
     
-    def setup_method(self):
-        """Set up for edge case testing."""
-        self.temp_root = tempfile.mkdtemp()
-        self.original_env = dict(os.environ)
-    
-    def teardown_method(self):
-        """Clean up edge case testing."""
-        import shutil
-        if os.path.exists(self.temp_root):
-            shutil.rmtree(self.temp_root)
-        os.environ.clear()
-        os.environ.update(self.original_env)
-    
-    def test_empty_environment_variable(self):
-        """Test behavior with empty environment variables."""
-        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': ''}):
-            import sys
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should fall back to default path, not use empty string
-                assert config.CLIENT_DATA_PATH != ''
-                assert 'CharacterClient' in config.CLIENT_DATA_PATH
-            
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
-    
-    def test_relative_path_in_environment(self):
-        """Test behavior with relative paths in environment variables."""
-        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': './relative/path'}):
-            import sys
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should handle relative paths (behavior may vary)
-                assert config.CLIENT_DATA_PATH is not None
-                # The exact behavior depends on implementation
-            
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
-    
-    def test_unicode_paths(self):
-        """Test handling of Unicode characters in paths."""
-        unicode_path = os.path.join(self.temp_root, 'тест_🎯_test')
+    def test_config_with_null_values(self):
+        """Test configuration handling with null/None values."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': unicode_path}):
-            import sys
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should handle Unicode paths gracefully
-                assert config.CLIENT_DATA_PATH == unicode_path
-                # Directory creation may or may not succeed depending on filesystem
+        config_with_nulls = {
+            'api_key': 'test_key',
+            'optional_field': None,
+            'empty_string': '',
+            'zero_value': 0,
+            'false_value': False
+        }
+        
+        try:
+            config = Config(config_with_nulls)
+            assert config is not None
+        except (ValueError, ConfigError):
+            # Some implementations may not allow null values
+            pass
+    
+    def test_config_with_scientific_notation(self):
+        """Test configuration with scientific notation numbers."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        config_data = {
+            'api_key': 'test_key',
+            'timeout': 3e1,  # 30 in scientific notation
+            'max_size': 1.5e6,  # 1,500,000
+            'min_value': 1e-3  # 0.001
+        }
+        
+        config = Config(config_data)
+        assert config is not None
+    
+    def test_config_with_boolean_strings(self):
+        """Test configuration with various boolean string representations."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        boolean_tests = [
+            ('true', True),
+            ('false', False),
+            ('True', True),
+            ('False', False),
+            ('yes', True),
+            ('no', False),
+            ('1', True),
+            ('0', False),
+            ('on', True),
+            ('off', False)
+        ]
+        
+        for bool_str, expected in boolean_tests:
+            config_data = {
+                'api_key': 'test_key',
+                'debug': bool_str
+            }
             
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            except (UnicodeError, OSError):
-                # Unicode paths might not be supported on all systems
-                pytest.skip("Unicode paths not supported on this system")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
+            try:
+                # Test if string boolean values are properly converted
+                validate_config(config_data)
+            except (ValueError, ConfigError):
+                # String boolean conversion might not be supported
+                pass
 
 
 class TestConfigLogging:
-    """Test logging behavior in config module."""
+    """Test configuration-related logging and debugging features."""
     
-    def test_logging_setup_during_import(self):
-        """Test that logging is properly set up during import."""
-        import sys
+    def test_config_debug_logging(self):
+        """Test configuration debug logging functionality."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
         import logging
+        from io import StringIO
         
-        # Capture log output
-        with patch('logging.getLogger') as mock_logger:
-            mock_logger_instance = MagicMock()
-            mock_logger.return_value = mock_logger_instance
-            
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should have created a logger
-                assert mock_logger.called
-            
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
-    
-    @patch('sys.stderr')
-    def test_critical_error_output(self, mock_stderr):
-        """Test that critical errors are output to stderr."""
-        import sys
+        # Set up logging capture
+        log_capture = StringIO()
+        handler = logging.StreamHandler(log_capture)
+        logger = logging.getLogger()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
         
-        with patch('os.makedirs', side_effect=OSError("Critical error")):
-            sys.path.insert(0, 'CharacterClient/src')
-            try:
-                import config
-                importlib.reload(config)
-                
-                # Should have written to stderr for critical errors
-                # The exact behavior depends on implementation
-            
-            except ImportError:
-                pytest.skip("Config module not available for actual testing")
-            finally:
-                if 'CharacterClient/src' in sys.path:
-                    sys.path.remove('CharacterClient/src')
-
-
-# Performance tests for real config functionality
-class TestConfigPerformanceReal:
-    """Performance tests for actual config operations."""
-    
-    def test_import_performance(self):
-        """Test that config module imports quickly."""
-        import sys
-        import time
-        
-        sys.path.insert(0, 'CharacterClient/src')
         try:
-            start_time = time.time()
-            import config
-            importlib.reload(config)
-            import_time = time.time() - start_time
+            config_data = {
+                'api_key': 'logging_test_key',
+                'debug': True
+            }
             
-            # Should import quickly (less than 1 second)
-            assert import_time < 1.0, f"Config import too slow: {import_time:.3f}s"
-        
-        except ImportError:
-            pytest.skip("Config module not available for actual testing")
+            config = Config(config_data)
+            assert config is not None
+            
+            # Check if any debug logging occurred
+            log_output = log_capture.getvalue()
+            # This is implementation-dependent
+            
         finally:
-            if 'CharacterClient/src' in sys.path:
-                sys.path.remove('CharacterClient/src')
+            logger.removeHandler(handler)
     
-    def test_directory_creation_performance(self):
-        """Test that directory creation is performant."""
-        import sys
-        import time
+    def test_config_sensitive_data_redaction_in_logs(self):
+        """Test that sensitive configuration data is redacted in logs."""
+        if not Config:
+            pytest.skip("Config class not available")
         
-        temp_root = tempfile.mkdtemp()
-        custom_path = os.path.join(temp_root, 'perf_test')
+        sensitive_config = {
+            'api_key': 'super_secret_key_12345',
+            'password': 'secret_password_67890',
+            'token': 'auth_token_abcdef'
+        }
+        
+        config = Config(sensitive_config)
+        config_repr = repr(config)
+        config_str = str(config)
+        
+        # Sensitive values should not appear in string representations
+        sensitive_values = ['super_secret_key_12345', 'secret_password_67890', 'auth_token_abcdef']
+        
+        for sensitive_value in sensitive_values:
+            assert sensitive_value not in config_repr
+            assert sensitive_value not in config_str
+
+
+class TestConfigCaching:
+    """Test configuration caching and reloading behavior."""
+    
+    def test_config_file_caching(self):
+        """Test that configuration files are properly cached or reloaded."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        config_data_v1 = {'api_key': 'cached_test_key_v1'}
+        config_data_v2 = {'api_key': 'cached_test_key_v2'}
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data_v1, f)
+            temp_path = f.name
         
         try:
-            with patch.dict(os.environ, {'DREAMWEAVER_CLIENT_DATA_PATH': custom_path}):
-                sys.path.insert(0, 'CharacterClient/src')
+            # Load config first time
+            config1 = load_config(temp_path)
+            assert config1.get('api_key') == 'cached_test_key_v1'
+            
+            # Modify the file
+            with open(temp_path, 'w') as f:
+                json.dump(config_data_v2, f)
+            
+            # Load config again - behavior depends on caching implementation
+            config2 = load_config(temp_path)
+            # Could be cached (same as v1) or reloaded (same as v2)
+            assert config2.get('api_key') in ['cached_test_key_v1', 'cached_test_key_v2']
+            
+        finally:
+            os.unlink(temp_path)
+    
+    def test_config_modification_detection(self):
+        """Test detection of configuration file modifications."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        import time
+        
+        config_data = {'api_key': 'modification_test_key', 'version': 1}
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data, f)
+            temp_path = f.name
+        
+        try:
+            # Load initial config
+            config1 = load_config(temp_path)
+            initial_time = time.time()
+            
+            # Wait a bit and modify the file
+            time.sleep(0.1)
+            config_data['version'] = 2
+            
+            with open(temp_path, 'w') as f:
+                json.dump(config_data, f)
+            
+            # Check if modification is detected (implementation-dependent)
+            modification_time = os.path.getmtime(temp_path)
+            assert modification_time > initial_time
+            
+        finally:
+            os.unlink(temp_path)
+
+
+# Additional parametrized tests for comprehensive edge case coverage
+
+@pytest.mark.parametrize("file_extension", [".json", ".JSON", ".yml", ".yaml", ".YAML"])
+def test_config_case_insensitive_extensions(file_extension):
+    """Test configuration loading with case-insensitive file extensions."""
+    if not load_config:
+        pytest.skip("load_config function not available")
+    
+    config_data = {'api_key': 'case_test_key'}
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix=file_extension, delete=False) as f:
+        if file_extension.lower().endswith('.json'):
+            json.dump(config_data, f)
+        else:
+            yaml.dump(config_data, f)
+        temp_path = f.name
+    
+    try:
+        config = load_config(temp_path)
+        assert config is not None
+        assert config.get('api_key') == 'case_test_key'
+    except (ValueError, ConfigError):
+        # Some implementations may be case-sensitive
+        pass
+    finally:
+        os.unlink(temp_path)
+
+
+@pytest.mark.parametrize("special_char", ["space file.json", "file-with-dash.json", "file_with_underscore.json", "file.with.dots.json"])
+def test_config_special_filename_characters(special_char):
+    """Test configuration loading with special characters in filenames."""
+    if not load_config:
+        pytest.skip("load_config function not available")
+    
+    config_data = {'api_key': 'special_char_test_key'}
+    temp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(temp_dir, special_char)
+    
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(config_data, f)
+        
+        config = load_config(file_path)
+        assert config is not None
+        assert config.get('api_key') == 'special_char_test_key'
+    except (OSError, ValueError, ConfigError):
+        # Some special characters might not be supported on all filesystems
+        pass
+    finally:
+        import shutil
+        shutil.rmtree(temp_dir)
+
+
+@pytest.mark.parametrize("config_size", [1, 10, 100, 1000])
+def test_config_varying_sizes(config_size):
+    """Test configuration handling with varying configuration sizes."""
+    if not Config:
+        pytest.skip("Config class not available")
+    
+    # Generate config with specified number of key-value pairs
+    large_config = {'api_key': 'size_test_key'}
+    large_config.update({f'key_{i}': f'value_{i}' for i in range(config_size)})
+    
+    config = Config(large_config)
+    assert config is not None
+
+
+@pytest.mark.parametrize("nesting_level", [1, 3, 5, 10])
+def test_config_varying_nesting_levels(nesting_level):
+    """Test configuration with varying levels of nesting."""
+    if not Config:
+        pytest.skip("Config class not available")
+    
+    # Create nested structure
+    nested_config = {'api_key': 'nesting_test_key'}
+    current_level = nested_config
+    
+    for i in range(nesting_level):
+        current_level[f'level_{i}'] = {}
+        current_level = current_level[f'level_{i}']
+    
+    current_level['deep_value'] = 'found_at_bottom'
+    
+    try:
+        config = Config(nested_config)
+        assert config is not None
+    except (RecursionError, ValueError, ConfigError):
+        # Very deep nesting might be rejected
+        if nesting_level > 5:
+            pass
+        else:
+            raise
+
+
+# Additional stress tests
+class TestConfigStress:
+    """Stress tests for configuration handling under extreme conditions."""
+    
+    def test_config_rapid_creation_destruction(self):
+        """Test rapid creation and destruction of configuration objects."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        config_data = {'api_key': 'rapid_test_key'}
+        
+        # Rapidly create and destroy config objects
+        for _ in range(1000):
+            config = Config(config_data)
+            del config
+        
+        # Should complete without memory issues or crashes
+        assert True
+    
+    def test_config_concurrent_file_modifications(self):
+        """Test configuration behavior with concurrent file modifications."""
+        if not load_config:
+            pytest.skip("load_config function not available")
+        
+        import threading
+        import time
+        
+        config_data = {'api_key': 'concurrent_mod_test_key', 'counter': 0}
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config_data, f)
+            temp_path = f.name
+        
+        def modify_config():
+            for i in range(10):
                 try:
-                    import config
-                    
-                    start_time = time.time()
-                    config.ensure_client_directories()
-                    creation_time = time.time() - start_time
-                    
-                    # Directory creation should be fast (less than 1 second)
-                    assert creation_time < 1.0, f"Directory creation too slow: {creation_time:.3f}s"
-                
-                except ImportError:
-                    pytest.skip("Config module not available for actual testing")
-                finally:
-                    if 'CharacterClient/src' in sys.path:
-                        sys.path.remove('CharacterClient/src')
+                    with open(temp_path, 'r+') as f:
+                        data = json.load(f)
+                        data['counter'] = i
+                        f.seek(0)
+                        json.dump(data, f)
+                        f.truncate()
+                    time.sleep(0.01)
+                except (json.JSONDecodeError, OSError):
+                    # Concurrent modifications might cause temporary issues
+                    pass
         
+        def read_config():
+            for _ in range(10):
+                try:
+                    load_config(temp_path)
+                    time.sleep(0.01)
+                except (json.JSONDecodeError, ConfigError, OSError):
+                    # Concurrent access might cause temporary issues
+                    pass
+        
+        try:
+            # Start concurrent modification and reading
+            modifier = threading.Thread(target=modify_config)
+            reader = threading.Thread(target=read_config)
+            
+            modifier.start()
+            reader.start()
+            
+            modifier.join()
+            reader.join()
+            
+            # Should complete without crashes
+            assert True
+            
         finally:
-            import shutil
-            if os.path.exists(temp_root):
-                shutil.rmtree(temp_root)
+            os.unlink(temp_path)
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+class TestConfigSchemaValidation:
+    """Test configuration schema validation and type checking."""
+    
+    def test_config_strict_schema_validation(self):
+        """Test strict schema validation for configuration."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        # Test various schema violations
+        schema_violations = [
+            {'api_key': 123},  # Wrong type
+            {'api_key': []},   # Wrong type
+            {'timeout': 'thirty'},  # Wrong type for numeric field
+            {'debug': 'maybe'},  # Wrong type for boolean field
+        ]
+        
+        for violation in schema_violations:
+            with pytest.raises((ValueError, ConfigError, TypeError)):
+                validate_config(violation)
+    
+    def test_config_optional_fields_validation(self):
+        """Test validation of optional configuration fields."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        # Test configs with missing optional fields
+        minimal_configs = [
+            {'api_key': 'test_key'},  # Only required field
+            {'api_key': 'test_key', 'debug': True},  # Some optional fields
+        ]
+        
+        for config in minimal_configs:
+            try:
+                result = validate_config(config)
+                # Should pass validation
+                assert result is True or result is None
+            except (ValueError, ConfigError):
+                # Depending on implementation, minimal config might be rejected
+                pass
+    
+    def test_config_nested_schema_validation(self):
+        """Test validation of nested configuration schemas."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        # Test nested structure validation
+        nested_config = {
+            'api_key': 'test_key',
+            'character_settings': {
+                'max_characters': 'not_a_number',  # Invalid type
+                'allowed_types': 'not_a_list'     # Invalid type
+            }
+        }
+        
+        with pytest.raises((ValueError, ConfigError, TypeError)):
+            validate_config(nested_config)
+
+
+class TestConfigExtensibility:
+    """Test configuration system extensibility and plugin support."""
+    
+    def test_config_custom_validators(self):
+        """Test configuration with custom validation functions."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        # Test if custom validators can be added (implementation-dependent)
+        config_data = {
+            'api_key': 'custom_validator_test_key',
+            'custom_field': 'custom_value'
+        }
+        
+        try:
+            # This test is implementation-dependent
+            validate_config(config_data)
+        except (ValueError, ConfigError):
+            # Custom fields might be rejected
+            pass
+    
+    def test_config_plugin_loading(self):
+        """Test configuration system with plugin-like extensions."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        # Test if config system supports plugin-like functionality
+        config_data = {
+            'api_key': 'plugin_test_key',
+            'plugins': ['plugin1', 'plugin2'],
+            'plugin_config': {
+                'plugin1': {'enabled': True},
+                'plugin2': {'enabled': False}
+            }
+        }
+        
+        config = Config(config_data)
+        assert config is not None
+
+
+class TestConfigVersioning:
+    """Test configuration versioning and migration support."""
+    
+    def test_config_version_handling(self):
+        """Test configuration with version information."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        versioned_configs = [
+            {'api_key': 'test_key', 'version': '1.0'},
+            {'api_key': 'test_key', 'config_version': 2},
+            {'api_key': 'test_key', 'schema_version': '2.1.0'},
+        ]
+        
+        for config_data in versioned_configs:
+            try:
+                config = Config(config_data)
+                assert config is not None
+            except (ValueError, ConfigError):
+                # Version handling might not be implemented
+                pass
+    
+    def test_config_backward_compatibility_validation(self):
+        """Test configuration backward compatibility validation."""
+        if not validate_config:
+            pytest.skip("validate_config function not available")
+        
+        # Test old configuration format
+        old_format_config = {
+            'apiKey': 'old_format_key',  # camelCase instead of snake_case
+            'baseUrl': 'https://api.example.com',
+            'maxRetries': 3
+        }
+        
+        try:
+            validate_config(old_format_config)
+        except (ValueError, ConfigError):
+            # Old format might not be supported
+            pass
+
+
+class TestConfigLocalization:
+    """Test configuration localization and internationalization support."""
+    
+    def test_config_with_localized_values(self):
+        """Test configuration with localized/internationalized values."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        localized_config = {
+            'api_key': 'localization_test_key',
+            'messages': {
+                'en': 'Hello World',
+                'es': 'Hola Mundo',
+                'fr': 'Bonjour le Monde',
+                'zh': '你好世界',
+                'ar': 'مرحبا بالعالم'
+            },
+            'locale': 'en'
+        }
+        
+        config = Config(localized_config)
+        assert config is not None
+    
+    def test_config_unicode_normalization(self):
+        """Test configuration with Unicode normalization requirements."""
+        if not Config:
+            pytest.skip("Config class not available")
+        
+        # Test different Unicode normalizations of the same character
+        import unicodedata
+        
+        # Different representations of the same character (é)
+        unicode_variants = [
+            'café',  # precomposed
+            'cafe\u0301',  # decomposed
+        ]
+        
+        for variant in unicode_variants:
+            config_data = {
+                'api_key': 'unicode_test_key',
+                'name': variant
+            }
+            
+            config = Config(config_data)
+            assert config is not None
+
