@@ -7,6 +7,8 @@ import time
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 import logging
+import hashlib
+from datetime import datetime, timezone, timedelta
 
 from .tts_manager import TTSManager # Now async
 from .llm_engine import LLMEngine  # Now async
@@ -45,6 +47,8 @@ class CharacterClient:
         self.tts = None
         self.llm = None
         self.local_reference_audio_path: Optional[str] = None
+        self.session_token: Optional[str] = None
+        self.session_token_expiry: Optional[datetime] = None
         # Initialization is now non-blocking. Use async_init() after construction.
         logger.info(f"CharacterClient instance created for Actor_ID: {self.Actor_id}. Call async_init() to complete setup.")
 
@@ -124,7 +128,93 @@ class CharacterClient:
         )
         llm_ready_status = self.llm.is_initialized if self.llm else False
         tts_ready_status = self.tts.is_initialized if self.tts else False
-        logger.info(f"CharacterClient for {self.Actor_id} asynchronous initialization complete. LLM Ready: {llm_ready_status}, TTS Ready: {tts_ready_status}.")
+        logger.info(f"CharacterClient for {self.Actor_id} base asynchronous initialization complete. LLM Ready: {llm_ready_status}, TTS Ready: {tts_ready_status}.")
+
+        if registered: # Only attempt handshake if registration was successful
+            await self._perform_handshake_async()
+
+
+    async def _perform_handshake_async(self):
+        """
+        Performs the handshake protocol with the server to obtain a session token.
+        """
+        logger.info(f"CharacterClient ({self.Actor_id}): Initiating handshake...")
+        try:
+            # Step 1: Request challenge
+            challenge_url = f"{self.server_url}/request_handshake_challenge"
+            # The server endpoint for challenge request is POST and expects Actor_id and token in body
+            challenge_payload = {"Actor_id": self.Actor_id, "token": self.token}
+
+            def _post_request_challenge():
+                return requests.post(challenge_url, json=challenge_payload, timeout=10)
+
+            response = await asyncio.to_thread(_post_request_challenge)
+            response.raise_for_status()
+            challenge_data = response.json()
+            challenge = challenge_data.get("challenge")
+
+            if not challenge:
+                logger.error(f"CharacterClient ({self.Actor_id}): Handshake failed - server did not return a challenge.")
+                return
+
+            logger.info(f"CharacterClient ({self.Actor_id}): Received challenge from server.")
+
+            # Step 2: Compute response and submit
+            message_to_hash = self.token + challenge
+            challenge_response_hash = hashlib.sha256(message_to_hash.encode('utf-8')).hexdigest()
+
+            submit_url = f"{self.server_url}/submit_handshake_response"
+            response_payload = {"Actor_id": self.Actor_id, "challenge_response": challenge_response_hash}
+
+            def _post_submit_response():
+                return requests.post(submit_url, json=response_payload, timeout=10)
+
+            response = await asyncio.to_thread(_post_submit_response)
+            response.raise_for_status()
+            session_data = response.json()
+
+            self.session_token = session_data.get("session_token")
+            expires_at_str = session_data.get("expires_at")
+
+            if self.session_token and expires_at_str:
+                self.session_token_expiry = datetime.fromisoformat(expires_at_str)
+                logger.info(f"CharacterClient ({self.Actor_id}): Handshake successful. Session token obtained, expires at {self.session_token_expiry.isoformat()}")
+            else:
+                logger.error(f"CharacterClient ({self.Actor_id}): Handshake failed - server did not return a valid session token or expiry. Response: {session_data}")
+                self.session_token = None
+                self.session_token_expiry = None
+
+        except requests.exceptions.HTTPError as e_http:
+            if e_http.response is not None:
+                logger.error(f"CharacterClient ({self.Actor_id}): Handshake HTTP error {e_http.response.status_code} - {e_http.response.text}", exc_info=True)
+            else:
+                logger.error(f"CharacterClient ({self.Actor_id}): Handshake HTTP error: {e_http}", exc_info=True)
+        except requests.exceptions.RequestException as e_req:
+            logger.error(f"CharacterClient ({self.Actor_id}): Handshake network error: {e_req}", exc_info=True)
+        except Exception as e:
+            logger.error(f"CharacterClient ({self.Actor_id}): Unexpected error during handshake: {e}", exc_info=True)
+
+        if not self.session_token:
+             logger.warning(f"CharacterClient ({self.Actor_id}): Handshake did not result in a session token. Will use primary token.")
+
+
+    def _get_active_token(self) -> str:
+        """
+        Returns the current active token: session token if valid and available, otherwise the primary token.
+        """
+        if self.session_token and self.session_token_expiry:
+            if datetime.now(timezone.utc) < self.session_token_expiry:
+                # logger.debug(f"CharacterClient ({self.Actor_id}): Using active session token.")
+                return self.session_token
+            else:
+                logger.warning(f"CharacterClient ({self.Actor_id}): Session token expired at {self.session_token_expiry}. Invalidating and falling back to primary token. Re-handshake may be needed.")
+                self.session_token = None
+                self.session_token_expiry = None
+                # TODO: Consider triggering re-handshake automatically here or on next API call failure.
+
+        # logger.debug(f"CharacterClient ({self.Actor_id}): Using primary token.")
+        return self.token
+
 
     # --- Blocking I/O methods for use during __init__ or when async context isn't readily available ---
     def _download_reference_audio_blocking(self):
@@ -155,8 +245,12 @@ class CharacterClient:
         self.local_reference_audio_path = os.path.join(CLIENT_TTS_REFERENCE_VOICES_PATH, f"{sane_Actor_id}_{sane_filename}")
 
         if os.path.exists(self.local_reference_audio_path) and os.path.getsize(self.local_reference_audio_path) > 0:
+            logger.debug(f"CharacterClient ({self.Actor_id}): Reference audio '{sane_filename}' already exists locally.")
             return
-        params = {"Actor_id": self.Actor_id, "token": self.token}
+
+        active_token = self._get_active_token()
+        params = {"Actor_id": self.Actor_id, "token": active_token}
+        logger.debug(f"CharacterClient ({self.Actor_id}): Downloading reference audio '{sane_filename}' using {'session' if active_token == self.session_token else 'primary'} token.")
         try:
             ref_audio_url = f"{self.server_url}/get_reference_audio/{sane_filename}"
             response = requests.get(ref_audio_url, params=params, stream=True, timeout=30)
@@ -184,11 +278,12 @@ class CharacterClient:
             dict | None: The character traits as a dictionary if the request succeeds, or None if an error occurs.
         """
         try:
-            logger.debug(f"CharacterClient ({self.Actor_id}): Fetching traits from {self.server_url}/get_traits")
-            response = requests.get(f"{self.server_url}/get_traits", params={"Actor_id": self.Actor_id, "token": self.token}, timeout=10)
+            active_token = self._get_active_token()
+            logger.debug(f"CharacterClient ({self.Actor_id}): Fetching traits from {self.server_url}/get_traits using {'session' if active_token == self.session_token else 'primary'} token.")
+            response = requests.get(f"{self.server_url}/get_traits", params={"Actor_id": self.Actor_id, "token": active_token}, timeout=10)
             response.raise_for_status()
             traits = response.json()
-            logger.info(f"CharacterClient ({self.Actor_id}): Successfully fetched traits: {str(traits)[:200]}...") # Log snippet of traits
+            logger.info(f"CharacterClient ({self.Actor_id}): Successfully fetched traits: {str(traits)[:200]}...")
             return traits
         except requests.exceptions.RequestException as e_req:
             logger.error(f"CharacterClient ({self.Actor_id}): HTTP Error fetching traits: {e_req}", exc_info=True)
@@ -258,8 +353,11 @@ class CharacterClient:
         Returns:
         	bool: True if the heartbeat was successfully sent, False if all retries failed.
         """
-        payload = {"Actor_id": self.Actor_id, "token": self.token}
+        active_token = self._get_active_token()
+        payload = {"Actor_id": self.Actor_id, "token": active_token}
         url = f"{self.server_url}/heartbeat"
+        # logger.debug(f"CharacterClient ({self.Actor_id}): Preparing heartbeat with {'session' if active_token == self.session_token else 'primary'} token.")
+
 
         def _blocking_heartbeat_call():
             """
@@ -336,9 +434,10 @@ class CharacterClient:
             logger.error(f"CharacterClient ({self.Actor_id}): Error during fine_tune_async: {e_tune}", exc_info=True)
 
         def _save_training_data_blocking():
-            logger.debug(f"CharacterClient ({self.Actor_id}): Saving training data to server...")
+            active_token = self._get_active_token()
+            logger.debug(f"CharacterClient ({self.Actor_id}): Saving training data to server using {'session' if active_token == self.session_token else 'primary'} token...")
             requests.post(f"{self.server_url}/save_training_data",
-                          json={"dataset": {"input": prompt, "output": text}, "Actor_id": self.Actor_id, "token": self.token},
+                          json={"dataset": {"input": prompt, "output": text}, "Actor_id": self.Actor_id, "token": active_token},
                           timeout=10)
             logger.debug(f"CharacterClient ({self.Actor_id}): Training data save request sent.")
         try:

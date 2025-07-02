@@ -10,7 +10,9 @@ from .client_manager import ClientManager
 from .dashboard import router as dashboard_router
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import secrets
+import hashlib
 
 logger = logging.getLogger("dreamweaver_server")
 
@@ -82,8 +84,19 @@ class HeartbeatRequest(BaseModel):
             }
         }
 
+class RequestChallengePayload(BaseModel): # Renamed for clarity
+    Actor_id: str
+    token: str # Primary token
+
+class HandshakeResponseSubmit(BaseModel):
+    Actor_id: str
+    challenge_response: str
+
 
 # --- API Endpoints ---
+
+# TODO: Update all existing endpoints to use the new ClientManager.authenticate_request method
+
 @app.get("/get_traits", summary="Fetch Character Traits")
 async def get_traits(
     Actor_id: str,
@@ -100,8 +113,8 @@ async def get_traits(
     Raises:
         HTTPException: If the token is invalid (401) or the character is not found (404).
     """
-    if not client_manager.validate_token(Actor_id, token): # validate_token needs to be in ClientManager
-        logger.warning(f"Invalid token for Actor_id: {Actor_id} in get_traits.")
+    if not client_manager.authenticate_request_token(Actor_id, token):
+        logger.warning(f"Authentication failed for Actor_id: {Actor_id} in get_traits.")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     character = db.get_character(Actor_id) # Assumes Actor_id is the primary key for characters
@@ -123,8 +136,8 @@ async def save_training_data(
     
     Validates the provided token for the given actor. If authentication succeeds, stores the supplied training dataset in the database. Returns a success message upon completion or raises an HTTP 500 error if saving fails.
     """
-    if not client_manager.validate_token(request_data.Actor_id, request_data.token):
-        logger.warning(f"Invalid token for Actor_id: {request_data.Actor_id} in save_training_data.")
+    if not client_manager.authenticate_request_token(request_data.Actor_id, request_data.token):
+        logger.warning(f"Authentication failed for Actor_id: {request_data.Actor_id} in save_training_data.")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     try:
@@ -153,9 +166,10 @@ async def register_client_endpoint( # Renamed to avoid conflict with db.register
         HTTPException: If the token is invalid (401) or registration fails due to a server error (500).
     """
     client_ip = http_request.client.host if http_request.client else "unknown"
+    # Registration should always use the primary token.
     if not client_manager.validate_token(request_data.Actor_id, request_data.token):
-        logger.warning(f"Invalid token for Actor_id: {request_data.Actor_id} during registration from IP: {client_ip}.")
-        raise HTTPException(status_code=401, detail="Invalid token for registration")
+        logger.warning(f"Invalid primary token for Actor_id: {request_data.Actor_id} during registration from IP: {client_ip}.")
+        raise HTTPException(status_code=401, detail="Invalid primary token for registration.")
 
     try:
         # Database method now handles inserting/updating client_port
@@ -179,9 +193,9 @@ async def client_heartbeat(
     Returns:
         dict: A message confirming receipt of the heartbeat and the updated status.
     """
-    if not client_manager.validate_token(request_data.Actor_id, request_data.token):
-        logger.warning(f"Invalid token for Actor_id: {request_data.Actor_id} in heartbeat.")
-        raise HTTPException(status_code=401, detail="Invalid token for heartbeat")
+    if not client_manager.authenticate_request_token(request_data.Actor_id, request_data.token):
+        logger.warning(f"Authentication failed for Actor_id: {request_data.Actor_id} in heartbeat.")
+        raise HTTPException(status_code=401, detail="Invalid or expired token for heartbeat")
 
     try:
         timestamp_utc_iso = datetime.now(timezone.utc).isoformat()
@@ -206,8 +220,8 @@ async def get_reference_audio(
     
     Clients must provide a valid `Actor_id` and `token` as query parameters. The function checks for path traversal attempts and ensures the requested file exists within the allowed audio directory. Returns the audio file as a WAV response if all checks pass.
     """
-    if not client_manager.validate_token(Actor_id, token):
-        logger.warning(f"Invalid token for Actor_id: {Actor_id} in get_reference_audio for file: {filename}.")
+    if not client_manager.authenticate_request_token(Actor_id, token):
+        logger.warning(f"Authentication failed for Actor_id: {Actor_id} in get_reference_audio for file: {filename}.")
         raise HTTPException(status_code=401, detail="Invalid or expired token for audio download")
 
     # Harden path sanitisation using os.path.basename
@@ -264,3 +278,86 @@ async def download_client_config(
         "Content-Disposition": f"attachment; filename=\"{filename}\""
     }
     return StreamingResponse(config_bytes, media_type="text/plain", headers=headers)
+
+
+# --- Handshake Endpoints ---
+
+@app.post("/request_handshake_challenge", summary="Request a challenge for session handshake")
+async def request_handshake_challenge(
+    payload: RequestChallengePayload,
+    db: Database = Depends(get_db),
+    client_manager: ClientManager = Depends(get_client_manager)
+):
+    """
+    Client provides its Actor_id and primary token in the request body.
+    Server validates primary token. If valid, generates and returns a challenge.
+    """
+    Actor_id = payload.Actor_id
+    client_primary_token = payload.token
+    logger.info(f"Handshake: Received challenge request from Actor_id: {Actor_id}")
+
+    # Validate primary token first
+    # Using ClientManager.validate_token as it's designed for primary token validation
+    if not client_manager.validate_token(Actor_id, client_primary_token):
+        logger.warning(f"Handshake: Invalid primary token for Actor_id: {Actor_id} during challenge request.")
+        raise HTTPException(status_code=401, detail="Invalid primary token for challenge request.")
+
+    challenge = client_manager.generate_handshake_challenge(Actor_id)
+    if not challenge:
+        logger.error(f"Handshake: Failed to generate challenge for Actor_id: {Actor_id}")
+        raise HTTPException(status_code=500, detail="Failed to generate handshake challenge.")
+
+    logger.info(f"Handshake: Issued challenge to Actor_id: {Actor_id}")
+    return {"challenge": challenge}
+
+
+@app.post("/submit_handshake_response", summary="Submit challenge response to get a session token")
+async def submit_handshake_response(
+    submit_data: HandshakeResponseSubmit,
+    db: Database = Depends(get_db),
+    client_manager: ClientManager = Depends(get_client_manager)
+):
+    """
+    Client submits its Actor_id and the computed challenge_response.
+    Server verifies the response and, if valid, issues a session token.
+    """
+    Actor_id = submit_data.Actor_id
+    client_challenge_response = submit_data.challenge_response
+    logger.info(f"Handshake: Received challenge response from Actor_id: {Actor_id}")
+
+    stored_challenge = client_manager.get_and_validate_challenge(Actor_id)
+    if not stored_challenge:
+        logger.warning(f"Handshake: No valid/unexpired challenge found for Actor_id: {Actor_id}. Response rejected.")
+        raise HTTPException(status_code=400, detail="Invalid or expired challenge.")
+
+    primary_token = db.get_primary_token(Actor_id)
+    if not primary_token:
+        # This should ideally not happen if challenge was issued based on a valid primary token
+        logger.error(f"Handshake: Primary token for Actor_id: {Actor_id} not found in DB during response verification. This is unexpected.")
+        client_manager.clear_challenge(Actor_id) # Clean up challenge
+        raise HTTPException(status_code=500, detail="Internal server error during handshake.")
+
+    import hashlib
+    expected_message = primary_token + stored_challenge
+    expected_response_hash = hashlib.sha256(expected_message.encode('utf-8')).hexdigest()
+
+    if expected_response_hash == client_challenge_response:
+        logger.info(f"Handshake: Challenge response verified for Actor_id: {Actor_id}.")
+        client_manager.clear_challenge(Actor_id) # Clear the used challenge
+
+        session_token = secrets.token_hex(32)
+        # Define session duration (e.g., 1 hour)
+        session_duration_hours = 1 # TODO: Make this configurable
+        session_expiry = datetime.now(timezone.utc) + timedelta(hours=session_duration_hours)
+
+        try:
+            db.update_client_session_token(Actor_id, session_token, session_expiry)
+            logger.info(f"Handshake: Issued session token for Actor_id: {Actor_id}, expires at {session_expiry.isoformat()}")
+            return {"session_token": session_token, "expires_at": session_expiry.isoformat()}
+        except Exception as e:
+            logger.error(f"Handshake: Failed to save session token for Actor_id {Actor_id}: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to finalize session.")
+    else:
+        logger.warning(f"Handshake: Invalid challenge response for Actor_id: {Actor_id}. Expected hash did not match.")
+        client_manager.clear_challenge(Actor_id) # Clear the used challenge even on failure to prevent replay with same challenge
+        raise HTTPException(status_code=401, detail="Invalid challenge response.")

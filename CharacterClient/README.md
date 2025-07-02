@@ -102,17 +102,23 @@ The client now implements structured logging:
 
 5.  **Operation:**
     Once launched, the client will:
-    1.  Attempt to register with the central server using its `Actor_id`, `token`, and `client_port`.
-    2.  Fetch its character traits (personality, voice settings, LLM model if specified) from the server.
-    3.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (`CharacterClient/data/models/`).
-    4.  Start sending periodic heartbeats to the server.
-    5.  Listen for requests on its `/character` endpoint from the server.
-    6.  Expose a `/health` endpoint for the server to check its API responsiveness.
+    1.  Attempt to register with the central server using its primary `Actor_id` and `token` (from configuration), and its `client_port`.
+    2.  If registration is successful, it will perform a handshake with the server:
+        *   Requests a challenge from the server.
+        *   Computes a response using its primary token and the challenge.
+        *   Submits the response to the server.
+        *   If successful, receives a short-lived session token from the server.
+    3.  Use the session token for subsequent authenticated operations like fetching traits and sending heartbeats. If the session token expires, it will fall back to using the primary token (and may attempt a re-handshake in future interactions if required by the server).
+    4.  Fetch its character traits (personality, voice settings, LLM model if specified) from the server.
+    5.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (`CharacterClient/data/models/`).
+    6.  Start sending periodic heartbeats to the server.
+    7.  Listen for requests on its `/character` endpoint from the server (these requests are authenticated by a token provided by the main server, not the client's own session/primary token).
+    8.  Expose a `/health` endpoint for the server to check its API responsiveness.
 
 ## Development Notes
 
 *   **LLM Fine-Tuning:** The `LLMEngine.fine_tune()` method is currently a placeholder. It saves training data locally but does not yet implement the actual model fine-tuning process.
-*   **Logging:** Comprehensive logging to files in `CharacterClient/data/logs/` is planned but not fully implemented. Current logging is primarily to the console.
-*   **Error Handling:** Basic error handling and retry mechanisms for server communication are in place. Further enhancements can be made for robustness.
+*   **Logging:** The client now uses a structured logging system, outputting to both the console and a rotating file (`client.log` in the client's `data/logs` directory). See the "Logging" section above for more details.
+*   **Error Handling:** Error handling for server communication and internal operations has been improved with more detailed logging and specific exception handling where appropriate. Retry mechanisms are in place for critical operations like registration and heartbeats.
 
 This README provides a guide to setting up and running an individual Character Client. Refer to the main project README for details on the DreamWeaver server and overall system architecture.

@@ -10,7 +10,8 @@ The system is managed from a central server that hosts the narrator's interface,
 
 *   **Decentralized Character Hive**: Characters run as independent `CharacterClient` instances, each with its own LLM, TTS engine, and configurable API endpoint. Clients manage their own model files and temporary data.
 *   **Dynamic Character Creation & Evolution**: Add or remove characters on the fly via the Gradio UI. Characters can (eventually) evolve as their local LLMs are fine-tuned with new dialogue (current client fine-tuning is placeholder). Training data is backed up to the central server.
-*   **Robust Client Discovery & Communication**: Clients register their listening port with the server and maintain their connection via a periodic heartbeat. The server performs health checks on clients and communicates with responsive ones on their specified ports.
+*   **Robust Client Discovery & Communication**: Clients register their listening port with the server.
+*   **Enhanced Authentication**: Clients perform a handshake after registration to exchange their primary token for a short-lived session token, which is used for subsequent communication, improving security.
 *   **Flexible TTS Engine**: Both server and clients support multiple Text-to-Speech services, including Piper and Coqui's XTTS-v2 (for high-quality voice cloning from a reference audio file), and gTTS.
 *   **Interactive Gradio Interface**: A central web UI for:
     *   Narrating the story via microphone (using Whisper STT).

@@ -38,7 +38,9 @@ class ClientManager:
 
         self.health_check_thread = None
         self.stop_health_check_event = threading.Event()
-        # Consider starting health checks from CSM or main app to ensure DB is fully ready.
+        self.active_challenges: dict[str, dict[str, any]] = {} # Actor_id -> {"challenge": str, "timestamp": datetime}
+        self.CHALLENGE_EXPIRY_SECONDS = 60
+
 
     def generate_token(self, Actor_id: str) -> str:
         """
@@ -60,9 +62,46 @@ class ClientManager:
                                    tts="piper", tts_model="en_US-ryan-high", reference_audio_filename=None, Actor_id="Actor1", llm_model=None)
         elif not char:
              logger.warning(f"ClientManager: Generating token for '{Actor_id}' but character does not exist in DB.")
-        self.db.save_client_token(Actor_id, token)
-        logger.info(f"Generated and saved token for Actor_id: {Actor_id}")
+        self.db.save_client_token(Actor_id, token) # This also clears any existing session token
+        logger.info(f"Generated and saved primary token for Actor_id: {Actor_id}")
         return token
+
+    def generate_handshake_challenge(self, Actor_id: str) -> str | None:
+        """
+        Generates a new handshake challenge for the given Actor_id, stores it with a timestamp,
+        and returns the challenge string.
+        """
+        challenge = secrets.token_urlsafe(32)
+        self.active_challenges[Actor_id] = {"challenge": challenge, "timestamp": datetime.now(timezone.utc)}
+        logger.info(f"Generated handshake challenge for Actor_id: {Actor_id}")
+        return challenge
+
+    def get_and_validate_challenge(self, Actor_id: str) -> str | None:
+        """
+        Retrieves the stored challenge for an Actor_id if it exists and hasn't expired.
+        Removes the challenge after retrieval if it's valid.
+        """
+        challenge_data = self.active_challenges.get(Actor_id)
+        if not challenge_data:
+            logger.warning(f"No active handshake challenge found for Actor_id: {Actor_id}")
+            return None
+
+        issue_time = challenge_data["timestamp"]
+        if datetime.now(timezone.utc) - issue_time > timedelta(seconds=self.CHALLENGE_EXPIRY_SECONDS):
+            logger.warning(f"Handshake challenge expired for Actor_id: {Actor_id}. Issued at: {issue_time}")
+            del self.active_challenges[Actor_id] # Clean up expired challenge
+            return None
+
+        # Challenge is valid and will be consumed now
+        # del self.active_challenges[Actor_id] # Challenge should be deleted only after successful response verification
+        return challenge_data["challenge"]
+
+    def clear_challenge(self, Actor_id: str):
+        """Removes a challenge for an Actor_id, typically after use or expiry."""
+        if Actor_id in self.active_challenges:
+            del self.active_challenges[Actor_id]
+            logger.info(f"Cleared handshake challenge for Actor_id: {Actor_id}")
+
 
     def get_clients_for_story_progression(self):
         """
@@ -83,8 +122,62 @@ class ClientManager:
         client_details = self.db.get_client_token_details(Actor_id)
         is_valid = bool(client_details and client_details.get('token') == token and client_details.get('status') != 'Deactivated')
         if not is_valid:
-            logger.warning(f"Token validation failed for Actor_id: {Actor_id}. Provided token: {'***' if token else 'None'}. Stored details: {client_details}")
+            logger.warning(f"Primary token validation failed for Actor_id: {Actor_id}. Provided token: {'***' if token else 'None'}.")
         return is_valid
+
+    def authenticate_request_token(self, Actor_id: str, provided_token: str) -> bool:
+        """
+        Authenticates a request by checking if the provided token is either a valid,
+        non-expired session token or the correct primary token for the Actor_id.
+        """
+        if not Actor_id or not provided_token:
+            logger.warning("Authentication attempt with missing Actor_id or token.")
+            return False
+
+        client_details = self.db.get_client_token_details(Actor_id)
+        if not client_details:
+            logger.warning(f"No client details found for Actor_id: {Actor_id} during token authentication.")
+            return False
+
+        # 1. Check for valid session token
+        session_token = client_details.get('session_token')
+        session_token_expiry_iso = client_details.get('session_token_expiry')
+
+        if session_token and session_token == provided_token:
+            if session_token_expiry_iso:
+                try:
+                    expiry_dt = datetime.fromisoformat(session_token_expiry_iso)
+                    if datetime.now(timezone.utc) < expiry_dt:
+                        logger.debug(f"Authenticated Actor_id: {Actor_id} using valid session token.")
+                        return True
+                    else:
+                        logger.warning(f"Session token expired for Actor_id: {Actor_id}. Expiry: {session_token_expiry_iso}. Clearing it.")
+                        # Clear the expired session token from DB
+                        self.db.update_client_session_token(Actor_id, None, None)
+                        # Do not proceed to check primary token if an expired session token was provided.
+                        # Client should re-handshake.
+                        return False
+                except ValueError:
+                    logger.error(f"Invalid session_token_expiry format for Actor_id: {Actor_id}: {session_token_expiry_iso}", exc_info=True)
+                    # Treat as expired or invalid session token
+                    return False # Or perhaps clear it and then check primary, but safer to fail here.
+            else:
+                # Session token exists but no expiry - treat as invalid or an issue.
+                logger.warning(f"Session token found for Actor_id: {Actor_id} but has no expiry. Treating as invalid.")
+                return False # Safer to require expiry
+
+        # 2. If not a valid session token, check primary token
+        primary_token = client_details.get('token')
+        if primary_token and primary_token == provided_token:
+            # This means the client is using its primary token.
+            # This could be allowed, or we might want to enforce session tokens after first handshake.
+            # For now, allowing primary token.
+            logger.debug(f"Authenticated Actor_id: {Actor_id} using primary token.")
+            return True
+
+        logger.warning(f"Authentication failed for Actor_id: {Actor_id}. Provided token did not match session or primary token.")
+        return False
+
 
     def _perform_single_health_check_blocking(self, client_info: dict):
         """

@@ -145,11 +145,15 @@ class Database:
                 client_port INTEGER,
                 last_seen DATETIME,
                 status TEXT DEFAULT 'Registered', -- Default for new tokens
+                session_token TEXT UNIQUE,      -- For storing active session tokens
+                session_token_expiry DATETIME,  -- Expiry for the session token
                 FOREIGN KEY (Actor_id) REFERENCES characters(Actor_id)
             )
         """)
         self._ensure_column("client_tokens", "client_port", "INTEGER")
         self._ensure_column("client_tokens", "status", "TEXT DEFAULT 'Registered'") # Ensure default is set if column added
+        self._ensure_column("client_tokens", "session_token", "TEXT UNIQUE")
+        self._ensure_column("client_tokens", "session_token_expiry", "DATETIME")
 
         self._get_conn().commit()
 
@@ -259,12 +263,36 @@ class Database:
         Retrieve detailed client token information for a given Actor ID.
         
         Returns:
-            dict: A dictionary containing the token, status, IP address, client port, and last seen timestamp if found; otherwise, None.
+            dict: A dictionary containing the token, status, IP address, client port, last seen timestamp, session_token, and session_token_expiry if found; otherwise, None.
         """
-        row = self._execute_query("SELECT token, status, ip_address, client_port, last_seen FROM client_tokens WHERE Actor_id=?", (Actor_id,), fetchone=True)
+        query = "SELECT token, status, ip_address, client_port, last_seen, session_token, session_token_expiry FROM client_tokens WHERE Actor_id=?"
+        row = self._execute_query(query, (Actor_id,), fetchone=True)
         return dict(row) if row else None
 
-    def get_token(self, Actor_id):
+    def get_primary_token(self, Actor_id: str) -> str | None:
+        """
+        Retrieve the primary authentication token string associated with the specified Actor ID.
+
+        Returns:
+            str or None: The primary token if found, otherwise None.
+        """
+        details = self.get_client_token_details(Actor_id)
+        return details['token'] if details else None
+
+    def update_client_session_token(self, Actor_id: str, session_token: str | None, session_token_expiry: datetime | None):
+        """
+        Updates the session token and its expiry for a given Actor_id.
+        Setting session_token to None effectively clears it.
+        """
+        query = "UPDATE client_tokens SET session_token = ?, session_token_expiry = ? WHERE Actor_id = ?"
+        self._execute_query(query, (session_token, session_token_expiry, Actor_id), commit=True)
+        if session_token:
+            logger.info(f"Updated session token for Actor_id '{Actor_id}'. Expiry: {session_token_expiry}")
+        else:
+            logger.info(f"Cleared session token for Actor_id '{Actor_id}'.")
+
+
+    def get_token(self, Actor_id): #DEPRECATED in favor of get_primary_token or get_client_token_details
         """
         Retrieve the token string associated with the specified Actor ID.
         

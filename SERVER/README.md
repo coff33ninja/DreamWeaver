@@ -13,11 +13,29 @@ This directory contains the server application for the DreamWeaver storytelling 
     *   Viewing story history.
     *   Managing story checkpoints.
     *   Exporting the story.
-*   **FastAPI Backend**: Exposes API endpoints for client communication and dashboard functionality.
+*   **FastAPI Backend**: Exposes API endpoints for client communication, dashboard functionality, and secure client handshake.
+*   **Enhanced Authentication**: Implements a mutual handshake protocol where clients exchange their primary token for a short-lived session token, enhancing security for ongoing communication.
 *   **Dashboard**: Offers a real-time view of connected clients and their statuses.
-*   **Database Integration**: Uses SQLite (`dream_weaver.db`) to store persistent data like story content, character configurations, and client information.
+*   **Database Integration**: Uses SQLite (`dream_weaver.db`) to store persistent data like story content, character configurations, client information, and session tokens.
 *   **Flexible TTS Engine**: Supports multiple Text-to-Speech services for the narrator and server-generated audio.
 *   **Asynchronous Operations**: Handles long-running tasks asynchronously to maintain UI responsiveness.
+
+## API Endpoints Overview
+
+The server exposes several key API endpoints under its FastAPI backend (default `http://<API_SERVER_HOST>:<API_SERVER_PORT>`):
+
+*   **`/register` (POST)**: Allows clients to register their presence and network details with the server using their primary token.
+*   **`/request_handshake_challenge` (POST)**: Allows registered clients to request a security challenge by presenting their primary token. Body: `{"Actor_id": "string", "token": "string"}`. Returns: `{"challenge": "string"}`.
+*   **`/submit_handshake_response` (POST)**: Allows clients to submit their computed response to a challenge. Body: `{"Actor_id": "string", "challenge_response": "string"}`. Returns: `{"session_token": "string", "expires_at": "datetime_string"}` on success.
+*   **`/get_traits` (GET)**: Fetches character traits for an authenticated client. Requires primary or session token.
+*   **`/heartbeat` (POST)**: Allows clients to send heartbeat signals. Requires primary or session token.
+*   **`/save_training_data` (POST)**: Allows clients to save LLM training data. Requires primary or session token.
+*   **`/get_reference_audio/{filename}` (GET)**: Serves reference audio files. Requires primary or session token.
+*   **`/download_client_config/{actor_id}` (GET)**: Provides a downloadable `.env` configuration file for a client.
+*   **`/dashboard/status` (GET)**: Provides data for the live dashboard.
+*   **`/dashboard` (GET)**: Serves the HTML dashboard page.
+
+(Other internal or less critical endpoints might exist.)
 
 ## Directory Structure
 
