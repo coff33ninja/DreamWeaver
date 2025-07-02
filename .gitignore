@@ -5,7 +5,7 @@
 /SERVER/src/__pycache__
 /CharacterClient/.venv
 .env
-
+/voice_assistant
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
