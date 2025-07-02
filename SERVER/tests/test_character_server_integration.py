@@ -1,315 +1,464 @@
+"""
+Integration tests for Character Server
+Testing Framework: pytest
+
+These integration tests complement the unit tests by testing the character server
+in more realistic scenarios with external dependencies and system integration.
+"""
+
 import pytest
 import json
 import tempfile
 import os
 from unittest.mock import Mock, patch, MagicMock
-import sys
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
+
+# Import the test subject - assuming character_server module exists
+try:
+    import character_server
+except ImportError:
+    # Fallback to mock if actual implementation not available
+    character_server = None
 
 # Add the SERVER directory to the path for imports
+import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-# Testing framework: pytest
-# Integration tests for character server functionality
+# Import the mock from the main test file
+from test_character_server import MockCharacterServer
 
 
-class TestCharacterServerIntegration:
-    """Integration test suite for character server with external dependencies."""
+class TestCharacterServerIntegrationScenarios:
+    """Integration test scenarios for character server."""
     
-    def test_character_server_json_serialization(self):
-        """Test character server data serialization to JSON."""
-        from test_character_server import MockCharacterServer
-        
+    @pytest.fixture
+    def temp_storage_path(self):
+        """Fixture providing temporary storage path for integration tests."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield temp_dir
+    
+    @pytest.fixture
+    def integrated_character_server(self, temp_storage_path):
+        """Fixture providing character server with simulated external integrations."""
         server = MockCharacterServer()
+        server.storage_path = temp_storage_path
+        return server
+    
+    def test_character_server_file_system_integration(self, integrated_character_server, temp_storage_path):
+        """Test character server integration with file system operations."""
+        # Create character
+        char_data = {
+            'name': 'FileSystemHero',
+            'class': 'FileManager',
+            'level': 1,
+            'profile_image': 'hero_portrait.png',
+            'save_files': ['save1.dat', 'save2.dat', 'backup.bak']
+        }
         
-        # Create test characters
-        test_chars = [
-            {'name': 'Hero1', 'class': 'Warrior', 'level': 10},
-            {'name': 'Hero2', 'class': 'Mage', 'level': 15},
-            {'name': 'Hero3', 'class': 'Rogue', 'level': 8}
+        char = integrated_character_server.create_character(char_data)
+        
+        # Simulate saving character data to file system
+        char_file_path = os.path.join(temp_storage_path, f"character_{char['id']}.json")
+        with open(char_file_path, 'w') as f:
+            json.dump(char, f, indent=2)
+        
+        # Verify file was created
+        assert os.path.exists(char_file_path)
+        
+        # Load character from file system
+        with open(char_file_path, 'r') as f:
+            loaded_char = json.load(f)
+        
+        # Verify data integrity
+        assert loaded_char['name'] == char_data['name']
+        assert loaded_char['id'] == char['id']
+        assert loaded_char['save_files'] == char_data['save_files']
+    
+    def test_character_server_concurrent_access_integration(self, integrated_character_server):
+        """Test character server under concurrent access from multiple clients."""
+        
+        def client_operations(client_id, results_list, error_list):
+            """Simulate client performing multiple operations."""
+            try:
+                client_results = []
+                
+                # Each client creates multiple characters
+                for i in range(5):
+                    char_data = {
+                        'name': f'Client{client_id}_Hero{i}',
+                        'class': 'ConcurrentTester',
+                        'level': i + 1,
+                        'client_id': client_id
+                    }
+                    
+                    char = integrated_character_server.create_character(char_data)
+                    client_results.append(('create', char['id']))
+                    
+                    # Update the character
+                    update_data = {'last_action': f'updated_by_client_{client_id}'}
+                    updated_char = integrated_character_server.update_character(char['id'], update_data)
+                    client_results.append(('update', updated_char['id']))
+                    
+                    # Read the character
+                    read_char = integrated_character_server.get_character(char['id'])
+                    client_results.append(('read', read_char['id']))
+                    
+                    # Small delay to simulate real client behavior
+                    time.sleep(0.01)
+                
+                results_list.extend(client_results)
+                
+            except Exception as e:
+                error_list.append((client_id, str(e)))
+        
+        # Simulate multiple concurrent clients
+        num_clients = 10
+        client_results = []
+        client_errors = []
+        threads = []
+        
+        # Start client threads
+        for client_id in range(num_clients):
+            thread = threading.Thread(
+                target=client_operations,
+                args=(client_id, client_results, client_errors)
+            )
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all clients to complete
+        for thread in threads:
+            thread.join()
+        
+        # Verify no errors occurred
+        assert len(client_errors) == 0, f"Client errors: {client_errors}"
+        
+        # Verify all operations completed
+        expected_operations = num_clients * 5 * 3  # 5 chars per client, 3 ops per char
+        assert len(client_results) == expected_operations
+        
+        # Verify all characters exist
+        all_characters = integrated_character_server.list_characters()
+        expected_char_count = num_clients * 5
+        assert len(all_characters) >= expected_char_count
+    
+    @patch('requests.post')
+    @patch('requests.get')
+    def test_character_server_external_api_integration(self, mock_get, mock_post, integrated_character_server):
+        """Test character server integration with external APIs."""
+        # Mock external API responses
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {
+            'status': 'success',
+            'external_id': 'ext_12345',
+            'validation': 'passed'
+        }
+        
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            'character_template': {
+                'recommended_skills': ['combat', 'survival'],
+                'starting_equipment': ['basic_sword', 'leather_armor'],
+                'class_bonuses': {'hp': 20, 'strength': 5}
+            }
+        }
+        
+        # Create character with external API integration simulation
+        char_data = {
+            'name': 'APIIntegratedHero',
+            'class': 'NetworkWarrior',
+            'level': 1,
+            'external_sync': True,
+            'api_endpoint': 'https://game-api.example.com/characters'
+        }
+        
+        char = integrated_character_server.create_character(char_data)
+        
+        # Simulate external API calls that would happen in real implementation
+        # POST to external API (character creation notification)
+        api_create_payload = {
+            'character_id': char['id'],
+            'character_data': char,
+            'operation': 'create',
+            'timestamp': time.time()
+        }
+        
+        # GET from external API (character template/configuration)
+        api_config_url = f"https://game-api.example.com/config/class/{char['class']}"
+        
+        # Verify that the data is suitable for API calls
+        json_payload = json.dumps(api_create_payload, default=str)
+        assert 'character_id' in json_payload
+        assert 'NetworkWarrior' in json_payload
+        
+        # Verify character was created successfully
+        assert char['name'] == 'APIIntegratedHero'
+        assert char['external_sync'] is True
+    
+    def test_character_server_database_transaction_simulation(self, integrated_character_server):
+        """Test character server with simulated database transaction scenarios."""
+        
+        # Simulate transaction scenarios
+        transaction_scenarios = [
+            {
+                'name': 'bulk_character_creation',
+                'operations': [
+                    ('create', {'name': f'BulkHero{i}', 'class': 'Warrior', 'level': 1})
+                    for i in range(10)
+                ]
+            },
+            {
+                'name': 'character_transfer',
+                'operations': [
+                    ('create', {'name': 'TransferHero', 'class': 'Mage', 'level': 50, 'guild_id': 'old_guild'}),
+                    ('update', {'guild_id': 'new_guild', 'transfer_date': '2023-12-01'}),
+                    ('update', {'status': 'transfer_complete'})
+                ]
+            }
         ]
         
-        created_chars = []
-        for char_data in test_chars:
-            char = server.create_character(char_data)
-            created_chars.append(char)
-        
-        # Serialize to JSON
-        all_chars = server.list_characters()
-        json_data = json.dumps(all_chars, indent=2)
-        
-        # Verify JSON is valid and contains expected data
-        parsed_data = json.loads(json_data)
-        assert len(parsed_data) == 3
-        assert parsed_data[0]['name'] == 'Hero1'
-        assert parsed_data[1]['class'] == 'Mage'
-        assert parsed_data[2]['level'] == 8
+        for scenario in transaction_scenarios:
+            scenario_results = []
+            
+            # Execute all operations in the scenario
+            current_char_id = None
+            for operation, data in scenario['operations']:
+                if operation == 'create':
+                    char = integrated_character_server.create_character(data)
+                    current_char_id = char['id']
+                    scenario_results.append(('created', char['id']))
+                
+                elif operation == 'update' and current_char_id:
+                    updated_char = integrated_character_server.update_character(current_char_id, data)
+                    scenario_results.append(('updated', updated_char['id']))
+                
+                elif operation == 'delete' and current_char_id:
+                    delete_result = integrated_character_server.delete_character(current_char_id)
+                    scenario_results.append(('deleted', delete_result))
+            
+            # Verify scenario completed successfully
+            assert len(scenario_results) == len(scenario['operations'])
+            
+            # Verify final state
+            if scenario['name'] == 'bulk_character_creation':
+                # All 10 characters should exist
+                all_chars = integrated_character_server.list_characters()
+                bulk_chars = [c for c in all_chars if c['name'].startswith('BulkHero')]
+                assert len(bulk_chars) >= 10
+            
+            elif scenario['name'] == 'character_transfer':
+                # Character should exist with final transfer state
+                if current_char_id:
+                    final_char = integrated_character_server.get_character(current_char_id)
+                    assert final_char['guild_id'] == 'new_guild'
+                    assert final_char['status'] == 'transfer_complete'
     
-    def test_character_server_file_persistence_simulation(self):
-        """Test character server data persistence to file (simulated)."""
-        from test_character_server import MockCharacterServer
+    def test_character_server_backup_and_recovery_simulation(self, integrated_character_server, temp_storage_path):
+        """Test character server backup and recovery scenarios."""
         
+        # Create multiple characters
+        original_characters = []
+        for i in range(5):
+            char_data = {
+                'name': f'BackupHero{i}',
+                'class': 'Guardian',
+                'level': i * 10 + 1,
+                'important_data': f'critical_info_{i}',
+                'timestamp': time.time()
+            }
+            char = integrated_character_server.create_character(char_data)
+            original_characters.append(char)
+        
+        # Simulate backup process
+        backup_file = os.path.join(temp_storage_path, 'character_backup.json')
+        all_characters = integrated_character_server.list_characters()
+        
+        # Create backup
+        backup_data = {
+            'backup_timestamp': time.time(),
+            'character_count': len(all_characters),
+            'characters': all_characters,
+            'metadata': {
+                'version': '1.0',
+                'source': 'character_server_test'
+            }
+        }
+        
+        with open(backup_file, 'w') as f:
+            json.dump(backup_data, f, indent=2, default=str)
+        
+        # Verify backup file exists and is valid
+        assert os.path.exists(backup_file)
+        
+        # Simulate recovery process
+        with open(backup_file, 'r') as f:
+            restored_backup = json.load(f)
+        
+        # Verify backup integrity
+        assert restored_backup['character_count'] == len(all_characters)
+        assert len(restored_backup['characters']) == len(all_characters)
+        
+        # Verify original character data in backup
+        backup_char_names = [c['name'] for c in restored_backup['characters']]
+        for original_char in original_characters:
+            assert original_char['name'] in backup_char_names
+        
+        # Simulate recovery by creating new server and restoring characters
+        recovery_server = MockCharacterServer()
+        
+        for backed_up_char in restored_backup['characters']:
+            # Remove ID to avoid conflicts during recovery
+            recovery_data = {k: v for k, v in backed_up_char.items() if k != 'id'}
+            recovered_char = recovery_server.create_character(recovery_data)
+            
+            # Verify recovered character has same essential data
+            assert recovered_char['name'] == backed_up_char['name']
+            assert recovered_char['class'] == backed_up_char['class']
+            assert recovered_char['level'] == backed_up_char['level']
+    
+    @pytest.mark.asyncio
+    async def test_character_server_async_integration(self):
+        """Test character server asynchronous operation integration."""
+        
+        async def async_character_operations():
+            """Simulate async character operations."""
+            server = MockCharacterServer()
+            
+            # Simulate async character creation
+            async def create_character_async(char_data):
+                await asyncio.sleep(0.01)  # Simulate async I/O
+                return server.create_character(char_data)
+            
+            # Create multiple characters concurrently
+            char_tasks = []
+            for i in range(10):
+                char_data = {
+                    'name': f'AsyncHero{i}',
+                    'class': 'AsyncWarrior',
+                    'level': i + 1
+                }
+                task = create_character_async(char_data)
+                char_tasks.append(task)
+            
+            # Wait for all character creations to complete
+            created_chars = await asyncio.gather(*char_tasks)
+            
+            # Verify all characters were created
+            assert len(created_chars) == 10
+            for i, char in enumerate(created_chars):
+                assert char['name'] == f'AsyncHero{i}'
+                assert char['level'] == i + 1
+            
+            return created_chars
+        
+        # Run async test
+        characters = await async_character_operations()
+        assert len(characters) == 10
+
+
+class TestCharacterServerPerformanceIntegration:
+    """Performance integration tests for character server."""
+    
+    def test_character_server_load_performance(self):
+        """Test character server performance under load."""
         server = MockCharacterServer()
         
-        # Create characters
-        char_data = {'name': 'PersistentHero', 'class': 'Paladin', 'level': 25}
-        char = server.create_character(char_data)
+        # Performance test parameters
+        num_characters = 1000
+        batch_size = 100
         
-        # Simulate saving to file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-            all_chars = server.list_characters()
-            json.dump(all_chars, f)
-            temp_filename = f.name
+        # Measure creation performance
+        start_time = time.time()
+        created_chars = []
         
-        try:
-            # Simulate loading from file
-            with open(temp_filename, 'r') as f:
-                loaded_chars = json.load(f)
+        for batch in range(0, num_characters, batch_size):
+            batch_chars = []
+            for i in range(batch, min(batch + batch_size, num_characters)):
+                char_data = {
+                    'name': f'LoadTestHero{i}',
+                    'class': 'LoadTester',
+                    'level': (i % 100) + 1,
+                    'batch_id': batch // batch_size
+                }
+                char = server.create_character(char_data)
+                batch_chars.append(char)
             
-            # Verify data integrity
-            assert len(loaded_chars) == 1
-            assert loaded_chars[0]['name'] == 'PersistentHero'
-            assert loaded_chars[0]['class'] == 'Paladin'
-            assert loaded_chars[0]['level'] == 25
-            
-        finally:
-            # Clean up temp file
-            os.unlink(temp_filename)
+            created_chars.extend(batch_chars)
+        
+        creation_time = time.time() - start_time
+        
+        # Measure retrieval performance
+        start_time = time.time()
+        for char in created_chars:
+            retrieved_char = server.get_character(char['id'])
+            assert retrieved_char is not None
+        
+        retrieval_time = time.time() - start_time
+        
+        # Measure list performance
+        start_time = time.time()
+        all_chars = server.list_characters()
+        list_time = time.time() - start_time
+        
+        # Performance assertions
+        assert len(created_chars) == num_characters
+        assert len(all_chars) >= num_characters
+        
+        # Performance benchmarks (adjust based on expected performance)
+        characters_per_second_create = num_characters / creation_time
+        characters_per_second_retrieve = num_characters / retrieval_time
+        
+        assert characters_per_second_create > 100, f"Creation too slow: {characters_per_second_create} chars/sec"
+        assert characters_per_second_retrieve > 500, f"Retrieval too slow: {characters_per_second_retrieve} chars/sec"
+        assert list_time < 1.0, f"List operation too slow: {list_time} seconds"
     
-    def test_character_server_with_external_validation_service(self):
-        """Test character server integration with external validation service."""
-        from test_character_server import MockCharacterServer
+    def test_character_server_memory_efficiency(self):
+        """Test character server memory efficiency with large datasets."""
+        server = MockCharacterServer()
         
-        class ExternalValidationService:
-            @staticmethod
-            def validate_character_name(name):
-                """Simulate external name validation service."""
-                forbidden_names = ['admin', 'system', 'root']
-                return name.lower() not in forbidden_names
+        # Create characters with varying data sizes
+        memory_test_characters = []
+        
+        for i in range(100):
+            # Varying data sizes to test memory handling
+            data_multiplier = (i % 10) + 1
+            char_data = {
+                'name': f'MemoryTestHero{i}',
+                'class': 'MemoryTester',
+                'level': i + 1,
+                'large_description': 'x' * (1000 * data_multiplier),
+                'skill_tree': {f'skill_{j}': j * data_multiplier for j in range(50)},
+                'inventory_items': [f'item_{k}' for k in range(100 * data_multiplier)]
+            }
             
-            @staticmethod
-            def validate_character_class(char_class):
-                """Simulate external class validation service."""
-                valid_classes = ['Warrior', 'Mage', 'Rogue', 'Paladin', 'Archer']
-                return char_class in valid_classes
+            char = server.create_character(char_data)
+            memory_test_characters.append(char)
         
-        # Extend MockCharacterServer with external validation
-        class ValidatedCharacterServer(MockCharacterServer):
-            def create_character(self, character_data):
-                # Use external validation
-                if not ExternalValidationService.validate_character_name(character_data.get('name', '')):
-                    raise ValueError("Character name not allowed by external service")
-                
-                if not ExternalValidationService.validate_character_class(character_data.get('class', '')):
-                    raise ValueError("Character class not valid according to external service")
-                
-                return super().create_character(character_data)
+        # Test that all characters are accessible
+        for char in memory_test_characters:
+            retrieved = server.get_character(char['id'])
+            assert retrieved is not None
+            assert len(retrieved['large_description']) > 0
+            assert len(retrieved['skill_tree']) > 0
+            assert len(retrieved['inventory_items']) > 0
         
-        server = ValidatedCharacterServer()
+        # Test bulk operations on large dataset
+        bulk_update_data = {'status': 'memory_tested', 'test_completed': True}
         
-        # Test valid character creation
-        valid_char = {'name': 'ValidHero', 'class': 'Warrior', 'level': 1}
-        result = server.create_character(valid_char)
-        assert result['name'] == 'ValidHero'
-        
-        # Test invalid name
-        with pytest.raises(ValueError, match="name not allowed"):
-            server.create_character({'name': 'admin', 'class': 'Warrior', 'level': 1})
-        
-        # Test invalid class
-        with pytest.raises(ValueError, match="class not valid"):
-            server.create_character({'name': 'Hero', 'class': 'InvalidClass', 'level': 1})
-    
-    def test_character_server_with_logging_integration(self):
-        """Test character server integration with logging system."""
-        import logging
-        from io import StringIO
-        from test_character_server import MockCharacterServer
-        
-        # Set up logging capture
-        log_capture = StringIO()
-        handler = logging.StreamHandler(log_capture)
-        logger = logging.getLogger('character_server')
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        
-        # Extend MockCharacterServer with logging
-        class LoggingCharacterServer(MockCharacterServer):
-            def create_character(self, character_data):
-                logger.info(f"Creating character: {character_data.get('name')}")
-                result = super().create_character(character_data)
-                logger.info(f"Created character with ID: {result['id']}")
-                return result
-            
-            def delete_character(self, character_id):
-                logger.info(f"Deleting character ID: {character_id}")
-                result = super().delete_character(character_id)
-                if result:
-                    logger.info(f"Successfully deleted character ID: {character_id}")
-                else:
-                    logger.warning(f"Failed to delete character ID: {character_id}")
-                return result
-        
-        server = LoggingCharacterServer()
-        
-        # Perform operations
-        char_data = {'name': 'LoggedHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        server.delete_character(char['id'])
-        server.delete_character(9999)  # Should log warning
-        
-        # Verify logging
-        log_output = log_capture.getvalue()
-        assert 'Creating character: LoggedHero' in log_output
-        assert f'Created character with ID: {char["id"]}' in log_output
-        assert f'Successfully deleted character ID: {char["id"]}' in log_output
-        assert 'Failed to delete character ID: 9999' in log_output
-    
-    def test_character_server_with_metrics_collection(self):
-        """Test character server integration with metrics collection."""
-        from test_character_server import MockCharacterServer
-        from collections import defaultdict
-        import time
-        
-        # Metrics collector
-        class MetricsCollector:
-            def __init__(self):
-                self.operation_counts = defaultdict(int)
-                self.operation_times = defaultdict(list)
-            
-            def record_operation(self, operation, duration):
-                self.operation_counts[operation] += 1
-                self.operation_times[operation].append(duration)
-            
-            def get_average_time(self, operation):
-                times = self.operation_times[operation]
-                return sum(times) / len(times) if times else 0
-        
-        # Extend MockCharacterServer with metrics
-        class MetricsCharacterServer(MockCharacterServer):
-            def __init__(self):
-                super().__init__()
-                self.metrics = MetricsCollector()
-            
-            def create_character(self, character_data):
-                start_time = time.time()
-                result = super().create_character(character_data)
-                duration = time.time() - start_time
-                self.metrics.record_operation('create', duration)
-                return result
-            
-            def get_character(self, character_id):
-                start_time = time.time()
-                result = super().get_character(character_id)
-                duration = time.time() - start_time
-                self.metrics.record_operation('get', duration)
-                return result
-        
-        server = MetricsCharacterServer()
-        
-        # Perform operations
-        char_data = {'name': 'MetricsHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        server.get_character(char['id'])
-        server.get_character(char['id'])
-        server.create_character({**char_data, 'name': 'MetricsHero2'})
-        
-        # Verify metrics collection
-        assert server.metrics.operation_counts['create'] == 2
-        assert server.metrics.operation_counts['get'] == 2
-        assert server.metrics.get_average_time('create') >= 0
-        assert server.metrics.get_average_time('get') >= 0
-    
-    def test_character_server_with_caching_layer(self):
-        """Test character server integration with caching layer."""
-        from test_character_server import MockCharacterServer
-        
-        # Simple cache implementation
-        class SimpleCache:
-            def __init__(self):
-                self.cache = {}
-                self.hits = 0
-                self.misses = 0
-            
-            def get(self, key):
-                if key in self.cache:
-                    self.hits += 1
-                    return self.cache[key]
-                self.misses += 1
-                return None
-            
-            def set(self, key, value):
-                self.cache[key] = value
-            
-            def delete(self, key):
-                if key in self.cache:
-                    del self.cache[key]
-        
-        # Extend MockCharacterServer with caching
-        class CachedCharacterServer(MockCharacterServer):
-            def __init__(self):
-                super().__init__()
-                self.cache = SimpleCache()
-            
-            def get_character(self, character_id):
-                cache_key = f"char_{character_id}"
-                cached_char = self.cache.get(cache_key)
-                if cached_char:
-                    return cached_char
-                
-                char = super().get_character(character_id)
-                if char:
-                    self.cache.set(cache_key, char)
-                return char
-            
-            def update_character(self, character_id, update_data):
-                result = super().update_character(character_id, update_data)
-                if result:
-                    # Update cache
-                    cache_key = f"char_{character_id}"
-                    self.cache.set(cache_key, result)
-                return result
-            
-            def delete_character(self, character_id):
-                result = super().delete_character(character_id)
-                if result:
-                    # Remove from cache
-                    cache_key = f"char_{character_id}"
-                    self.cache.delete(cache_key)
-                return result
-        
-        server = CachedCharacterServer()
-        
-        # Create character
-        char_data = {'name': 'CachedHero', 'class': 'Warrior', 'level': 1}
-        char = server.create_character(char_data)
-        
-        # First get - should miss cache
-        result1 = server.get_character(char['id'])
-        assert result1 is not None
-        assert server.cache.misses == 1
-        assert server.cache.hits == 0
-        
-        # Second get - should hit cache
-        result2 = server.get_character(char['id'])
-        assert result2 is not None
-        assert server.cache.hits == 1
-        
-        # Update character - should update cache
-        server.update_character(char['id'], {'level': 10})
-        
-        # Get updated character - should hit cache with updated data
-        result3 = server.get_character(char['id'])
-        assert result3['level'] == 10
-        assert server.cache.hits == 2
-        
-        # Delete character - should remove from cache
-        server.delete_character(char['id'])
-        
-        # Try to get deleted character - should miss cache and return None
-        result4 = server.get_character(char['id'])
-        assert result4 is None
-        assert server.cache.misses == 2
+        for char in memory_test_characters:
+            updated_char = server.update_character(char['id'], bulk_update_data)
+            assert updated_char['status'] == 'memory_tested'
 
 
+# Run integration tests if executed directly
 if __name__ == '__main__':
-    pytest.main([__file__, '-v', '--tb=short'])
+    pytest.main([
+        __file__, 
+        '-v', 
+        '--tb=long',
+        '--durations=10',
+        '-k', 'integration'
+    ])
