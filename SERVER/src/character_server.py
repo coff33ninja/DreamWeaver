@@ -118,8 +118,9 @@ class CharacterServer: # This is for Actor1, the server's own character
             return f"[{char_name}_LLM_ERROR:NOT_INITIALIZED]"
 
         prompt_parts = [f"Narrator: {narration}"]
-        for name, text_val in other_texts.items():
-            prompt_parts.append(f"{name}: {text_val}")
+        prompt_parts.extend(
+            f"{name}: {text_val}" for name, text_val in other_texts.items()
+        )
         prompt_parts.append(f"Character: {char_name} responds as {self.character.get('personality', 'default')}:")
         prompt = "\n".join(prompt_parts)
 

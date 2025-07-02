@@ -149,8 +149,9 @@ class CSM:
         """
         # Get the last narrator entry
         history = self.db.get_story_history()
-        narrator_entries = [entry for entry in history if entry["speaker"] == "Narrator"]
-        if narrator_entries:
+        if narrator_entries := [
+            entry for entry in history if entry["speaker"] == "Narrator"
+        ]:
             last_entry = narrator_entries[-1]
             self.db.update_story_entry(last_entry["id"], new_text=new_text)
             logger.info(f"CSM: Updated last narrator transcription in DB (id={last_entry['id']}) with new text: {new_text[:100]}...")
