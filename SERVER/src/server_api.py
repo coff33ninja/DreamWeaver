@@ -13,6 +13,8 @@ import os
 from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
+from fastapi import WebSocket, WebSocketDisconnect # For WebSocket support
+from .websocket_manager import connection_manager # Import the global manager
 
 logger = logging.getLogger("dreamweaver_server")
 
@@ -361,3 +363,49 @@ async def submit_handshake_response(
         logger.warning(f"Handshake: Invalid challenge response for Actor_id: {Actor_id}. Expected hash did not match.")
         client_manager.clear_challenge(Actor_id) # Clear the used challenge even on failure to prevent replay with same challenge
         raise HTTPException(status_code=401, detail="Invalid challenge response.")
+
+
+# --- WebSocket Endpoint ---
+@app.websocket("/ws/{actor_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    actor_id: str,
+    session_token: str = "", # Expect session_token as a query parameter
+    db: Database = Depends(get_db), # Required for client_manager auth
+    client_manager_dep: ClientManager = Depends(get_client_manager) # Renamed to avoid conflict
+):
+    """
+    Handles WebSocket connections for clients.
+    Authenticates clients using their session token.
+    Manages connection lifecycle and listens for messages (primarily for keep-alive/disconnect).
+    """
+    if not session_token:
+        logger.warning(f"WebSocket: Connection attempt from Actor_id {actor_id} without a session token.")
+        await websocket.close(code=4001, reason="Session token required") # Custom close code
+        return
+
+    # Authenticate using the session token (or primary, as per authenticate_request_token logic)
+    if not client_manager_dep.authenticate_request_token(actor_id, session_token):
+        logger.warning(f"WebSocket: Authentication failed for Actor_id {actor_id} with provided token.")
+        await websocket.close(code=4003, reason="Invalid session token") # Custom close code
+        return
+
+    await connection_manager.connect(websocket, actor_id)
+    try:
+        while True:
+            # For now, primarily server-to-client. Client might send pings or specific messages later.
+            data = await websocket.receive_text()
+            logger.debug(f"WebSocket: Received text from {actor_id}: {data}")
+            # Example: await websocket.send_text(f"Message text was: {data}")
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket: Client {actor_id} disconnected (WebSocketDisconnect received).")
+    except Exception as e:
+        logger.error(f"WebSocket: Unexpected error with client {actor_id} in main loop: {e}", exc_info=True)
+        if not websocket.client_state == websockets.protocol.State.CLOSED: # type: ignore
+            try:
+                await websocket.close(code=1011, reason="Internal server error") # type: ignore
+                logger.info(f"WebSocket: Closed connection to {actor_id} due to server-side exception.")
+            except Exception as e_close:
+                logger.error(f"WebSocket: Error trying to close connection with {actor_id} after exception: {e_close}", exc_info=True)
+    finally:
+        connection_manager.disconnect(actor_id)

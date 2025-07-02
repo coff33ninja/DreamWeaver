@@ -15,6 +15,7 @@ This directory contains the server application for the DreamWeaver storytelling 
     *   Exporting the story.
 *   **FastAPI Backend**: Exposes API endpoints for client communication, dashboard functionality, and secure client handshake.
 *   **Enhanced Authentication**: Implements a mutual handshake protocol where clients exchange their primary token for a short-lived session token, enhancing security for ongoing communication.
+*   **Dynamic Client Configuration**: Allows administrators to send configuration updates (e.g., TTS settings, log level) to connected clients in real-time via WebSockets.
 *   **Dashboard**: Offers a real-time view of connected clients and their statuses.
 *   **Database Integration**: Uses SQLite (`dream_weaver.db`) to store persistent data like story content, character configurations, client information, and session tokens.
 *   **Flexible TTS Engine**: Supports multiple Text-to-Speech services for the narrator and server-generated audio.
@@ -34,8 +35,14 @@ The server exposes several key API endpoints under its FastAPI backend (default 
 *   **`/download_client_config/{actor_id}` (GET)**: Provides a downloadable `.env` configuration file for a client.
 *   **`/dashboard/status` (GET)**: Provides data for the live dashboard.
 *   **`/dashboard` (GET)**: Serves the HTML dashboard page.
+*   **`/ws/{actor_id}` (WebSocket)**: Establishes a persistent WebSocket connection with a client. Requires a valid `session_token` as a query parameter for authentication (e.g., `/ws/Actor2?session_token=xxx`). Used for server-to-client messages like dynamic configuration updates.
 
 (Other internal or less critical endpoints might exist.)
+
+## Gradio Interface
+
+In addition to story narration and character creation, the Gradio UI includes:
+*   **Dynamic Client Configuration Tab**: Allows selection of an active client (connected via WebSocket) and sending of configuration updates for parameters like TTS settings and client-side log levels.
 
 ## Directory Structure
 

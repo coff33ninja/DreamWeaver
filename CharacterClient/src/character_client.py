@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Request
 import logging
 import hashlib
 from datetime import datetime, timezone, timedelta
+import websockets # Import websockets library
+import json # For parsing JSON messages
 
 from .tts_manager import TTSManager # Now async
 from .llm_engine import LLMEngine  # Now async
@@ -49,6 +51,13 @@ class CharacterClient:
         self.local_reference_audio_path: Optional[str] = None
         self.session_token: Optional[str] = None
         self.session_token_expiry: Optional[datetime] = None
+
+        # WebSocket related attributes
+        self.websocket_url: Optional[str] = None
+        self.ws_connection: Optional[websockets.client.WebSocketClientProtocol] = None
+        self.ws_listener_task: Optional[asyncio.Task] = None
+        self._stop_ws_listener: asyncio.Event = asyncio.Event()
+
         # Initialization is now non-blocking. Use async_init() after construction.
         logger.info(f"CharacterClient instance created for Actor_ID: {self.Actor_id}. Call async_init() to complete setup.")
 
@@ -132,6 +141,222 @@ class CharacterClient:
 
         if registered: # Only attempt handshake if registration was successful
             await self._perform_handshake_async()
+            if self.session_token: # If handshake gave us a session token, connect to WebSocket
+                # Construct WebSocket URL from server_url (http/https -> ws/wss)
+                ws_protocol = "ws" if self.server_url.startswith("http://") else "wss"
+                base_server_url = self.server_url.replace("http://", "").replace("https://", "")
+                self.websocket_url = f"{ws_protocol}://{base_server_url}/ws/{self.Actor_id}?session_token={self.session_token}"
+
+                # Start connection attempt in background, don't let it block async_init
+                # self.ws_listener_task = asyncio.create_task(self._connect_websocket_with_retry_async())
+                asyncio.create_task(self._connect_websocket_with_retry_async())
+
+
+    async def _connect_websocket_with_retry_async(self, max_retries=5, delay_seconds=5):
+        """
+        Attempts to connect to the WebSocket server with retries and starts the listener.
+        """
+        if not self.websocket_url:
+            logger.error(f"CharacterClient ({self.Actor_id}): WebSocket URL not set. Cannot connect.")
+            return
+
+        attempt = 0
+        while attempt < max_retries and not self._stop_ws_listener.is_set():
+            try:
+                logger.info(f"CharacterClient ({self.Actor_id}): Attempting WebSocket connection to {self.websocket_url} (Attempt {attempt + 1}/{max_retries})")
+                self.ws_connection = await websockets.connect(self.websocket_url) # type: ignore
+                logger.info(f"CharacterClient ({self.Actor_id}): WebSocket connection established.")
+
+                # Cancel previous listener if any (e.g. on reconnect)
+                if self.ws_listener_task and not self.ws_listener_task.done():
+                    self.ws_listener_task.cancel()
+
+                self.ws_listener_task = asyncio.create_task(self._websocket_listener_async())
+                return # Successful connection
+            except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.InvalidURI, websockets.exceptions.InvalidHandshake, OSError) as e:
+                logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket connection attempt {attempt + 1} failed: {e}")
+                self.ws_connection = None
+                attempt += 1
+                if attempt < max_retries and not self._stop_ws_listener.is_set():
+                    logger.info(f"CharacterClient ({self.Actor_id}): Retrying WebSocket connection in {delay_seconds} seconds...")
+                    await asyncio.sleep(delay_seconds)
+            except Exception as e: # Catch any other unexpected error during connect
+                logger.error(f"CharacterClient ({self.Actor_id}): Unexpected error during WebSocket connection attempt {attempt+1}: {e}", exc_info=True)
+                self.ws_connection = None
+                attempt += 1
+                if attempt < max_retries and not self._stop_ws_listener.is_set():
+                    await asyncio.sleep(delay_seconds)
+
+        if not self.ws_connection:
+            logger.error(f"CharacterClient ({self.Actor_id}): Failed to connect to WebSocket server after {max_retries} retries.")
+
+
+    async def _websocket_listener_async(self):
+        """
+        Listens for incoming messages on the WebSocket and handles them.
+        Also handles reconnection logic.
+        """
+        if not self.ws_connection: # Should not happen if called correctly
+            logger.error(f"CharacterClient ({self.Actor_id}): WebSocket listener started without a connection.")
+            return
+
+        logger.info(f"CharacterClient ({self.Actor_id}): WebSocket listener started.")
+        try:
+            while not self._stop_ws_listener.is_set():
+                if not self.ws_connection or self.ws_connection.closed:
+                    logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket connection found closed in listener. Attempting reconnect.")
+                    await self._connect_websocket_with_retry_async() # Reconnect will restart listener
+                    return # Exit this stale listener instance
+
+                try:
+                    message_str = await asyncio.wait_for(self.ws_connection.recv(), timeout=5.0)
+                    logger.debug(f"CharacterClient ({self.Actor_id}): Received WebSocket message: {message_str}")
+                    try:
+                        message = json.loads(message_str)
+                        if message.get("type") == "config_update":
+                            await self._handle_config_update(message.get("payload", {}))
+                        else:
+                            logger.info(f"CharacterClient ({self.Actor_id}): Received unhandled WebSocket message type: {message.get('type')}")
+                    except json.JSONDecodeError:
+                        logger.warning(f"CharacterClient ({self.Actor_id}): Received invalid JSON via WebSocket: {message_str}")
+                except asyncio.TimeoutError:
+                    # Timeout is fine, just means no message. Check connection health via ping/pong.
+                    if self.ws_connection and not self.ws_connection.closed:
+                        try:
+                            pong_waiter = await self.ws_connection.ping()
+                            await asyncio.wait_for(pong_waiter, timeout=5.0)
+                            # logger.debug(f"CharacterClient ({self.Actor_id}): WebSocket Ping-Pong successful.")
+                        except asyncio.TimeoutError:
+                            logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket Ping timeout. Connection may be stale.")
+                            await self.ws_connection.close() # Force close
+                            # Reconnect will be attempted by the loop condition
+                        except websockets.exceptions.ConnectionClosed: # Connection closed during ping
+                            logger.warning(f"CharacterClient ({self.Actor_id}): WebSocket connection closed during ping.")
+                            # Reconnect will be attempted
+                    continue # Continue to next iteration of while loop
+                except websockets.exceptions.ConnectionClosed: # Graceful close from server or network issue
+                    logger.info(f"CharacterClient ({self.Actor_id}): WebSocket connection closed by server or network issue.")
+                    # Reconnect logic is outside this specific try-catch, handled by the loop condition
+                    break # Exit listener to trigger reconnect
+        except asyncio.CancelledError:
+            logger.info(f"CharacterClient ({self.Actor_id}): WebSocket listener task cancelled.")
+        except Exception as e:
+            logger.error(f"CharacterClient ({self.Actor_id}): Error in WebSocket listener: {e}", exc_info=True)
+        finally:
+            logger.info(f"CharacterClient ({self.Actor_id}): WebSocket listener stopped.")
+            if self.ws_connection and not self.ws_connection.closed:
+                try:
+                    await self.ws_connection.close()
+                except Exception as e_close:
+                    logger.error(f"CharacterClient ({self.Actor_id}): Error closing WebSocket in listener finally: {e_close}", exc_info=True)
+            self.ws_connection = None
+            # If not explicitly stopped, attempt reconnect
+            if not self._stop_ws_listener.is_set():
+                logger.info(f"CharacterClient ({self.Actor_id}): WebSocket listener attempting to restart connection...")
+                asyncio.create_task(self._connect_websocket_with_retry_async())
+
+
+    async def _handle_config_update(self, payload: dict):
+        """
+        Handles incoming configuration update payloads.
+        """
+        logger.info(f"CharacterClient ({self.Actor_id}): Received config update: {payload}")
+        reinitialize_tts = False
+        new_tts_config = {}
+
+        if "log_level" in payload:
+            level_str = payload["log_level"].upper()
+            level = getattr(logging, level_str, None)
+            if level is not None:
+                # Assuming 'logger' is the module-level logger from get_logger("dreamweaver_client")
+                # This needs to be the actual logger instance used by the client.
+                # If using logging_config.get_logger(), it should work.
+                client_root_logger = logging.getLogger("dreamweaver_client") # Main client logger
+                client_root_logger.setLevel(level)
+                logger.info(f"CharacterClient ({self.Actor_id}): Log level updated to {level_str}")
+            else:
+                logger.warning(f"CharacterClient ({self.Actor_id}): Invalid log level received: {payload['log_level']}")
+
+        if "tts_service_name" in payload:
+            new_tts_config["tts_service_name"] = payload["tts_service_name"]
+            reinitialize_tts = True
+        if "tts_model_name" in payload:
+            new_tts_config["model_name"] = payload["tts_model_name"]
+            reinitialize_tts = True
+        if "tts_language" in payload:
+            new_tts_config["language"] = payload["tts_language"]
+            reinitialize_tts = True
+
+        # Speaker WAV update could be added here if needed
+
+        if reinitialize_tts:
+            logger.info(f"CharacterClient ({self.Actor_id}): Re-initializing TTS Manager with new config: {new_tts_config}")
+
+            # Get existing config to merge with new updates
+            current_tts_service = self.tts.service_name if self.tts else self.character.get("tts", "gtts")
+            current_tts_model = self.tts.model_name if self.tts else self.character.get("tts_model", "en")
+            current_tts_language = self.tts.language if self.tts else self.character.get("language", "en")
+            current_speaker_wav = self.tts.speaker_wav_path if self.tts else self.local_reference_audio_path
+
+            final_tts_service = new_tts_config.get("tts_service_name", current_tts_service)
+            final_tts_model = new_tts_config.get("model_name", current_tts_model)
+            final_tts_language = new_tts_config.get("language", current_tts_language)
+            # Speaker_wav path isn't dynamically updatable via this payload yet, so use existing.
+            # If tts_service changes, speaker_wav logic might need adjustment.
+            final_speaker_wav = current_speaker_wav if final_tts_service == current_tts_service else None
+            if final_tts_service == "xttsv2" and not final_speaker_wav and self.local_reference_audio_path:
+                 # If switching TO xtts and we have a local ref audio, use it.
+                 final_speaker_wav = self.local_reference_audio_path
+
+
+            try:
+                self.tts = await asyncio.to_thread(
+                    TTSManager,
+                    tts_service_name=final_tts_service,
+                    model_name=final_tts_model,
+                    language=final_tts_language,
+                    speaker_wav_path=final_speaker_wav
+                )
+                if self.tts and self.tts.is_initialized:
+                    logger.info(f"CharacterClient ({self.Actor_id}): TTSManager re-initialized successfully. New service: {self.tts.service_name}, Model: {self.tts.model_name}, Lang: {self.tts.language}")
+                    # Update character dict if these were changed, so next full init uses them
+                    if self.character:
+                        if "tts_service_name" in new_tts_config: self.character["tts"] = final_tts_service
+                        if "model_name" in new_tts_config: self.character["tts_model"] = final_tts_model
+                        if "language" in new_tts_config: self.character["language"] = final_tts_language
+                else:
+                    logger.error(f"CharacterClient ({self.Actor_id}): Failed to re-initialize TTSManager with new config.")
+            except Exception as e:
+                logger.error(f"CharacterClient ({self.Actor_id}): Exception during TTSManager re-initialization: {e}", exc_info=True)
+
+        # LLM model update (deferred)
+        # if "llm_model_name" in payload:
+        #     logger.info(f"CharacterClient ({self.Actor_id}): LLM model update requested to {payload['llm_model_name']} (deferred feature).")
+
+
+    async def close_websocket_async(self):
+        """
+        Stops the WebSocket listener task and closes the connection.
+        """
+        logger.info(f"CharacterClient ({self.Actor_id}): Initiating WebSocket closure.")
+        self._stop_ws_listener.set() # Signal listener to stop
+        if self.ws_listener_task and not self.ws_listener_task.done():
+            try:
+                self.ws_listener_task.cancel()
+                await self.ws_listener_task
+            except asyncio.CancelledError:
+                logger.info(f"CharacterClient ({self.Actor_id}): WebSocket listener task successfully cancelled.")
+            except Exception as e:
+                logger.error(f"CharacterClient ({self.Actor_id}): Error during ws_listener_task cancellation: {e}", exc_info=True)
+
+        if self.ws_connection and not self.ws_connection.closed:
+            try:
+                await self.ws_connection.close()
+                logger.info(f"CharacterClient ({self.Actor_id}): WebSocket connection closed.")
+            except Exception as e:
+                logger.error(f"CharacterClient ({self.Actor_id}): Error closing WebSocket connection: {e}", exc_info=True)
+        self.ws_connection = None
+        self.ws_listener_task = None
 
 
     async def _perform_handshake_async(self):

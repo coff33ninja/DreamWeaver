@@ -13,6 +13,7 @@ This directory contains the `CharacterClient` application, which allows an AI-dr
 *   Registers with the server, providing its listening IP and port for communication.
 *   Sends periodic heartbeats to the server to maintain "online" status.
 *   Exposes a `/health` endpoint for server-side API responsiveness checks.
+*   **Dynamic Configuration**: Connects to the server via WebSocket to receive and apply real-time configuration updates (e.g., TTS settings, log level).
 
 ## Directory Structure
 
@@ -103,17 +104,23 @@ The client now implements structured logging:
 5.  **Operation:**
     Once launched, the client will:
     1.  Attempt to register with the central server using its primary `Actor_id` and `token` (from configuration), and its `client_port`.
-    2.  If registration is successful, it will perform a handshake with the server:
-        *   Requests a challenge from the server.
-        *   Computes a response using its primary token and the challenge.
-        *   Submits the response to the server.
-        *   If successful, receives a short-lived session token from the server.
-    3.  Use the session token for subsequent authenticated operations like fetching traits and sending heartbeats. If the session token expires, it will fall back to using the primary token (and may attempt a re-handshake in future interactions if required by the server).
-    4.  Fetch its character traits (personality, voice settings, LLM model if specified) from the server.
-    5.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (`CharacterClient/data/models/`).
-    6.  Start sending periodic heartbeats to the server.
-    7.  Listen for requests on its `/character` endpoint from the server (these requests are authenticated by a token provided by the main server, not the client's own session/primary token).
-    8.  Expose a `/health` endpoint for the server to check its API responsiveness.
+    2.  If registration is successful, it will perform a handshake with the server to obtain a short-lived session token.
+    3.  Establish a WebSocket connection to the server (e.g., `ws://server_ip:port/ws/{Actor_id}?session_token=xxx`) using the obtained session token. This connection is used for receiving dynamic configuration updates.
+    4.  Use the session token for subsequent authenticated HTTP operations like fetching traits and sending heartbeats. If the session token expires, it will fall back to using the primary token for HTTP calls (and may attempt a re-handshake if server interactions indicate the need).
+    5.  Fetch its character traits (personality, voice settings, LLM model if specified) from the server.
+    6.  Initialize its local LLM and TTS engines. This may involve downloading models if they are not already present in its local model cache (`CharacterClient/data/models/`).
+    7.  Start sending periodic heartbeats to the server.
+    8.  Listen for incoming messages on the WebSocket (e.g., configuration updates) and apply them as needed (e.g., re-initializing TTS, changing log level).
+    9.  Listen for HTTP requests on its `/character` endpoint from the server (these requests are authenticated by a token provided by the main server, not the client's own session/primary token).
+    10. Expose a `/health` endpoint for the server to check its API responsiveness.
+
+## Dynamically Configurable Parameters
+
+Via WebSocket messages from the server, the following client parameters can be updated at runtime:
+*   **TTS Service**: (`tts_service_name`) Switch between 'gtts', 'xttsv2', etc.
+*   **TTS Model**: (`tts_model_name`) Specific model for the chosen TTS service.
+*   **TTS Language**: (`tts_language`) E.g., "en", "es".
+*   **Log Level**: (`log_level`) Adjust client's runtime log verbosity (e.g., "DEBUG", "INFO").
 
 ## Development Notes
 
