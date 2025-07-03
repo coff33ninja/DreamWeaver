@@ -338,6 +338,61 @@ async def restart_server_async(progress=gr.Progress()):
 # --- Merged Character & Client Management Tab ---
 def add_character_and_client_management_tab():
     """Adds the merged Character and Client Management tab to the Gradio interface."""
+
+    def update_tts_components(service_name, model_name=None, is_reference_components=False):
+        """Unified function to update TTS-related components
+        Args:
+            service_name: Name of the TTS service
+            model_name: Optional model name for voice updates
+            is_reference_components: Whether to update reference audio components
+        """
+        if not service_name:
+            base_update = [gr.update(choices=[], value=None)]
+            if is_reference_components:
+                return base_update + [
+                    gr.update(visible=False),  # ref_audio
+                    gr.update(visible=False),  # ref_audio_column
+                    gr.update(visible=False),  # ref_audio_preview
+                    gr.update(visible=False),  # test_voice_button
+                    gr.update(visible=False),  # test_voice_input
+                    gr.update(visible=False),  # test_voice_output
+                ]
+            return base_update + [gr.update(visible=False)]  # just ref_audio
+
+        models = TTSManager.get_available_models(service_name)
+        default_model = models[0] if models else None
+        ref_audio_visible = any(TTSManager.requires_reference_audio(model) for model in models)
+
+        # Voice/language update
+        voices = []
+        if model_name:
+            voices = TTSManager.get_available_voices(service_name, model_name)
+            capabilities = TTSManager.get_model_capabilities(model_name)
+
+        voice_update = gr.update(
+            choices=voices,
+            value=voices[0] if voices else None,
+            visible=bool(model_name and capabilities["multilingual"] or capabilities["has_speakers"]) if model_name else True,
+            label="Available Voices" if model_name and capabilities["has_speakers"] else "Languages"
+        ) if model_name else gr.update(choices=[], value=None)
+
+        base_update = [
+            gr.update(choices=models, value=default_model),  # model dropdown
+            voice_update,  # voice dropdown
+        ]
+
+        if is_reference_components:
+            needs_ref = model_name and capabilities["requires_reference_audio"] if model_name else ref_audio_visible
+            return base_update + [
+                gr.update(visible=needs_ref),  # ref_audio
+                gr.update(visible=needs_ref),  # ref_audio_column
+                gr.update(visible=needs_ref),  # ref_audio_preview
+                gr.update(visible=needs_ref),  # test_voice_button
+                gr.update(visible=needs_ref),  # test_voice_input
+                gr.update(visible=needs_ref),  # test_voice_output
+            ]
+        return base_update + [gr.update(visible=ref_audio_visible)]  # just ref_audio
+
     with gr.TabItem("Character & Client Management"):
         gr.Markdown("## Manage Characters and Clients")
         with gr.Row():
@@ -387,6 +442,104 @@ def add_character_and_client_management_tab():
         char_creation_status = gr.Textbox(label="Status", interactive=False)
         char_env_snippet = gr.Textbox(label="Client .env Snippet (Copy & Paste)", lines=3, interactive=False)
 
+        # Reference audio column and components
+        ref_audio_column = gr.Column(visible=False)
+        with ref_audio_column:
+            gr.Markdown("### Voice Cloning Preview")
+            ref_audio_preview = gr.Audio(
+                label="Reference Voice Preview",
+                type="filepath",
+                visible=False
+            )
+            test_voice_input = gr.Textbox(
+                label="Test Voice Synthesis",
+                placeholder="Enter text to test the voice...",
+                visible=False
+            )
+            test_voice_btn = gr.Button(
+                "Test Voice",
+                variant="secondary",
+                visible=False
+            )
+            test_voice_output = gr.Audio(
+                label="Test Voice Output",
+                visible=False
+            )
+
+        # Update event handlers for character creation
+        char_tts_service.change(
+            lambda x: update_tts_components(x, is_reference_components=True),
+            inputs=[char_tts_service],
+            outputs=[
+                char_tts_model,
+                char_tts_voice,
+                char_ref_audio,
+                ref_audio_column,
+                ref_audio_preview,
+                test_voice_btn,
+                test_voice_input,
+                test_voice_output
+            ]
+        )
+
+        char_tts_model.change(
+            lambda model, service: update_tts_components(service, model, is_reference_components=True),
+            inputs=[char_tts_model, char_tts_service],
+            outputs=[
+                char_tts_model,
+                char_tts_voice,
+                char_ref_audio,
+                ref_audio_column,
+                ref_audio_preview,
+                test_voice_btn,
+                test_voice_input,
+                test_voice_output
+            ]
+        )
+
+        async def test_voice_synthesis(text, ref_audio_path, model_name, service_name):
+            """Test voice synthesis with uploaded reference audio"""
+            if not text or not ref_audio_path:
+                return None
+
+            try:
+                # Create temporary TTSManager instance for testing
+                tts = TTSManager(
+                    tts_service_name=service_name,
+                    model_name=model_name,
+                    speaker_wav_path=ref_audio_path
+                )
+
+                # Generate test audio
+                test_output_path = os.path.join(REFERENCE_VOICES_AUDIO_PATH, f"test_{os.urandom(4).hex()}.wav")
+                success = await tts.synthesize(text, test_output_path, ref_audio_path)
+
+                if success and os.path.exists(test_output_path):
+                    return test_output_path
+                return None
+            except Exception as e:
+                logger.error(f"Error testing voice synthesis: {e}")
+                return None
+
+        # Add test voice handler
+        test_voice_btn.click(
+            test_voice_synthesis,
+            inputs=[
+                test_voice_input,
+                char_ref_audio,
+                char_tts_model,
+                char_tts_service
+            ],
+            outputs=test_voice_output
+        )
+
+        # Update reference audio preview when file is uploaded
+        char_ref_audio.change(
+            lambda x: x,
+            inputs=[char_ref_audio],
+            outputs=[ref_audio_preview]
+        )
+
         # Dynamic Client Management Inputs
         gr.Markdown("### Update Client Configurations via WebSocket")
         connected_clients_dropdown = gr.Dropdown(
@@ -422,66 +575,19 @@ def add_character_and_client_management_tab():
         send_config_update_btn = gr.Button("Send Configuration Update to Client", variant="primary")
         config_update_status = gr.Textbox(label="Update Status", interactive=False)
 
-        # Handlers
-        def update_model_dropdown(service_name):
-            """Update model dropdown and reference audio visibility based on service selection"""
-            if not service_name:
-                return [
-                    gr.update(choices=[], value=None),
-                    gr.update(visible=False)
-                ]
-
-            models = TTSManager.get_available_models(service_name)
-            default_value = models[0] if models else None
-
-            # Reference audio is only visible for XTTS models
-            ref_audio_visible = any(TTSManager.requires_reference_audio(model) for model in models)
-
-            return [
-                gr.update(choices=models, value=default_value),
-                gr.update(visible=ref_audio_visible)
-            ]
-
-        def update_voice_dropdown(model_name, service_name):
-            """Update voice/language dropdown based on model and service"""
-            if not service_name or not model_name:
-                return gr.update(choices=[], value=None)
-
-            voices = TTSManager.get_available_voices(service_name, model_name)
-            default_value = voices[0] if voices else None
-
-            return gr.update(choices=voices, value=default_value)
-
-        char_tts_service.change(
-            fn=update_model_dropdown,
-            inputs=[char_tts_service],
-            outputs=[char_tts_model, char_ref_audio],
-        )
-        char_tts_service.change(
-            lambda service: update_voice_dropdown(None, service),
-            inputs=char_tts_service,
-            outputs=char_tts_voice,
-        )
-        char_tts_model.change(
-            lambda model, service: update_voice_dropdown(model, service),
-            inputs=[char_tts_model, char_tts_service],
-            outputs=char_tts_voice,
-        )
+        # Handlers for client configuration
         new_tts_service.change(
-            fn=update_model_dropdown,
+            lambda x: update_tts_components(x),
             inputs=[new_tts_service],
-            outputs=[new_tts_model, new_ref_audio],
+            outputs=[new_tts_model, new_tts_voice, new_ref_audio]
         )
-        new_tts_service.change(
-            lambda service: update_voice_dropdown(None, service),
-            inputs=new_tts_service,
-            outputs=new_tts_voice,
-        )
+
         new_tts_model.change(
-            lambda model, service: update_voice_dropdown(model, service),
+            lambda model, service: update_tts_components(service, model),
             inputs=[new_tts_model, new_tts_service],
-            outputs=new_tts_voice,
+            outputs=[new_tts_model, new_tts_voice, new_ref_audio]
         )
+
         create_char_btn.click(
             create_character_async,
             inputs=[

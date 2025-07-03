@@ -303,52 +303,169 @@ class TTSManager:
     @staticmethod
     def list_services():
         """List available TTS services"""
-        return ["gtts", "coqui"]  # Simplified service list, XTTS is part of Coqui
+        return ["coqui", "xttsv2"]  # Add other services as needed
 
     @staticmethod
-    def get_available_models(service_name: str):
-        """Get available models for a specific TTS service"""
-        if service_name == "gtts":
-            return ["gtts"]  # gTTS has only one model
-        elif service_name == "coqui":
+    def get_available_models(service_name):
+        """Get available models for a given service"""
+        if not service_name:
+            return []
+
+        if service_name == "coqui":
+            # Define well-known working models with their capabilities
+            known_models = {
+                "tts_models/multilingual/multi-dataset/xtts_v2": {
+                    "type": "multi-speaker",
+                    "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn"],
+                    "requires_reference": True
+                },
+                "tts_models/en/vctk/vits": {
+                    "type": "multi-speaker",
+                    "languages": ["en"],
+                    "speakers": [f"p{i}" for i in range(225, 335)],  # VCTK typical range
+                    "requires_reference": False
+                },
+                "tts_models/en/ljspeech/vits": {
+                    "type": "single-speaker",
+                    "languages": ["en"],
+                    "requires_reference": False
+                },
+                "tts_models/en/ljspeech/tacotron2-DDC": {
+                    "type": "single-speaker",
+                    "languages": ["en"],
+                    "requires_reference": False
+                }
+            }
             try:
-                from TTS.api import TTS
-                tts = TTS()
-                models = []
-                for model in tts.list_models():
-                    # Add all available models with their full names
-                    models.append(model.model_name)
-                return sorted(models) if models else ["tts_models/multilingual/multi-dataset/your-tts"]
+                # Try to get additional models from TTS
+                try:
+                    from TTS.utils.manage import ModelManager
+                    manager = ModelManager()
+                    all_models = manager.list_models()
+                    # Only add models that aren't in our known list
+                    for model in all_models:
+                        if model.startswith("tts_models/") and model not in known_models:
+                            known_models[model] = {
+                                "type": "unknown",
+                                "languages": ["en"],  # default to English
+                                "requires_reference": False
+                            }
+                except Exception as e:
+                    logger.warning(f"Could not fetch additional models: {e}")
+
+                return list(known_models.keys())
             except Exception as e:
                 logger.error(f"Error listing Coqui models: {e}")
-                return ["tts_models/multilingual/multi-dataset/your-tts"]
+                return list(known_models.keys())  # Fallback to known models
+        elif service_name == "xttsv2":
+            return ["xtts_v2"]
         return []
 
     @staticmethod
-    def get_available_voices(service_name: str, model_name: str = None):
-        """Get available voices/languages for a service/model combination"""
-        if service_name == "gtts":
-            # Standard gTTS languages
-            return ["en", "es", "fr", "de", "it", "ja", "ko", "zh"]
-        elif service_name == "coqui" and model_name:
-            try:
-                from TTS.api import TTS
-                tts = TTS(model_name=model_name)
-                if hasattr(tts, "languages"):
-                    return sorted(list(tts.languages))
+    def get_available_voices(service_name, model_name):
+        """Get available voices/speakers for a given model"""
+        if not service_name or not model_name:
+            return []
+
+        # First check our known models database
+        known_models = TTSManager.get_model_capabilities(model_name)
+
+        try:
+            if service_name == "coqui":
+                if known_models.get("type") == "multi-speaker":
+                    if "speakers" in known_models:
+                        return known_models["speakers"]
+                    elif known_models.get("requires_reference", False):
+                        return ["clone"]  # For voice cloning models
+                    else:
+                        try:
+                            # Try to load model and get speakers
+                            from TTS.api import TTS
+                            tts = TTS(model_name, progress_bar=False)
+                            if hasattr(tts, "speakers"):
+                                return tts.speakers
+                        except Exception as e:
+                            logger.error(f"Error loading model to get speakers: {e}")
+                            return ["default"]
                 else:
-                    # Some models might have speakers instead of languages
-                    if hasattr(tts, "speakers"):
-                        return sorted(list(tts.speakers))
-                    return ["en"]  # Default if no languages/speakers found
-            except Exception as e:
-                logger.error(f"Error getting voices for Coqui model {model_name}: {e}")
-                return ["en"]
-        return []
+                    return ["default"]  # Single speaker models
+            elif service_name == "xttsv2":
+                return ["clone"]  # XTTS v2 uses reference audio
+        except Exception as e:
+            logger.error(f"Error getting voices for {service_name} model {model_name}: {e}")
+            return ["default"]
+
+        return ["default"]
 
     @staticmethod
-    def requires_reference_audio(model_name: str):
-        """Check if model requires/supports reference audio"""
+    def get_model_capabilities(model_name):
+        """Get detailed model capabilities and requirements"""
+        # Database of known model capabilities
+        known_models = {
+            "tts_models/multilingual/multi-dataset/xtts_v2": {
+                "type": "multi-speaker",
+                "multilingual": True,
+                "has_speakers": True,
+                "requires_reference": True,
+                "languages": ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn"]
+            },
+            "tts_models/en/vctk/vits": {
+                "type": "multi-speaker",
+                "multilingual": False,
+                "has_speakers": True,
+                "requires_reference": False,
+                "languages": ["en"],
+                "speakers": [f"p{i}" for i in range(225, 335)]
+            },
+            "tts_models/en/ljspeech/vits": {
+                "type": "single-speaker",
+                "multilingual": False,
+                "has_speakers": False,
+                "requires_reference": False,
+                "languages": ["en"]
+            }
+            # Add more known models as needed
+        }
+
+        # Return known model capabilities or generate default capabilities
+        if model_name in known_models:
+            return known_models[model_name]
+
+        # Generate default capabilities based on model name
+        capabilities = {
+            "type": "single-speaker",
+            "multilingual": False,
+            "has_speakers": False,
+            "requires_reference": False,
+            "languages": ["en"]
+        }
+
+        if "xtts" in model_name.lower():
+            capabilities.update({
+                "type": "multi-speaker",
+                "multilingual": True,
+                "has_speakers": True,
+                "requires_reference": True
+            })
+        elif "vits" in model_name.lower():
+            capabilities["multilingual"] = "multilingual" in model_name.lower()
+            if "vctk" in model_name.lower():
+                capabilities.update({
+                    "type": "multi-speaker",
+                    "has_speakers": True
+                })
+        elif "bark" in model_name.lower():
+            capabilities.update({
+                "type": "multi-speaker",
+                "multilingual": True,
+                "has_speakers": True
+            })
+
+        return capabilities
+
+    @staticmethod
+    def requires_reference_audio(model_name):
+        """Check if a model requires reference audio"""
         return "xtts" in model_name.lower()
 
     @staticmethod
