@@ -68,6 +68,7 @@ async def create_character_async(
     tts_model,
     reference_audio_file,
     Actor_id,
+    selected_server_ip,  # New parameter
     progress=gr.Progress(track_tqdm=True),
 ):
     # ... (implementation as before) ...
@@ -129,19 +130,8 @@ async def create_character_async(
             token_msg_part = f"Token for {Actor_id}: {token}"
             # Use selected IP if provided, else auto-pick
             server_url = "<your_server_url_here>"
-            try:
-                # Try to get the selected IP from the UI (Gradio passes it as an argument if wired)
-                import inspect
-                frame = inspect.currentframe()
-                if frame is not None:
-                    args, _, _, values = inspect.getargvalues(frame)
-                    selected_ip = values.get('selected_server_ip', None)
-                else:
-                    selected_ip = None
-            except Exception:
-                selected_ip = None
-            if selected_ip:
-                server_url = f"http://{selected_ip}:8000"
+            if selected_server_ip:
+                server_url = f"http://{selected_server_ip}:8000"
             else:
                 adapter_ips = Hardware.get_adapter_ip_addresses()
                 if adapter_ips:
@@ -155,7 +145,7 @@ async def create_character_async(
                         preferred = next(iter(adapter_ips.values()))
                     server_url = f"http://{preferred}:8000"
             env_snippet = f"CLIENT_Actor_ID=\"{Actor_id}\"\nCLIENT_TOKEN=\"{token}\"\nSERVER_URL=\"{server_url}\""
-            logger.info(f"Generated token for {Actor_id}.")
+            logger.info(f"Generated token for {Actor_id} with server URL: {server_url}")
     progress(1, desc="Character created!")
     logger.info(
         f"Character '{name}' for '{Actor_id}' created successfully. Token part: {token_msg_part}"
@@ -360,7 +350,9 @@ def add_character_and_client_management_tab():
                     label="Assign to Actor ID",
                     value="Actor1",
                 )
-                char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service")
+                char_tts_service = gr.Dropdown(
+                    choices=TTSManager.list_services(), label="TTS Service"
+                )
                 char_tts_model = gr.Dropdown([], label="TTS Model")
                 char_tts_voice = gr.Dropdown([], label="TTS Voice/Language")
                 char_ref_audio = gr.File(
@@ -371,13 +363,23 @@ def add_character_and_client_management_tab():
                 # Adapter IP display and selection
                 adapter_ip_btn = gr.Button("Show Adapter IPs")
                 adapter_ip_output = gr.JSON(label="Adapter IP Addresses")
-                adapter_ip_dropdown = gr.Dropdown(label="Select Server IP for Client .env", choices=[], visible=False)
+                adapter_ip_dropdown = gr.Dropdown(
+                    label="Select Server IP for Client .env",
+                    choices=[],
+                    visible=False
+                )
+
                 def update_adapter_ip_dropdown():
                     ips = Hardware.get_adapter_ip_addresses()
                     if not ips:
                         return gr.update(choices=[], visible=False), {}
                     return gr.update(choices=list(ips.values()), visible=True), ips
-                adapter_ip_btn.click(update_adapter_ip_dropdown, inputs=[], outputs=[adapter_ip_dropdown, adapter_ip_output])
+
+                adapter_ip_btn.click(
+                    update_adapter_ip_dropdown,
+                    inputs=[],
+                    outputs=[adapter_ip_dropdown, adapter_ip_output]
+                )
             with gr.Column(scale=3):
                 char_personality = gr.Textbox(label="Personality", lines=2)
                 char_goals = gr.Textbox(label="Goals", lines=2)
@@ -405,8 +407,13 @@ def add_character_and_client_management_tab():
                     choices=[""] + TTSManager.list_services(),
                     label="New TTS Service (blank to skip)",
                 )
-                new_tts_model = gr.Textbox(label="New TTS Model Name (blank to skip)")
-                new_tts_language = gr.Textbox(label="New TTS Language (e.g., 'en', 'es'; blank to skip)")
+                new_tts_model = gr.Dropdown([], label="New TTS Model")
+                new_tts_voice = gr.Dropdown([], label="New TTS Voice/Language")
+                new_ref_audio = gr.File(
+                    label="Reference Audio (XTTSv2)",
+                    type="filepath",
+                    visible=False,
+                )
             with gr.Column():
                 gr.Markdown("### Logging Configuration")
                 new_log_level = gr.Dropdown(
@@ -417,15 +424,21 @@ def add_character_and_client_management_tab():
         config_update_status = gr.Textbox(label="Update Status", interactive=False)
 
         # Handlers
+        def update_model_dropdown(service_name):
+            models = TTSManager.get_available_models(service_name)
+            default_value = models[0] if models else None
+            return gr.update(choices=models, value=default_value)
+
+        def update_voice_dropdown(service_name, model_name):
+            voices = TTSManager.get_available_voices(service_name, model_name)
+            default_value = voices[0] if voices else None
+            return gr.update(choices=voices, value=default_value)
+
         char_tts_service.change(
             fn=update_model_dropdown,
             inputs=char_tts_service,
             outputs=char_tts_model,
         )
-        def update_voice_dropdown(service, model):
-            voices = TTSManager.get_available_voices(service, model)
-            default = voices[0] if voices else None
-            return gr.update(choices=voices, value=default)
         char_tts_service.change(
             lambda service: gr.update(visible=(service == "xttsv2")),
             inputs=char_tts_service,
@@ -441,6 +454,27 @@ def add_character_and_client_management_tab():
             inputs=[char_tts_model, char_tts_service],
             outputs=char_tts_voice,
         )
+        new_tts_service.change(
+
+            fn=update_model_dropdown,
+            inputs=new_tts_service,
+            outputs=new_tts_model,
+        )
+        new_tts_service.change(
+            lambda service: gr.update(visible=(service == "xttsv2")),
+            inputs=new_tts_service,
+            outputs=new_ref_audio,
+        )
+        new_tts_service.change(
+            lambda service: update_voice_dropdown(service, None),
+            inputs=new_tts_service,
+            outputs=new_tts_voice,
+        )
+        new_tts_model.change(
+            lambda model, service: update_voice_dropdown(service, model),
+            inputs=[new_tts_model, new_tts_service],
+            outputs=new_tts_voice,
+        )
         create_char_btn.click(
             create_character_async,
             inputs=[
@@ -453,11 +487,11 @@ def add_character_and_client_management_tab():
                 char_tts_voice,
                 char_ref_audio,
                 char_Actor_id,
-                adapter_ip_dropdown,
+                adapter_ip_dropdown,  # Add the new input
             ],
             outputs=[char_creation_status, char_env_snippet],
         )
-        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_lang, log_level):
+        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_lang, log_level, ref_audio):
             if not actor_id:
                 logger.warning("Dynamic config update: No Actor_ID selected/entered.")
                 return "Error: No Actor_ID selected/entered."
@@ -470,6 +504,8 @@ def add_character_and_client_management_tab():
                 payload["tts_language"] = tts_lang
             if log_level:
                 payload["log_level"] = log_level
+            if ref_audio and tts_service == "xttsv2":
+                payload["reference_audio"] = ref_audio.name
             if not payload:
                 logger.info("Dynamic config update: No configuration changes specified.")
                 return "No configuration changes specified."
@@ -484,7 +520,7 @@ def add_character_and_client_management_tab():
                 return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
         send_config_update_btn.click(
             handle_send_config_update,
-            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_language, new_log_level],
+            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_language, new_log_level, new_ref_audio],
             outputs=config_update_status,
         )
 
