@@ -174,6 +174,7 @@ class TTSManager:
             speaker_wav (Optional[str]): Path to a speaker WAV file for voice cloning. If not provided or invalid, the default voice is used.
             lang (str): The language code for synthesis. Defaults to "en".
         """
+        # Only proceed if tts_instance is a valid object (not a MethodType)
         if (
             self.tts_instance is None
             or isinstance(self.tts_instance, types.MethodType)
@@ -196,7 +197,7 @@ class TTSManager:
             if lang_to_use not in languages:
                 lang_to_use = languages[0]
         speaker_to_use = speaker_wav or self.speaker_wav_path
-        # Only call tts_to_file if tts_instance is not a MethodType
+        # Only call tts_to_file if tts_instance is not a MethodType (i.e., not gTTS)
         if not isinstance(self.tts_instance, types.MethodType):
             if (
                 speaker_to_use
@@ -213,19 +214,20 @@ class TTSManager:
                     f"Client TTSManager (XTTSv2): Synthesized with speaker wav {speaker_to_use}."
                 )
             else:
-                if (
-                    speaker_to_use
-                ):  # Only log warning if a speaker_wav was intended but not found/valid
+                if speaker_to_use:
                     logger.warning(
                         f"Client TTSManager (XTTSv2): speaker_wav '{speaker_to_use}' not found or invalid. Using default voice for lang {lang_to_use}."
                     )
-                else:  # Log if no speaker_wav was provided at all and default is used
+                else:
                     logger.debug(
                         f"Client TTSManager (XTTSv2): Synthesizing with default voice for lang {lang_to_use}."
                     )
                 self.tts_instance.tts_to_file(
                     text=text, language=lang_to_use, file_path=output_file_path
                 )
+        else:
+            logger.error("Client TTSManager: tts_to_file called on a method instance (gTTS). This should not happen.")
+            return
 
     async def synthesize(
         self,
