@@ -16,7 +16,6 @@ import os
 import asyncio
 import sys
 import logging
-from urllib.parse import quote
 
 
 logger = logging.getLogger("dreamweaver_server")
@@ -174,7 +173,7 @@ async def story_interface_async(
         transcription_text = f"[Transcription error: {e}]"
     progress(0.5, desc="Processing story turn...")
     try:
-        narration, character_texts = await csm_instance.process_story(
+        _, character_texts = await csm_instance.process_story(
             audio_input_path, chaos_level_value
         )
         progress(1, desc="Story turn processed.")
@@ -425,53 +424,61 @@ def add_character_and_client_management_tab():
 
         # Handlers
         def update_model_dropdown(service_name):
+            """Update model dropdown and reference audio visibility based on service selection"""
+            if not service_name:
+                return [
+                    gr.update(choices=[], value=None),
+                    gr.update(visible=False)
+                ]
+
             models = TTSManager.get_available_models(service_name)
             default_value = models[0] if models else None
-            return gr.update(choices=models, value=default_value)
 
-        def update_voice_dropdown(service_name, model_name):
+            # Reference audio is only visible for XTTS models
+            ref_audio_visible = any(TTSManager.requires_reference_audio(model) for model in models)
+
+            return [
+                gr.update(choices=models, value=default_value),
+                gr.update(visible=ref_audio_visible)
+            ]
+
+        def update_voice_dropdown(model_name, service_name):
+            """Update voice/language dropdown based on model and service"""
+            if not service_name or not model_name:
+                return gr.update(choices=[], value=None)
+
             voices = TTSManager.get_available_voices(service_name, model_name)
             default_value = voices[0] if voices else None
+
             return gr.update(choices=voices, value=default_value)
 
         char_tts_service.change(
             fn=update_model_dropdown,
-            inputs=char_tts_service,
-            outputs=char_tts_model,
+            inputs=[char_tts_service],
+            outputs=[char_tts_model, char_ref_audio],
         )
         char_tts_service.change(
-            lambda service: gr.update(visible=(service == "xttsv2")),
-            inputs=char_tts_service,
-            outputs=char_ref_audio,
-        )
-        char_tts_service.change(
-            lambda service: update_voice_dropdown(service, None),
+            lambda service: update_voice_dropdown(None, service),
             inputs=char_tts_service,
             outputs=char_tts_voice,
         )
         char_tts_model.change(
-            lambda model, service: update_voice_dropdown(service, model),
+            lambda model, service: update_voice_dropdown(model, service),
             inputs=[char_tts_model, char_tts_service],
             outputs=char_tts_voice,
         )
         new_tts_service.change(
-
             fn=update_model_dropdown,
-            inputs=new_tts_service,
-            outputs=new_tts_model,
+            inputs=[new_tts_service],
+            outputs=[new_tts_model, new_ref_audio],
         )
         new_tts_service.change(
-            lambda service: gr.update(visible=(service == "xttsv2")),
-            inputs=new_tts_service,
-            outputs=new_ref_audio,
-        )
-        new_tts_service.change(
-            lambda service: update_voice_dropdown(service, None),
+            lambda service: update_voice_dropdown(None, service),
             inputs=new_tts_service,
             outputs=new_tts_voice,
         )
         new_tts_model.change(
-            lambda model, service: update_voice_dropdown(service, model),
+            lambda model, service: update_voice_dropdown(model, service),
             inputs=[new_tts_model, new_tts_service],
             outputs=new_tts_voice,
         )
@@ -491,24 +498,26 @@ def add_character_and_client_management_tab():
             ],
             outputs=[char_creation_status, char_env_snippet],
         )
-        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_lang, log_level, ref_audio):
+        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_voice, log_level, ref_audio):
             if not actor_id:
-                logger.warning("Dynamic config update: No Actor_ID selected/entered.")
                 return "Error: No Actor_ID selected/entered."
+
             payload = {}
             if tts_service:
                 payload["tts_service_name"] = tts_service
-            if tts_model:
-                payload["tts_model_name"] = tts_model
-            if tts_lang:
-                payload["tts_language"] = tts_lang
+                if tts_model:
+                    payload["tts_model_name"] = tts_model
+                    if TTSManager.requires_reference_audio(tts_model):  # Check model instead of service
+                        if ref_audio:
+                            payload["reference_audio"] = ref_audio.name
+                        else:
+                            return "Error: Reference audio required for XTTS models"
+                    if tts_voice:
+                        payload["tts_voice"] = tts_voice  # Use tts_voice instead of tts_language
+
             if log_level:
                 payload["log_level"] = log_level
-            if ref_audio and tts_service == "xttsv2":
-                payload["reference_audio"] = ref_audio.name
-            if not payload:
-                logger.info("Dynamic config update: No configuration changes specified.")
-                return "No configuration changes specified."
+
             message_to_send = {"type": "config_update", "payload": payload}
             logger.info(f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}")
             success = await global_ws_connection_manager.send_personal_message(message_to_send, actor_id)
@@ -520,7 +529,7 @@ def add_character_and_client_management_tab():
                 return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
         send_config_update_btn.click(
             handle_send_config_update,
-            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_language, new_log_level, new_ref_audio],
+            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_voice, new_log_level, new_ref_audio],
             outputs=config_update_status,
         )
 
@@ -683,9 +692,9 @@ def launch_interface():  # Renamed original launch_interface
                 )
 
                 def update_token_field(provider):
-                    var, label, placeholder = provider_token_vars.get(
-                        provider, ("API_TOKEN", "API Token", "token...")
-                    )
+                    label, placeholder = provider_token_vars.get(
+                        provider, ("API Token", "token...")
+                    )[1:]
                     return gr.update(
                         visible=True, label=label, placeholder=placeholder, value=""
                     )
@@ -698,12 +707,9 @@ def launch_interface():  # Renamed original launch_interface
 
                 async def save_token_async(provider, token, progress=gr.Progress()):
                     progress(0, desc="Saving token...")
-                    var, _, _ = provider_token_vars.get(
-                        provider, ("API_TOKEN", "API Token", "token...")
-                    )
-                    new_var = f"{var}={token}"
+                    new_var = f"{provider_token_vars.get(provider, ('API_TOKEN', 'API Token', 'token...'))[0]}={token}"
                     logger.info(
-                        f"Attempting to save token for provider: {provider} (variable: {var})"
+                        f"Attempting to save token for provider: {provider}"
                     )
                     status_msg = await asyncio.to_thread(
                         env_manager.save_env_vars, new_var

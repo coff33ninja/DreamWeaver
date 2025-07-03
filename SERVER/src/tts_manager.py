@@ -81,14 +81,6 @@ class TTSManager:
             logger.warning(
                 f"Server TTSManager: No model name provided for TTS service '{self.service_name}'. Initialization may fail or use defaults."
             )
-            # self._handle_optional_model_name() # This method was a pass-through and not adding value.
-
-        # def _handle_optional_model_name(self): # Definition removed as it's no longer called.
-        #     """
-        #     Handle cases where a model name might be optional for certain services.
-        #     For Coqui, model_name is usually required.
-        #     """
-        #     pass
 
         model_path_or_name = self._get_or_download_model_blocking(
             self.service_name, self.model_name
@@ -310,18 +302,54 @@ class TTSManager:
 
     @staticmethod
     def list_services():
-        """
-        Return a list of available text-to-speech (TTS) services based on installed libraries.
+        """List available TTS services"""
+        return ["gtts", "coqui"]  # Simplified service list, XTTS is part of Coqui
 
-        Returns:
-            services (list): List of supported TTS service names, such as "gtts" and "xttsv2".
-        """
-        services = []
-        if gtts:
-            services.append("gtts")
-        if CoquiTTS:
-            services.append("xttsv2")
-        return services
+    @staticmethod
+    def get_available_models(service_name: str):
+        """Get available models for a specific TTS service"""
+        if service_name == "gtts":
+            return ["gtts"]  # gTTS has only one model
+        elif service_name == "coqui":
+            try:
+                from TTS.api import TTS
+                tts = TTS()
+                models = []
+                for model in tts.list_models():
+                    # Add all available models with their full names
+                    models.append(model.model_name)
+                return sorted(models) if models else ["tts_models/multilingual/multi-dataset/your-tts"]
+            except Exception as e:
+                logger.error(f"Error listing Coqui models: {e}")
+                return ["tts_models/multilingual/multi-dataset/your-tts"]
+        return []
+
+    @staticmethod
+    def get_available_voices(service_name: str, model_name: str = None):
+        """Get available voices/languages for a service/model combination"""
+        if service_name == "gtts":
+            # Standard gTTS languages
+            return ["en", "es", "fr", "de", "it", "ja", "ko", "zh"]
+        elif service_name == "coqui" and model_name:
+            try:
+                from TTS.api import TTS
+                tts = TTS(model_name=model_name)
+                if hasattr(tts, "languages"):
+                    return sorted(list(tts.languages))
+                else:
+                    # Some models might have speakers instead of languages
+                    if hasattr(tts, "speakers"):
+                        return sorted(list(tts.speakers))
+                    return ["en"]  # Default if no languages/speakers found
+            except Exception as e:
+                logger.error(f"Error getting voices for Coqui model {model_name}: {e}")
+                return ["en"]
+        return []
+
+    @staticmethod
+    def requires_reference_audio(model_name: str):
+        """Check if model requires/supports reference audio"""
+        return "xtts" in model_name.lower()
 
     @staticmethod
     def discover_models():
@@ -344,54 +372,6 @@ class TTSManager:
         if CoquiTTS:
             models.setdefault('xttsv2', []).append('tts_models/multilingual/multi-dataset/xtts_v2')
         return models
-
-    @staticmethod
-    def get_available_models(service_name: str):
-        """
-        Return a list of available model identifiers for the specified TTS service.
-        Parameters:
-            service_name (str): The name of the TTS service (e.g., "gtts", "xttsv2", "piper").
-        Returns:
-            list: List of model identifiers or UI hints relevant to the service.
-        """
-        if service_name == "gtts":
-            return ["N/A (uses language codes)"]
-        discovered = TTSManager.discover_models().get(service_name, [])
-        # Always include default XTTSv2 if CoquiTTS is available
-        if service_name == "xttsv2" and CoquiTTS:
-            if "tts_models/multilingual/multi-dataset/xtts_v2" not in discovered:
-                discovered.append("tts_models/multilingual/multi-dataset/xtts_v2")
-        return discovered
-
-    @staticmethod
-    def get_available_voices(service_name: str, model_name: Optional[str] = None):
-        """
-        Return a list of available voices/speakers for a given service/model.
-        Parameters:
-            service_name (str): The TTS backend name.
-            model_name (Optional[str]): The model identifier (if required by backend).
-        Returns:
-            list: List of available voices/speakers, or an empty list if not supported.
-        """
-        voices = []
-        if service_name == "gtts":
-            # gTTS supports language codes as "voices"
-            try:
-                import gtts.lang
-                voices = list(gtts.lang.tts_langs().keys())
-            except Exception:
-                voices = ["en"]
-        elif service_name == "xttsv2" and CoquiTTS:
-            try:
-                tts = CoquiTTS(model_name=model_name or "tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False)
-                if hasattr(tts, "speakers") and tts.speakers:
-                    voices = list(tts.speakers)
-                elif hasattr(tts, "languages") and tts.languages:
-                    voices = list(tts.languages)
-            except Exception:
-                voices = []
-        # Future: add Piper or other TTS backends here
-        return voices
 
     @staticmethod
     def get_default_model(service_name: str):
