@@ -346,32 +346,57 @@ async def restart_server_async(progress=gr.Progress()):
     return "Server is restarting..."
 
 
-# --- Dynamic Client Config Tab ---
-def add_dynamic_client_config_tab():
-    """Adds the dynamic client configuration tab to the Gradio interface."""
-    with gr.TabItem("Dynamic Client Configuration"):
-        gr.Markdown("## Update Client Configurations via WebSocket")
-        gr.Markdown(
-            "Select a connected client and update its configuration parameters. The client must be connected via WebSocket for changes to take effect."
-        )
-
+# --- Merged Character & Client Management Tab ---
+def add_character_and_client_management_tab():
+    """Adds the merged Character and Client Management tab to the Gradio interface."""
+    with gr.TabItem("Character & Client Management"):
+        gr.Markdown("## Manage Characters and Clients")
         with gr.Row():
-            # Using the global_ws_connection_manager imported at the top
-            connected_clients_dropdown = gr.Dropdown(
-                label="Select Client Actor_ID",
-                choices=global_ws_connection_manager.get_active_clients(),
-                allow_custom_value=True,
-            )
-            refresh_clients_btn = gr.Button("Refresh Client List")
-
-            def update_client_list_ui():  # Renamed to avoid conflict if any
-                return gr.update(
-                    choices=global_ws_connection_manager.get_active_clients()
+            with gr.Column(scale=2):
+                # Character Management Inputs
+                char_name = gr.Textbox(label="Character Name", placeholder="E.g., 'Elara'")
+                char_Actor_id = gr.Dropdown(
+                    ["Actor1"] + [f"Actor{i}" for i in range(2, 11)],
+                    label="Assign to Actor ID",
+                    value="Actor1",
                 )
+                char_tts_service = gr.Dropdown(TTSManager.list_services(), label="TTS Service")
+                char_tts_model = gr.Dropdown([], label="TTS Model")
+                char_tts_voice = gr.Dropdown([], label="TTS Voice/Language")
+                char_ref_audio = gr.File(
+                    label="Reference Audio (XTTSv2)",
+                    type="filepath",
+                    visible=False,
+                )
+                # Adapter IP display and selection
+                adapter_ip_btn = gr.Button("Show Adapter IPs")
+                adapter_ip_output = gr.JSON(label="Adapter IP Addresses")
+                adapter_ip_dropdown = gr.Dropdown(label="Select Server IP for Client .env", choices=[], visible=False)
+                def update_adapter_ip_dropdown():
+                    ips = Hardware.get_adapter_ip_addresses()
+                    if not ips:
+                        return gr.update(choices=[], visible=False), {}
+                    return gr.update(choices=list(ips.values()), visible=True), ips
+                adapter_ip_btn.click(update_adapter_ip_dropdown, inputs=[], outputs=[adapter_ip_dropdown, adapter_ip_output])
+            with gr.Column(scale=3):
+                char_personality = gr.Textbox(label="Personality", lines=2)
+                char_goals = gr.Textbox(label="Goals", lines=2)
+                char_backstory = gr.Textbox(label="Backstory", lines=3)
+        create_char_btn = gr.Button("Save Character", variant="primary")
+        char_creation_status = gr.Textbox(label="Status", interactive=False)
+        char_env_snippet = gr.Textbox(label="Client .env Snippet (Copy & Paste)", lines=3, interactive=False)
 
-            refresh_clients_btn.click(
-                update_client_list_ui, outputs=[connected_clients_dropdown]
-            )
+        # Dynamic Client Management Inputs
+        gr.Markdown("### Update Client Configurations via WebSocket")
+        connected_clients_dropdown = gr.Dropdown(
+            label="Select Client Actor_ID",
+            choices=global_ws_connection_manager.get_active_clients(),
+            allow_custom_value=True,
+        )
+        refresh_clients_btn = gr.Button("Refresh Client List")
+        def update_client_list_ui():
+            return gr.update(choices=global_ws_connection_manager.get_active_clients())
+        refresh_clients_btn.click(update_client_list_ui, outputs=[connected_clients_dropdown])
 
         with gr.Row():
             with gr.Column():
@@ -381,28 +406,61 @@ def add_dynamic_client_config_tab():
                     label="New TTS Service (blank to skip)",
                 )
                 new_tts_model = gr.Textbox(label="New TTS Model Name (blank to skip)")
-                new_tts_language = gr.Textbox(
-                    label="New TTS Language (e.g., 'en', 'es'; blank to skip)"
-                )
+                new_tts_language = gr.Textbox(label="New TTS Language (e.g., 'en', 'es'; blank to skip)")
             with gr.Column():
                 gr.Markdown("### Logging Configuration")
                 new_log_level = gr.Dropdown(
                     choices=["", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                     label="New Log Level (blank to skip)",
                 )
-
-        send_config_update_btn = gr.Button(
-            "Send Configuration Update to Client", variant="primary"
-        )
+        send_config_update_btn = gr.Button("Send Configuration Update to Client", variant="primary")
         config_update_status = gr.Textbox(label="Update Status", interactive=False)
 
-        async def handle_send_config_update(
-            actor_id, tts_service, tts_model, tts_lang, log_level
-        ):
+        # Handlers
+        char_tts_service.change(
+            fn=update_model_dropdown,
+            inputs=char_tts_service,
+            outputs=char_tts_model,
+        )
+        def update_voice_dropdown(service, model):
+            voices = TTSManager.get_available_voices(service, model)
+            default = voices[0] if voices else None
+            return gr.update(choices=voices, value=default)
+        char_tts_service.change(
+            lambda service: gr.update(visible=(service == "xttsv2")),
+            inputs=char_tts_service,
+            outputs=char_ref_audio,
+        )
+        char_tts_service.change(
+            lambda service: update_voice_dropdown(service, None),
+            inputs=char_tts_service,
+            outputs=char_tts_voice,
+        )
+        char_tts_model.change(
+            lambda model, service: update_voice_dropdown(service, model),
+            inputs=[char_tts_model, char_tts_service],
+            outputs=char_tts_voice,
+        )
+        create_char_btn.click(
+            create_character_async,
+            inputs=[
+                char_name,
+                char_personality,
+                char_goals,
+                char_backstory,
+                char_tts_service,
+                char_tts_model,
+                char_tts_voice,
+                char_ref_audio,
+                char_Actor_id,
+                adapter_ip_dropdown,
+            ],
+            outputs=[char_creation_status, char_env_snippet],
+        )
+        async def handle_send_config_update(actor_id, tts_service, tts_model, tts_lang, log_level):
             if not actor_id:
                 logger.warning("Dynamic config update: No Actor_ID selected/entered.")
                 return "Error: No Actor_ID selected/entered."
-
             payload = {}
             if tts_service:
                 payload["tts_service_name"] = tts_service
@@ -412,43 +470,21 @@ def add_dynamic_client_config_tab():
                 payload["tts_language"] = tts_lang
             if log_level:
                 payload["log_level"] = log_level
-
             if not payload:
-                logger.info(
-                    "Dynamic config update: No configuration changes specified."
-                )
+                logger.info("Dynamic config update: No configuration changes specified.")
                 return "No configuration changes specified."
-
             message_to_send = {"type": "config_update", "payload": payload}
-
-            logger.info(
-                f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}"
-            )
-            # Use the global_ws_connection_manager
-            success = await global_ws_connection_manager.send_personal_message(
-                message_to_send, actor_id
-            )
-
+            logger.info(f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}")
+            success = await global_ws_connection_manager.send_personal_message(message_to_send, actor_id)
             if success:
-                logger.info(
-                    f"Configuration update WebSocket message sent to {actor_id}."
-                )
+                logger.info(f"Configuration update WebSocket message sent to {actor_id}.")
                 return f"Configuration update sent to {actor_id}."
             else:
-                logger.warning(
-                    f"Failed to send configuration update WebSocket message to {actor_id}."
-                )
+                logger.warning(f"Failed to send configuration update WebSocket message to {actor_id}.")
                 return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
-
         send_config_update_btn.click(
             handle_send_config_update,
-            inputs=[
-                connected_clients_dropdown,
-                new_tts_service,
-                new_tts_model,
-                new_tts_language,
-                new_log_level,
-            ],
+            inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_language, new_log_level],
             outputs=config_update_status,
         )
 
@@ -472,170 +508,7 @@ def launch_interface():  # Renamed original launch_interface
         gr.Markdown("# Dream Weaver Interface")
 
         with gr.Tabs():
-            with gr.TabItem("Character Management"):
-                gr.Markdown("## Create or Update Characters")
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        char_name = gr.Textbox(
-                            label="Character Name", placeholder="E.g., 'Elara'"
-                        )
-                        char_Actor_id = gr.Dropdown(
-                            ["Actor1"] + [f"Actor{i}" for i in range(2, 11)],
-                            label="Assign to Actor ID",
-                            value="Actor1",
-                        )
-                        char_tts_service = gr.Dropdown(
-                            TTSManager.list_services(), label="TTS Service"
-                        )
-                        char_tts_model = gr.Dropdown([], label="TTS Model")
-                        char_tts_voice = gr.Dropdown([], label="TTS Voice/Language")
-                        char_ref_audio = gr.File(
-                            label="Reference Audio (XTTSv2)",
-                            type="filepath",
-                            visible=False,
-                        )
-                        # Adapter IP display and selection
-                        adapter_ip_btn = gr.Button("Show Adapter IPs")
-                        adapter_ip_output = gr.JSON(label="Adapter IP Addresses")
-                        adapter_ip_dropdown = gr.Dropdown(label="Select Server IP for Client .env", choices=[], visible=False)
-                        def update_adapter_ip_dropdown():
-                            ips = Hardware.get_adapter_ip_addresses()
-                            if not ips:
-                                return gr.update(choices=[], visible=False), {}
-                            return gr.update(choices=list(ips.values()), visible=True), ips
-                        adapter_ip_btn.click(update_adapter_ip_dropdown, inputs=[], outputs=[adapter_ip_dropdown, adapter_ip_output])
-                    with gr.Column(scale=3):
-                        char_personality = gr.Textbox(label="Personality", lines=2)
-                        char_goals = gr.Textbox(label="Goals", lines=2)
-                        char_backstory = gr.Textbox(label="Backstory", lines=3)
-                create_char_btn = gr.Button("Save Character", variant="primary")
-                char_creation_status = gr.Textbox(label="Status", interactive=False)
-                char_env_snippet = gr.Textbox(label="Client .env Snippet (Copy & Paste)", lines=3, interactive=False)
-                with gr.Accordion("Client Configuration Download", open=False):
-                    client_config_server_url = gr.Textbox(
-                        label="Server URL for Client",
-                        placeholder="E.g., http://192.168.1.100:8000",
-                    )
-                    download_client_config_btn = gr.Button("Download Client .env File")
-                    client_config_file_download = gr.File(
-                        label="Download Link", visible=False, interactive=False
-                    )
-                    client_config_download_status = gr.Textbox(
-                        label="Download Status", interactive=False, visible=False
-                    )
-                char_tts_service.change(
-                    fn=update_model_dropdown,
-                    inputs=char_tts_service,
-                    outputs=char_tts_model,
-                )  # Use gr.update here
-                def update_voice_dropdown(service, model):
-                    voices = TTSManager.get_available_voices(service, model)
-                    default = voices[0] if voices else None
-                    return gr.update(choices=voices, value=default)
-                char_tts_service.change(
-                    lambda service: gr.update(visible=(service == "xttsv2")),
-                    inputs=char_tts_service,
-                    outputs=char_ref_audio,
-                )  # Use gr.update
-                char_tts_service.change(
-                    lambda service: update_voice_dropdown(service, None),
-                    inputs=char_tts_service,
-                    outputs=char_tts_voice,
-                )
-                char_tts_model.change(
-                    lambda model, service: update_voice_dropdown(service, model),
-                    inputs=[char_tts_model, char_tts_service],
-                    outputs=char_tts_voice,
-                )
-                create_char_btn.click(
-                    create_character_async,
-                    inputs=[
-                        char_name,
-                        char_personality,
-                        char_goals,
-                        char_backstory,
-                        char_tts_service,
-                        char_tts_model,
-                        char_tts_voice,
-                        char_ref_audio,
-                        char_Actor_id,
-                        adapter_ip_dropdown,  # Pass selected IP to async handler
-                    ],
-                    outputs=[char_creation_status, char_env_snippet],
-                )
-
-                async def handle_download_client_config(
-                    actor_id, server_url_for_client, progress=gr.Progress()
-                ):
-                    # ... (implementation as before)
-                    if not actor_id or actor_id == "Actor1":
-                        logger.warning(
-                            f"Client config download requested for invalid actor_id: {actor_id}"
-                        )
-                        return {
-                            client_config_download_status: gr.update(
-                                value="Select a valid Client Actor ID (not Actor1).",
-                                visible=True,
-                            ),
-                            client_config_file_download: gr.update(visible=False),
-                        }
-                    if not server_url_for_client:
-                        logger.warning(
-                            f"Client config download requested for actor_id: {actor_id} without server_url."
-                        )
-                        return {
-                            client_config_download_status: gr.update(
-                                value="Please enter the Server URL for the client.",
-                                visible=True,
-                            ),
-                            client_config_file_download: gr.update(visible=False),
-                        }
-                    progress(0, desc="Preparing download link...")
-                    logger.info(
-                        f"Preparing client config download for Actor_id: {actor_id} with server_url: {server_url_for_client}"
-                    )
-                    encoded_server_url = quote(server_url_for_client, safe=":/")
-                    fastapi_base_url = "http://localhost:8000"
-                    download_url = f"{fastapi_base_url}/download_client_config/{actor_id}?server_url={encoded_server_url}"
-                    progress(1, desc="Link generated. Starting download...")
-                    logger.info(
-                        f"Triggering download for {actor_id} with URL: {download_url}"
-                    )
-                    return {
-                        client_config_download_status: gr.update(
-                            value=f"Preparing download for {actor_id}...", visible=True
-                        ),
-                        client_config_file_download: gr.update(
-                            value=download_url, visible=True
-                        ),
-                    }
-
-                async def hide_download_link_after_trigger():
-                    logger.debug(
-                        "Hiding client config download link elements after delay."
-                    )
-                    await asyncio.sleep(2)
-                    return {
-                        client_config_file_download: gr.update(visible=False),
-                        client_config_download_status: gr.update(visible=False),
-                    }
-
-                download_client_config_btn.click(
-                    handle_download_client_config,
-                    inputs=[char_Actor_id, client_config_server_url],
-                    outputs=[
-                        client_config_download_status,
-                        client_config_file_download,
-                    ],
-                ).then(
-                    hide_download_link_after_trigger,
-                    inputs=[],
-                    outputs=[
-                        client_config_file_download,
-                        client_config_download_status,
-                    ],
-                )
-
+            add_character_and_client_management_tab()
             with gr.TabItem("Story Progression"):
                 gr.Markdown("## Narrate the Story")
                 with gr.Row():
@@ -741,8 +614,6 @@ def launch_interface():  # Renamed original launch_interface
                             inputs=[export_format_radio],
                             outputs=[export_status_text, export_filename_display],
                         )
-
-            add_dynamic_client_config_tab()  # Add the new tab here
 
             with gr.TabItem("API Keys & .env"):
                 gr.Markdown("## Manage Environment Variables (.env)")

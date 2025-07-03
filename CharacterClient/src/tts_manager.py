@@ -16,6 +16,7 @@ ensure_client_directories()  # This in config.py should also be logged if it pri
 
 try:
     import gtts
+    import gtts.lang
 except ImportError:
     gtts = None
     logger.info(
@@ -428,8 +429,10 @@ class TTSManager:
         if service_name == "gtts":
             # gTTS supports language codes as "voices"
             try:
-                import gtts.lang
-                voices = list(gtts.lang.tts_langs().keys())
+                if gtts and gtts.lang:
+                    voices = list(gtts.lang.tts_langs().keys())
+                else:
+                    voices = ["en"]
             except Exception:
                 voices = ["en"]
         elif service_name == "xttsv2" and CoquiTTS:
