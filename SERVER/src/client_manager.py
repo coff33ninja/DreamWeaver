@@ -41,11 +41,7 @@ class ClientManager:
                 )
         self.health_check_thread = None
         self.stop_health_check_event = threading.Event()
-        self.active_challenges: dict[str, dict[str, Any]] = (
-            {}
-        )  # Actor_id -> {"challenge": str, "timestamp": datetime}
-        self.CHALLENGE_EXPIRY_SECONDS = 60
-        self.CHALLENGE_EXPIRY_SECONDS = 60
+        # active_challenges and CHALLENGE_EXPIRY_SECONDS have been moved to AuthManager
 
     def generate_token(self, Actor_id: str) -> str:
         """
@@ -88,50 +84,8 @@ class ClientManager:
         logger.info(f"Generated and saved primary token for Actor_id: {Actor_id}")
         return token
 
-    def generate_handshake_challenge(self, Actor_id: str) -> str | None:
-        """
-        Generates a new handshake challenge for the given Actor_id, stores it with a timestamp,
-        and returns the challenge string.
-        """
-        challenge = secrets.token_urlsafe(32)
-        self.active_challenges[Actor_id] = {
-            "challenge": challenge,
-            "timestamp": datetime.now(timezone.utc),
-        }
-        logger.info(f"Generated handshake challenge for Actor_id: {Actor_id}")
-        return challenge
-
-    def get_and_validate_challenge(self, Actor_id: str) -> str | None:
-        """
-        Retrieves the stored challenge for an Actor_id if it exists and hasn't expired.
-        Removes the challenge after retrieval if it's valid.
-        """
-        challenge_data = self.active_challenges.get(Actor_id)
-        if not challenge_data:
-            logger.warning(
-                f"No active handshake challenge found for Actor_id: {Actor_id}"
-            )
-            return None
-
-        issue_time = challenge_data["timestamp"]
-        if datetime.now(timezone.utc) - issue_time > timedelta(
-            seconds=self.CHALLENGE_EXPIRY_SECONDS
-        ):
-            logger.warning(
-                f"Handshake challenge expired for Actor_id: {Actor_id}. Issued at: {issue_time}"
-            )
-            del self.active_challenges[Actor_id]  # Clean up expired challenge
-            return None
-
-        # Challenge is valid and will be consumed now
-        # del self.active_challenges[Actor_id] # Challenge should be deleted only after successful response verification
-        return challenge_data["challenge"]
-
-    def clear_challenge(self, Actor_id: str):
-        """Removes a challenge for an Actor_id, typically after use or expiry."""
-        if Actor_id in self.active_challenges:
-            del self.active_challenges[Actor_id]
-            logger.info(f"Cleared handshake challenge for Actor_id: {Actor_id}")
+    # generate_handshake_challenge, get_and_validate_challenge, and clear_challenge
+    # have been moved to AuthManager.
 
     def get_clients_for_story_progression(self):
         """

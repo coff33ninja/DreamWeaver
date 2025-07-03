@@ -140,6 +140,6 @@ class WebSocketConnectionManager:
         return list(self.active_connections.keys())
 
 
-# Global instance (or manage via FastAPI dependencies if preferred for more complex scenarios)
-# For now, a global instance is simpler for Gradio to access if needed.
-connection_manager = WebSocketConnectionManager()
+# The global instance has been removed.
+# Instantiate WebSocketConnectionManager where needed,
+# preferably using FastAPI's dependency injection system.

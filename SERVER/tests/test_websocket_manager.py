@@ -3,22 +3,15 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 import logging
 
-# Add SERVER/src to sys.path
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+# Assuming pytest is run from the SERVER directory or project root where SERVER.src is discoverable
+from SERVER.src.websocket_manager import WebSocketConnectionManager
 
-from websocket_manager import WebSocketConnectionManager, connection_manager as global_connection_manager
-
-# Reset the global connection_manager before each test module if it's used directly by other modules
-# For unit testing WebSocketConnectionManager class, we'll instantiate it.
+# global_connection_manager has been removed from websocket_manager.py
+# Tests for WebSocketConnectionManager class should instantiate it directly.
 
 @pytest.fixture
-def manager():
+def manager() -> WebSocketConnectionManager: # Added return type hint
     """Fixture to create a new WebSocketConnectionManager instance for each test."""
-    # Reset the global one if it's being imported and potentially modified elsewhere,
-    # though for class unit tests, instantiating directly is cleaner.
-    # For now, let's assume we test a fresh instance.
     return WebSocketConnectionManager()
 
 @pytest.fixture

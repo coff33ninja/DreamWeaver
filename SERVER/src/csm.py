@@ -2,7 +2,7 @@ from .database import Database
 from .narrator import Narrator
 from .character_server import CharacterServer  # Should be async
 from .client_manager import ClientManager  # Should be async
-from .hardware import Hardware
+from .hardware import HardwareManager # Updated import
 from .chaos_engine import ChaosEngine
 from .config import DB_PATH
 import asyncio  # Added asyncio
@@ -21,7 +21,7 @@ class CSM:
         self.narrator = Narrator()
         self.character_server = CharacterServer(self.db)
         self.client_manager = ClientManager(self.db)
-        self.hardware = Hardware()
+        self.hardware_manager = HardwareManager() # Changed instance name and class
         self.chaos_engine = ChaosEngine()
 
         self.client_manager.start_periodic_health_checks()  # This will log its own startup
@@ -170,9 +170,10 @@ class CSM:
             )
 
         # 4. Update Hardware (assuming hardware update is fast or non-critical path)
-        # If self.hardware.update_leds is blocking and slow, use asyncio.to_thread
-        logger.debug("CSM: Updating hardware LEDs based on narration.")
-        await asyncio.to_thread(self.hardware.update_leds, narration_text)
+        # If self.hardware_manager.update_story_leds is blocking and slow, use asyncio.to_thread
+        # The HardwareManager's method itself is currently synchronous.
+        logger.debug("CSM: Updating hardware LEDs based on narration via HardwareManager.")
+        await asyncio.to_thread(self.hardware_manager.update_story_leds, narration_text)
 
         # 5. Save to Database (DB calls wrapped in to_thread)
         if narration_text or character_texts:

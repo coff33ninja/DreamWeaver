@@ -6,16 +6,9 @@ import tempfile
 from unittest.mock import MagicMock, AsyncMock, patch
 
 # Add the SERVER directory to the path to import CSM
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")) # Removed, assuming standard test execution context
 
-try:
-    from src.csm import CSM
-except ImportError:
-    # Fallback import path
-    try:
-        from csm import CSM
-    except ImportError:
-        from SERVER.src.csm import CSM
+from SERVER.src.csm import CSM
 
 
 class TestCSM:
@@ -35,12 +28,16 @@ class TestCSM:
     def mock_dependencies(self):
         """Set up mocked dependencies for CSM testing."""
         with patch.multiple(
-            "src.csm",
+            "SERVER.src.csm",  # Corrected path
             Narrator=MagicMock,
             CharacterServer=MagicMock,
             ClientManager=MagicMock,
             Database=MagicMock,
+            HardwareManager=MagicMock, # Added HardwareManager
         ) as mocks:
+            # Ensure the HardwareManager mock has the method we expect to call
+            if 'HardwareManager' in mocks: # Should always be true with patch.multiple
+                mocks['HardwareManager'].return_value.update_story_leds = MagicMock()
             yield mocks
 
     @pytest.fixture
@@ -904,8 +901,11 @@ if __name__ == "__main__":
             "Actor_id": "Actor1",
         }
 
-        # Mock hardware update_leds method
-        csm_instance.hardware.update_leds = MagicMock()
+        # Mock hardware_manager update_story_leds method
+        # The HardwareManager is already mocked via mock_dependencies,
+        # and its update_story_leds method on the instance is also a MagicMock.
+        # We can access it via csm_instance.hardware_manager if needed for specific assertions or return values.
+        # csm_instance.hardware_manager.update_story_leds = MagicMock() # Already a mock
 
         narration, characters = await csm_instance.process_story(
             dummy_audio_file, chaos_level=0.0
@@ -913,8 +913,8 @@ if __name__ == "__main__":
 
         assert narration is not None
         assert isinstance(characters, dict)
-        # Verify hardware was updated
-        csm_instance.hardware.update_leds.assert_called_once_with(
+        # Verify hardware_manager was updated
+        csm_instance.hardware_manager.update_story_leds.assert_called_once_with(
             "Hardware test narration"
         )
 
@@ -938,8 +938,8 @@ if __name__ == "__main__":
             "Actor_id": "Actor1",
         }
 
-        # Mock hardware failure
-        csm_instance.hardware.update_leds = MagicMock(
+        # Mock hardware_manager failure
+        csm_instance.hardware_manager.update_story_leds = MagicMock(
             side_effect=Exception("Hardware error")
         )
 
@@ -1176,7 +1176,7 @@ if __name__ == "__main__":
             assert hasattr(csm, "narrator")
             assert hasattr(csm, "character_server")
             assert hasattr(csm, "client_manager")
-            assert hasattr(csm, "hardware")
+            assert hasattr(csm, "hardware_manager") # Updated attribute name
             assert hasattr(csm, "chaos_engine")
 
     @pytest.mark.asyncio

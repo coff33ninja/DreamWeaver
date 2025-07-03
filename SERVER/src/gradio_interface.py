@@ -6,10 +6,11 @@ from .client_manager import ClientManager
 from .checkpoint_manager import CheckpointManager
 from . import env_manager
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH
-from .hardware import Hardware
-
-# Import the global connection_manager
-from .websocket_manager import connection_manager as global_ws_connection_manager
+from .hardware import Hardware # Still needed for other Hardware functionalities if any, or can be removed if not.
+                           # HardwareManager is now the primary interface for hardware ops from csm.py.
+                           # For get_adapter_ip_addresses, we'll use network_utils.
+from .network_utils import get_adapter_ip_addresses # Import the new function
+from .websocket_manager import WebSocketConnectionManager # Import the class
 
 import shutil
 import os
@@ -26,6 +27,8 @@ client_manager_instance = None
 csm_instance = None
 checkpoint_manager = None
 env_manager_instance = None
+# Global WebSocketConnectionManager instance for Gradio scope
+gradio_ws_connection_manager = None
 
 
 # --- Helper Functions ---
@@ -53,8 +56,8 @@ async def get_story_playback_data_async():
 
 
 async def get_adapter_ips_async():
-    # Use a thread to avoid blocking
-    return Hardware.get_adapter_ip_addresses()
+    # Use a thread to avoid blocking as get_adapter_ip_addresses can perform I/O
+    return await asyncio.to_thread(get_adapter_ip_addresses)
 
 
 # --- Async Handlers (Existing ones condensed for brevity in this example) ---
@@ -132,7 +135,10 @@ async def create_character_async(
             if selected_server_ip:
                 server_url = f"http://{selected_server_ip}:8000"
             else:
-                adapter_ips = Hardware.get_adapter_ip_addresses()
+                # Call the imported function directly. It's synchronous, so call within to_thread if it were slow.
+                # For now, direct call as it was before. If it blocks, wrap with asyncio.to_thread.
+                # Original call was direct. Let's keep it that way unless profiling shows it's an issue.
+                adapter_ips = get_adapter_ip_addresses()
                 if adapter_ips:
                     # Prefer Wi-Fi, Ethernet, or first available
                     preferred = None
@@ -540,12 +546,14 @@ def add_character_and_client_management_tab():
         gr.Markdown("### Update Client Configurations via WebSocket")
         connected_clients_dropdown = gr.Dropdown(
             label="Select Client Actor_ID",
-            choices=global_ws_connection_manager.get_active_clients(),
+            choices=[],  # Initialize empty, will be populated by refresh or on load
             allow_custom_value=True,
         )
         refresh_clients_btn = gr.Button("Refresh Client List")
         def update_client_list_ui():
-            return gr.update(choices=global_ws_connection_manager.get_active_clients())
+            if gradio_ws_connection_manager:
+                return gr.update(choices=gradio_ws_connection_manager.get_active_clients())
+            return gr.update(choices=[])
         refresh_clients_btn.click(update_client_list_ui, outputs=[connected_clients_dropdown])
 
         with gr.Row():
@@ -622,13 +630,17 @@ def add_character_and_client_management_tab():
 
             message_to_send = {"type": "config_update", "payload": payload}
             logger.info(f"Attempting to send config update to {actor_id} via WebSocket: {message_to_send}")
-            success = await global_ws_connection_manager.send_personal_message(message_to_send, actor_id)
-            if success:
-                logger.info(f"Configuration update WebSocket message sent to {actor_id}.")
-                return f"Configuration update sent to {actor_id}."
+            if gradio_ws_connection_manager:
+                success = await gradio_ws_connection_manager.send_personal_message(message_to_send, actor_id)
+                if success:
+                    logger.info(f"Configuration update WebSocket message sent to {actor_id}.")
+                    return f"Configuration update sent to {actor_id}."
+                else:
+                    logger.warning(f"Failed to send configuration update WebSocket message to {actor_id}.")
+                    return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
             else:
-                logger.warning(f"Failed to send configuration update WebSocket message to {actor_id}.")
-                return f"Failed to send configuration update to {actor_id}. Client might be disconnected or an error occurred."
+                logger.error("WebSocket Connection Manager not initialized in Gradio. Cannot send message.")
+                return "Error: WebSocket Connection Manager not initialized."
         send_config_update_btn.click(
             handle_send_config_update,
             inputs=[connected_clients_dropdown, new_tts_service, new_tts_model, new_tts_voice, new_log_level, new_ref_audio],
@@ -639,11 +651,14 @@ def add_character_and_client_management_tab():
 # --- Gradio UI Launch ---
 def launch_interface():  # Renamed original launch_interface
     global db_instance, client_manager_instance, csm_instance, checkpoint_manager, env_manager_instance
+    global gradio_ws_connection_manager # Declare it as global to assign
     db_instance = Database(DB_PATH)
     client_manager_instance = ClientManager(db_instance)
     csm_instance = CSM()
     checkpoint_manager = CheckpointManager()
     env_manager_instance = env_manager
+    gradio_ws_connection_manager = WebSocketConnectionManager() # Initialize
+    logger.info("Gradio WebSocketConnectionManager initialized.")
 
     import gradio.themes as themes
 
@@ -712,6 +727,9 @@ def launch_interface():  # Renamed original launch_interface
                     inputs=[],
                     outputs=[story_playback_chatbot],
                 )
+                # Populate client list on load as well
+                demo.load(update_client_list_ui, outputs=[connected_clients_dropdown])
+
 
             with gr.TabItem("System & Data Management"):
                 gr.Markdown("## Checkpoints & Export")

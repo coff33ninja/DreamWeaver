@@ -7,6 +7,7 @@ import logging
 from gtts.lang import tts_langs  # Added import
 
 from .config import MODELS_PATH
+from .model_manager import ModelManager # Import ModelManager
 
 logger = logging.getLogger("dreamweaver_server")
 
@@ -50,6 +51,7 @@ class TTSManager:
         self.language = language or "en"  # For gTTS and XTTS
         self.tts_instance = None
         self.is_initialized = False  # Flag
+        self._model_manager = ModelManager() # Instantiate ModelManager
 
         # Set TTS_HOME for Coqui models to be stored within our server's model directory
         os.environ["TTS_HOME"] = MODELS_PATH
@@ -85,15 +87,25 @@ class TTSManager:
             logger.warning(
                 f"Server TTSManager: No model name provided for TTS service '{self.service_name}'. Initialization may fail or use defaults."
             )
+            # For xttsv2, model_name is crucial. For others, it might be optional or handled differently.
+            if self.service_name == "xttsv2": # Specifically check for xttsv2
+                 logger.error(
+                    f"Server TTSManager: Critical - No model name provided for XTTSv2 service. Cannot initialize."
+                )
+                 return # Stop initialization if xttsv2 model_name is missing
 
-        model_path_or_name = self._get_or_download_model_blocking(
+
+        # Use ModelManager to get the model path or identifier
+        # The model_identifier for xttsv2 is the name Coqui uses. For gTTS, this path isn't directly used for model loading in the same way.
+        model_path_or_name = self._model_manager.get_or_prepare_tts_model_path(
             self.service_name, self.model_name
         )
-        if (
-            not model_path_or_name and self.service_name == "xttsv2"
-        ):  # Only critical for xttsv2 if model_name was expected
+
+        # If service is xttsv2 and model_path_or_name is None (which means model_name was likely empty, handled above, or get_or_prepare failed)
+        # then we cannot proceed for xttsv2.
+        if self.service_name == "xttsv2" and not model_path_or_name:
             logger.error(
-                f"Server TTSManager: Error - Could not determine model path/name for '{self.model_name}' for service '{self.service_name}'."
+                f"Server TTSManager: Error - Could not determine model path/name for '{self.model_name}' for service '{self.service_name}' using ModelManager. This usually means model_name was empty or directory creation failed."
             )
             return
 
@@ -298,16 +310,7 @@ class TTSManager:
                     )
             return False
 
-    def _get_or_download_model_blocking(self, service_name, model_identifier):
-        """
-        Return the model identifier for the specified TTS service, creating the service's model directory if needed.
-
-        For the "xttsv2" service, returns the provided model identifier directly, as model management is handled internally by Coqui TTS. Returns None for unsupported services.
-        """
-        target_dir_base = os.path.join(TTS_MODELS_PATH, service_name.lower())
-        os.makedirs(target_dir_base, exist_ok=True)
-
-        return model_identifier if service_name == "xttsv2" else None
+    # _get_or_download_model_blocking has been moved to ModelManager as get_or_prepare_tts_model_path
 
     @staticmethod
     def list_services():
@@ -531,58 +534,3 @@ class TTSManager:
         """
         voices = TTSManager.get_available_voices(service_name, model_name)
         return voices[0] if voices else None
-
-
-if __name__ == "__main__":
-
-    async def test_tts_manager():
-        """
-        Asynchronously tests the TTSManager with available TTS services and saves synthesized audio outputs.
-
-        This function creates a test output directory, initializes TTSManager instances for each supported service (gTTS and XTTSv2), and performs asynchronous synthesis of sample text. Synthesized audio files are saved to the test directory, and the function prints status messages for each test.
-        """
-        print("--- Server TTSManager Async Test ---")
-        # Ensure MODELS_PATH (from server config) and subdirs are writable
-
-        test_output_dir = os.path.join(TTS_MODELS_PATH, "test_outputs_server_async")
-        os.makedirs(test_output_dir, exist_ok=True)
-
-        if "gtts" in TTSManager.list_services():
-            print("\nTesting gTTS (async)...")
-            tts_g = TTSManager(tts_service_name="gtts", language="es")
-            if tts_g.is_initialized:
-                out_g = os.path.join(test_output_dir, "server_gtts_async_test.mp3")
-                if await tts_g.synthesize("Hola mundo desde el servidor.", out_g):
-                    print(f"gTTS async test audio saved to {out_g}")
-
-        if "xttsv2" in TTSManager.list_services():
-            print("\nTesting XTTSv2 (async)...")
-            # XTTS model will be downloaded by Coqui library to server's MODELS_PATH/tts_models/
-            # For speaker cloning, a speaker_wav would be needed. Test default voice.
-            tts_x = TTSManager(
-                tts_service_name="xttsv2",
-                model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-                language="en",
-            )
-            if tts_x.is_initialized:
-                out_x = os.path.join(test_output_dir, "server_xtts_async_test.wav")
-                if await tts_x.synthesize(
-                    "Hello from server-side Coqui XTTS, this is an asynchronous test.",
-                    out_x,
-                ):
-                    logger.info(f"XTTSv2 async test audio saved to {out_x}")
-            else:
-                logger.error("XTTSv2 async test synthesis failed.")
-        else:
-            logger.warning(
-                "XTTSv2 (async test) was not initialized, skipping synthesis test."
-            )
-
-        logger.info("\n--- Server TTSManager Async Test Complete ---")
-
-    # Setup basic logging for the test runner if this script is run directly
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    asyncio.run(test_tts_manager())

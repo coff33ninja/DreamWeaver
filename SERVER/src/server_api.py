@@ -7,6 +7,7 @@ import logging
 import websockets
 from .database import Database
 from .client_manager import ClientManager
+from .auth_manager import AuthManager # Import AuthManager
 from .dashboard import router as dashboard_router
 from .config import DB_PATH, REFERENCE_VOICES_AUDIO_PATH, SESSION_DURATION_HOURS
 import os
@@ -14,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 import secrets
 import hashlib
 from fastapi import WebSocket, WebSocketDisconnect  # For WebSocket support
-from .websocket_manager import connection_manager  # Import the global manager
+from .websocket_manager import WebSocketConnectionManager  # Import the class
 
 logger = logging.getLogger("dreamweaver_server")
 
@@ -44,6 +45,45 @@ def get_client_manager(db: Database = Depends(get_db)):
         ClientManager: An instance for managing client-related operations using the provided database.
     """
     return ClientManager(db)  # ClientManager now also uses the new DB methods
+
+
+# Dependency to get a WebSocketConnectionManager instance
+# This should ideally be a singleton if you want all connections managed by one manager.
+# For simple cases, a new instance per request might be fine if connections are short-lived
+# or if the manager doesn't need to maintain state across different parts of the app outside of its own connections.
+# However, for a typical WebSocket manager, a singleton is usually desired.
+# FastAPI handles singletons with dependencies by caching the result of the dependency function
+# for the lifespan of the application if the dependency is defined at the app level,
+# or for the lifespan of a request if defined at the router/endpoint level without further configuration.
+# For a shared manager like this, it's better to instantiate it once and provide it.
+# One common way:
+# _connection_manager_instance = None
+# def get_connection_manager():
+#     global _connection_manager_instance
+#     if _connection_manager_instance is None:
+#         _connection_manager_instance = WebSocketConnectionManager()
+#     return _connection_manager_instance
+# A more FastAPI-idiomatic way for app-level singletons is to put it on app.state or use a class-based dependency.
+# For now, let's use a simple function that returns a new instance,
+# and acknowledge that for true singleton behavior across all users of this dependency,
+# it would need to be managed (e.g., initialized once at app startup and passed around, or via a more robust singleton pattern).
+# Given the original code had a global singleton, we aim to replicate that behavior via dependency injection.
+
+_websocket_connection_manager_singleton = WebSocketConnectionManager()
+
+def get_connection_manager() -> WebSocketConnectionManager:
+    """
+    Provides the singleton `WebSocketConnectionManager` instance.
+    """
+    return _websocket_connection_manager_singleton
+
+_auth_manager_singleton = AuthManager()
+
+def get_auth_manager() -> AuthManager:
+    """
+    Provides the singleton `AuthManager` instance.
+    """
+    return _auth_manager_singleton
 
 
 # --- Pydantic Models ---
@@ -372,8 +412,9 @@ async def download_client_config(
 )
 async def request_handshake_challenge(
     payload: RequestChallengePayload,
-    db: Database = Depends(get_db),
-    client_manager: ClientManager = Depends(get_client_manager),
+    # db: Database = Depends(get_db), # DB not directly needed here if client_manager.validate_token uses its own DB dep
+    client_manager: ClientManager = Depends(get_client_manager), # Still needed for validate_token
+    auth_manager: AuthManager = Depends(get_auth_manager), # Added AuthManager dependency
 ):
     """
     Client provides its Actor_id and primary token in the request body.
@@ -393,10 +434,10 @@ async def request_handshake_challenge(
             status_code=401, detail="Invalid primary token for challenge request."
         )
 
-    challenge = client_manager.generate_handshake_challenge(Actor_id)
+    challenge = auth_manager.generate_handshake_challenge(Actor_id) # Use auth_manager
     if not challenge:
         logger.error(
-            f"Handshake: Failed to generate challenge for Actor_id: {Actor_id}"
+            f"Handshake: Failed to generate challenge for Actor_id: {Actor_id} via AuthManager."
         )
         raise HTTPException(
             status_code=500, detail="Failed to generate handshake challenge."
@@ -412,8 +453,9 @@ async def request_handshake_challenge(
 )
 async def submit_handshake_response(
     submit_data: HandshakeResponseSubmit,
-    db: Database = Depends(get_db),
-    client_manager: ClientManager = Depends(get_client_manager),
+    db: Database = Depends(get_db), # Still needed for primary token and saving session token
+    # client_manager: ClientManager = Depends(get_client_manager), # Not directly needed if AuthManager handles challenge validation
+    auth_manager: AuthManager = Depends(get_auth_manager), # Added AuthManager dependency
 ):
     """
     Client submits its Actor_id and the computed challenge_response.
@@ -423,11 +465,12 @@ async def submit_handshake_response(
     client_challenge_response = submit_data.challenge_response
     logger.info(f"Handshake: Received challenge response from Actor_id: {Actor_id}")
 
-    stored_challenge = client_manager.get_and_validate_challenge(Actor_id)
+    stored_challenge = auth_manager.get_and_validate_challenge(Actor_id) # Use auth_manager
     if not stored_challenge:
         logger.warning(
-            f"Handshake: No valid/unexpired challenge found for Actor_id: {Actor_id}. Response rejected."
+            f"Handshake: No valid/unexpired challenge found for Actor_id: {Actor_id} (AuthManager). Response rejected."
         )
+        # No need to clear challenge here, get_and_validate_challenge in AuthManager might do it if expired.
         raise HTTPException(status_code=400, detail="Invalid or expired challenge.")
 
     primary_token = db.get_primary_token(Actor_id)
@@ -436,7 +479,7 @@ async def submit_handshake_response(
         logger.error(
             f"Handshake: Primary token for Actor_id: {Actor_id} not found in DB during response verification. This is unexpected."
         )
-        client_manager.clear_challenge(Actor_id)  # Clean up challenge
+        auth_manager.clear_challenge(Actor_id)  # Clean up challenge using auth_manager
         raise HTTPException(
             status_code=500, detail="Internal server error during handshake."
         )
@@ -448,7 +491,7 @@ async def submit_handshake_response(
 
     if expected_response_hash == client_challenge_response:
         logger.info(f"Handshake: Challenge response verified for Actor_id: {Actor_id}.")
-        client_manager.clear_challenge(Actor_id)  # Clear the used challenge
+        auth_manager.clear_challenge(Actor_id)  # Clear the used challenge using auth_manager
 
         session_token = secrets.token_hex(32)
         # Use configurable session duration
@@ -476,9 +519,9 @@ async def submit_handshake_response(
         logger.warning(
             f"Handshake: Invalid challenge response for Actor_id: {Actor_id}. Expected hash did not match."
         )
-        client_manager.clear_challenge(
+        auth_manager.clear_challenge(
             Actor_id
-        )  # Clear the used challenge even on failure to prevent replay with same challenge
+        )  # Clear the used challenge even on failure to prevent replay with same challenge, using auth_manager
         raise HTTPException(status_code=401, detail="Invalid challenge response.")
 
 
@@ -492,6 +535,7 @@ async def websocket_endpoint(
     client_manager_dep: ClientManager = Depends(
         get_client_manager
     ),  # Renamed to avoid conflict
+    connection_manager: WebSocketConnectionManager = Depends(get_connection_manager), # Added dependency
 ):
     """
     Handles WebSocket connections for clients.

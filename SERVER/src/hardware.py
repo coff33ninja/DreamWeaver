@@ -6,11 +6,11 @@ import socket
 logger = logging.getLogger("dreamweaver_server")
 
 
-class Hardware:
+class _ArduinoHardware: # Renamed to indicate lower-level implementation
     def __init__(self):
         self.serial_port = os.getenv(
             "ARDUINO_SERIAL_PORT", None
-        )  # Default to None if not set
+        )
         self.baud_rate = int(os.getenv("ARDUINO_BAUD_RATE", "9600"))
         self.arduino = None
 
@@ -24,73 +24,88 @@ class Hardware:
                 )
             except serial.SerialException as e:
                 logger.warning(
-                    f"Could not connect to Arduino on {self.serial_port}: {e}. Hardware features will be disabled."
+                    f"Could not connect to Arduino on {self.serial_port}: {e}. Arduino hardware features will be disabled."
                 )
-            except (
-                Exception
-            ) as e_other:  # Catch other potential errors like ValueError for baud_rate
+            except Exception as e_other:
                 logger.error(
                     f"An unexpected error occurred while trying to connect to Arduino on {self.serial_port}: {e_other}",
                     exc_info=True,
                 )
-
         else:
             logger.info(
                 "ARDUINO_SERIAL_PORT not set. Arduino hardware features disabled."
             )
 
-    def update_leds(self, narration):
+    def send_command(self, command: bytes):
         if self.arduino and self.arduino.is_open:
             try:
-                command = b""
-                if "danger" in narration.lower():
-                    command = b"R255G0B0\n"  # Red for danger
-                    logger.debug(
-                        "Sending RED LED command to Arduino due to 'danger' in narration."
-                    )
-                elif "party" in narration.lower() or "celebrate" in narration.lower():
-                    command = b"P1\n"  # Assuming 'P1' is a command for party mode
-                    logger.debug("Sending PARTY LED command to Arduino.")
-                else:
-                    command = b"B0G0B255\n"  # Blue for normal
-                    logger.debug(
-                        "Sending BLUE LED command to Arduino for normal narration."
-                    )
-
-                if command:
-                    self.arduino.write(command)
-                    # logger.debug(f"Sent command {command.strip()} to Arduino.") # Can be too verbose
+                self.arduino.write(command)
+                logger.debug(f"Sent command {command.strip()} to Arduino.")
+                return True
             except serial.SerialException as e:
                 logger.error(
-                    f"Error writing to Arduino on {self.serial_port}: {e}",
+                    f"Error writing command {command.strip()} to Arduino on {self.serial_port}: {e}",
                     exc_info=True,
                 )
             except Exception as e_other:
                 logger.error(
-                    f"Unexpected error writing to Arduino: {e_other}", exc_info=True
+                    f"Unexpected error writing command {command.strip()} to Arduino: {e_other}", exc_info=True
                 )
         elif self.arduino and not self.arduino.is_open:
             logger.warning(
-                "Attempted to update LEDs, but Arduino serial port is not open."
+                f"Attempted to send command {command.strip()}, but Arduino serial port is not open."
             )
-        # If self.arduino is None, no message is logged here as it's logged during init.
+        else: # self.arduino is None
+            logger.debug( # Changed to debug as it's less critical if not configured
+                f"Attempted to send command {command.strip()}, but Arduino is not configured (serial port not set)."
+            )
+        return False
 
-    @staticmethod
-    def get_adapter_ip_addresses():
+    def __del__(self):
+        if self.arduino and self.arduino.is_open:
+            try:
+                self.arduino.close()
+                logger.info(f"Closed Arduino serial port {self.serial_port}.")
+            except Exception as e:
+                logger.error(
+                    f"Error closing Arduino serial port {self.serial_port}: {e}",
+                    exc_info=True,
+                )
+
+class HardwareManager:
+    def __init__(self):
+        self._arduino_hw = _ArduinoHardware()
+
+    def update_story_leds(self, narration_text: str):
         """
-        Returns a dictionary of network adapter names and their associated IPv4 addresses.
+        Updates LED status based on keywords in the narration text.
+        Sends a command to the Arduino to change LED color:
+        - Red for "danger".
+        - Party mode for "party" or "celebrate".
+        - Blue for normal narration.
         """
-        try:
-            import psutil
-        except ImportError:
-            logger.error("psutil is required for get_adapter_ip_addresses. Please install it.")
-            return {}
-        adapters = {}
-        for iface, addrs in psutil.net_if_addrs().items():
-            for addr in addrs:
-                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
-                    adapters[iface] = addr.address
-        return adapters
+        command = b""
+        narration_lower = narration_text.lower()
+
+        if "danger" in narration_lower:
+            command = b"R255G0B0\n"  # Red for danger
+            logger.debug("HardwareManager: Determined RED LED for 'danger' in narration.")
+        elif "party" in narration_lower or "celebrate" in narration_lower:
+            command = b"P1\n"  # Assuming 'P1' is a command for party mode
+            logger.debug("HardwareManager: Determined PARTY LED for 'party/celebrate' in narration.")
+        else:
+            command = b"B0G0B255\n"  # Blue for normal
+            logger.debug("HardwareManager: Determined BLUE LED for normal narration.")
+
+        if command:
+            self._arduino_hw.send_command(command)
+        else:
+            logger.debug("HardwareManager: No specific LED command determined from narration.")
+
+    # If other hardware interactions are needed, they would be added here,
+    # calling methods on self._arduino_hw or other specific hardware controllers.
+
+# get_adapter_ip_addresses has been moved to SERVER/src/network_utils.py
 
     def __del__(self):
         if self.arduino and self.arduino.is_open:

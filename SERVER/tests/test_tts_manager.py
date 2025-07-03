@@ -3,13 +3,17 @@ import asyncio
 import os
 from unittest.mock import patch, MagicMock
 
-# Ensure correct import path for TTSManager from src/
-from src.tts_manager import TTSManager
-from SERVER.src.config import MODELS_PATH, TTS_MODELS_PATH as SERVER_TTS_MODELS_PATH # Renamed to avoid clash if used directly
+# Corrected import path for TTSManager from SERVER.src/
+from SERVER.src.tts_manager import TTSManager, TTS_MODELS_PATH
+from SERVER.src.config import MODELS_PATH # TTS_MODELS_PATH is now imported from tts_manager
 import logging # Import logging for patching getLogger
 
-# Use SERVER_TTS_MODELS_PATH which is derived from SERVER.src.config.MODELS_PATH
+# Use TTS_MODELS_PATH imported from SERVER.src.tts_manager
 # This is where the TTSManager will attempt to create subdirectories.
+
+# Get a logger instance, similar to how it's done in tts_manager.py
+logger = logging.getLogger("dreamweaver_server_tests") # Use a test-specific logger name
+
 
 @pytest.fixture
 def server_tts_manager_gtts_success(monkeypatch):
@@ -36,9 +40,13 @@ def server_tts_manager_xttsv2_success(monkeypatch):
     mock_torch.cuda.is_available.return_value = False # Assume CPU
     monkeypatch.setattr("SERVER.src.tts_manager.torch", mock_torch)
 
+    # Import ModelManager here for patching if not already globally imported for tests
+    from SERVER.src.model_manager import ModelManager
+
     with patch("os.makedirs") as mock_os_makedirs:
         with patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
-            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="mock_xtts_model"):
+            # Patching the method on the ModelManager class
+            with patch.object(ModelManager, "get_or_prepare_tts_model_path", return_value="mock_xtts_model") as mock_get_path:
                 manager = TTSManager(
                     tts_service_name="xttsv2",
                     model_name="tts_models/multilingual/multi-dataset/xtts_v2", # Example model
@@ -86,21 +94,35 @@ class TestServerTTSManagerInitialization:
         mock_torch.cuda.is_available.return_value = True # Simulate GPU
         monkeypatch.setattr("SERVER.src.tts_manager.torch", mock_torch)
 
+        # Import ModelManager here for patching
+        from SERVER.src.model_manager import ModelManager
         with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
-            with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="gpu_model_id"):
+            with patch.object(ModelManager, "get_or_prepare_tts_model_path", return_value="gpu_model_id"):
                 manager = TTSManager(tts_service_name="xttsv2", model_name="gpu_model_id")
                 assert manager.is_initialized
                 mock_coqui_tts_instance.to.assert_called_once_with("cuda")
 
     def test_init_xttsv2_failure_lib_missing(self, monkeypatch):
         monkeypatch.setattr("SERVER.src.tts_manager.CoquiTTS", None)
+        # Import ModelManager here for patching
+        from SERVER.src.model_manager import ModelManager
         with patch("os.makedirs"), patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
             with patch.object(logging, "getLogger") as mock_get_logger:
                 mock_log_instance = MagicMock()
                 mock_get_logger.return_value = mock_log_instance
-                with patch.object(TTSManager, "_get_or_download_model_blocking", return_value="any_model"):
+                # Even if CoquiTTS is missing, the call to ModelManager would happen if model_name is provided
+                # No, if CoquiTTS is None, and service is xttsv2, it logs error and returns early before ModelManager call.
+                # The patch for get_or_prepare_tts_model_path is not strictly needed here if that's the expected flow.
+                # However, if there was a model_name, it would have called it.
+                # Let's keep it for safety, or verify the exact execution path.
+                # Upon review of TTSManager._initialize_service:
+                # If self.service_name == "xttsv2", it proceeds to call ModelManager.
+                # Then, it checks if CoquiTTS is available.
+                # So, the ModelManager.get_or_prepare_tts_model_path would be called.
+                with patch.object(ModelManager, "get_or_prepare_tts_model_path", return_value="any_model") as mock_prepare_path:
                     manager = TTSManager(tts_service_name="xttsv2", model_name="any_model")
                     assert not manager.is_initialized
+                    # mock_prepare_path.assert_called_once() # Verify it was called
                     mock_log_instance.error.assert_any_call(
                         "Server TTSManager: Error - Coqui TTS library not available for XTTSv2."
                     )
@@ -233,21 +255,10 @@ class TestServerTTSManagerStaticMethods:
         assert TTSManager.get_available_models("xttsv2") == ["tts_models/multilingual/multi-dataset/xtts_v2"]
         assert TTSManager.get_available_models("unknown_service") == []
 
-class TestServerTTSManagerPrivateHelpers:
-    @patch("SERVER.src.tts_manager.os.makedirs")
-    def test_get_or_download_model_blocking(self, mock_makedirs, monkeypatch):
-        monkeypatch.setattr("SERVER.src.tts_manager.gtts", MagicMock())
-        with patch.dict(os.environ, {"TTS_HOME": MODELS_PATH}):
-            manager = TTSManager(tts_service_name="gtts")
+# TestServerTTSManagerPrivateHelpers is removed as _get_or_download_model_blocking was moved to ModelManager.
+# Tests for ModelManager.get_or_prepare_tts_model_path will be in test_model_manager.py.
 
-        result_xtts = manager._get_or_download_model_blocking("xttsv2", "server_xtts_model")
-        assert result_xtts == "server_xtts_model"
-        mock_makedirs.assert_any_call(os.path.join(SERVER_TTS_MODELS_PATH, "xttsv2"), exist_ok=True)
-
-        result_gtts = manager._get_or_download_model_blocking("gtts", "en")
-        assert result_gtts is None # gTTS returns None here as per implementation
-        mock_makedirs.assert_any_call(os.path.join(SERVER_TTS_MODELS_PATH, "gtts"), exist_ok=True)
-
+class TestServerTTSManagerInternalBlockingMethods: # Renamed for clarity
     @patch("SERVER.src.tts_manager.gtts")
     def test_gtts_synthesize_blocking(self, mock_gtts_lib, server_tts_manager_gtts_success):
         manager, _, _ = server_tts_manager_gtts_success
@@ -272,3 +283,78 @@ class TestServerTTSManagerPrivateHelpers:
 
 # Basic logging setup for pytest output if needed
 logging.basicConfig(level=logging.DEBUG)
+
+
+# --- Functional Test for TTSManager Synthesis ---
+@pytest.mark.asyncio
+async def test_functional_tts_manager_synthesis(tmp_path):
+    """
+    Asynchronously tests the TTSManager with available TTS services and saves synthesized audio outputs.
+    This is a functional test that may download models and perform real synthesis.
+    It uses tmp_path fixture from pytest for temporary output directory.
+    """
+    # Configure logging for the test
+    test_logger = logging.getLogger("dreamweaver_server_functional_test")
+    test_logger.info("--- Server TTSManager Async Functional Test ---")
+
+    # Ensure MODELS_PATH (from server config) and subdirs are writable by the actual TTSManager
+    # The TTSManager itself will handle os.makedirs for TTS_MODELS_PATH and its subdirectories.
+    # For this test, we'll direct specific outputs to a pytest-managed temporary directory.
+    functional_test_output_dir = tmp_path / "test_outputs_server_async_functional"
+    os.makedirs(functional_test_output_dir, exist_ok=True)
+    test_logger.info(f"Functional test output directory: {functional_test_output_dir}")
+
+    # Test gTTS
+    if "gtts" in TTSManager.list_services():
+        test_logger.info("Testing gTTS (async functional)...")
+        tts_g = TTSManager(tts_service_name="gtts", language="es")
+        if tts_g.is_initialized:
+            out_g = functional_test_output_dir / "server_gtts_async_functional_test.mp3"
+            if await tts_g.synthesize("Hola mundo funcional desde el servidor.", str(out_g)):
+                test_logger.info(f"gTTS async functional test audio saved to {out_g}")
+                assert os.path.exists(out_g)
+                assert os.path.getsize(out_g) > 0
+            else:
+                test_logger.error("gTTS async functional test synthesis failed.")
+                pytest.fail("gTTS functional synthesis failed.")
+        else:
+            test_logger.warning("gTTS manager not initialized, skipping functional test.")
+            # Depending on strictness, you might want to fail here if gTTS is expected to work
+            # pytest.fail("gTTS manager failed to initialize for functional test.")
+
+    # Test XTTSv2 (CoquiTTS)
+    # This test might be slow as it can download models if not cached.
+    # Consider marking as slow or integration if it becomes an issue.
+    if "xttsv2" in TTSManager.list_services():
+        test_logger.info("Testing XTTSv2 (async functional)...")
+        # XTTS model will be downloaded by Coqui library to server's MODELS_PATH/tts_models/
+        # if not already present.
+        try:
+            tts_x = TTSManager(
+                tts_service_name="xttsv2",
+                model_name="tts_models/multilingual/multi-dataset/xtts_v2", # A common Coqui model
+                language="en",
+            )
+            if tts_x.is_initialized:
+                out_x = functional_test_output_dir / "server_xtts_async_functional_test.wav"
+                test_phrase = "Hello from server-side Coqui XTTS, this is an asynchronous functional test."
+                if await tts_x.synthesize(test_phrase, str(out_x)):
+                    test_logger.info(f"XTTSv2 async functional test audio saved to {out_x}")
+                    assert os.path.exists(out_x)
+                    assert os.path.getsize(out_x) > 0
+                else:
+                    test_logger.error("XTTSv2 async functional test synthesis failed.")
+                    pytest.fail("XTTSv2 functional synthesis failed.")
+            else:
+                test_logger.error("XTTSv2 manager not initialized for functional test.")
+                # This is a more critical failure if xttsv2 is expected
+                pytest.fail("XTTSv2 manager failed to initialize for functional test.")
+        except ImportError:
+            test_logger.warning("Coqui TTS library not found, skipping XTTSv2 functional test.")
+        except Exception as e:
+            test_logger.error(f"An error occurred during XTTSv2 functional test setup or synthesis: {e}", exc_info=True)
+            pytest.fail(f"XTTSv2 functional test failed due to exception: {e}")
+    else:
+        test_logger.warning("XTTSv2 service not listed, skipping functional test.")
+
+    test_logger.info("--- Server TTSManager Async Functional Test Complete ---")
