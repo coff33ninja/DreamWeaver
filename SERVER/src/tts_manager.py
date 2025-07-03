@@ -4,6 +4,7 @@ import torch
 import asyncio  # Added asyncio
 from typing import Optional
 import logging
+from gtts.lang import tts_langs  # Added import
 
 from .config import MODELS_PATH
 
@@ -18,6 +19,9 @@ except ImportError:
     )
 
 TTS_MODELS_PATH = os.path.join(MODELS_PATH, "tts")
+
+# Common TLDs for different accents
+GTTS_TLDS = ["com", "us", "co.uk", "com.au", "co.in", "ca", "ie"]
 
 
 class TTSManager:
@@ -124,7 +128,7 @@ class TTSManager:
                 f"Server TTSManager: Unsupported TTS service '{self.service_name}'."
             )
 
-    def _gtts_synthesize_blocking(self, text: str, output_path: str, lang: str):
+    def _gtts_synthesize_blocking(self, text: str, output_path: str, lang: str, tld: str = "com"):
         """
         Synchronously synthesizes speech from text using gTTS and saves the result to a file.
 
@@ -132,8 +136,11 @@ class TTSManager:
             text (str): The text to be converted to speech.
             output_path (str): The file path where the synthesized audio will be saved.
             lang (str): The language code for the speech synthesis.
+            tld (str): The top-level domain for gTTS accents.
         """
-        gtts.gTTS(text=text, lang=lang).save(output_path)
+        if ":" in lang:  # Handle language code from model selection
+            lang = lang.split(":")[0]
+        gtts.gTTS(text=text, lang=lang, tld=tld).save(output_path)
 
     def _xttsv2_synthesize_blocking(
         self,
@@ -240,8 +247,10 @@ class TTSManager:
         )
         try:
             if self.service_name == "gtts":
+                # Use speaker_wav_for_synthesis as TLD if provided, else use default "com"
+                tld = speaker_wav_for_synthesis if speaker_wav_for_synthesis in GTTS_TLDS else "com"
                 await asyncio.to_thread(
-                    self._gtts_synthesize_blocking, text, output_path, self.language
+                    self._gtts_synthesize_blocking, text, output_path, self.language, tld
                 )
             elif self.service_name == "xttsv2":
                 # Ensure speaker_wav_for_synthesis is a string
@@ -303,7 +312,7 @@ class TTSManager:
     @staticmethod
     def list_services():
         """List available TTS services"""
-        return ["coqui", "xttsv2"]  # Add other services as needed
+        return ["gtts", "coqui", "xttsv2"]  # Added gtts as first option
 
     @staticmethod
     def get_available_models(service_name):
@@ -311,7 +320,15 @@ class TTSManager:
         if not service_name:
             return []
 
-        if service_name == "coqui":
+        if service_name == "gtts":
+            # For gTTS, return language codes as "models"
+            try:
+                languages = tts_langs()
+                return [f"{code}:{name}" for code, name in languages.items()]
+            except Exception as e:
+                logger.error(f"Error listing gTTS languages: {e}")
+                return ["en:English"]  # Fallback to English
+        elif service_name == "coqui":
             # Define well-known working models with their capabilities
             known_models = {
                 "tts_models/multilingual/multi-dataset/xtts_v2": {
@@ -363,32 +380,30 @@ class TTSManager:
 
     @staticmethod
     def get_available_voices(service_name, model_name):
-        """Get available voices/speakers for a given model"""
+        """Get available voices/speakers for a given service"""
         if not service_name or not model_name:
             return []
 
-        # First check our known models database
-        known_models = TTSManager.get_model_capabilities(model_name)
-
         try:
-            if service_name == "coqui":
-                if known_models.get("type") == "multi-speaker":
-                    if "speakers" in known_models:
-                        return known_models["speakers"]
-                    elif known_models.get("requires_reference", False):
-                        return ["clone"]  # For voice cloning models
-                    else:
-                        try:
-                            # Try to load model and get speakers
-                            from TTS.api import TTS
-                            tts = TTS(model_name, progress_bar=False)
-                            if hasattr(tts, "speakers"):
-                                return tts.speakers
-                        except Exception as e:
-                            logger.error(f"Error loading model to get speakers: {e}")
-                            return ["default"]
+            if service_name == "gtts":
+                # For gTTS, return available TLDs as "voices"
+                return GTTS_TLDS
+            elif service_name == "coqui":
+                if model_name in TTSManager.get_model_capabilities(model_name).get("speakers", []):
+                    return TTSManager.get_model_capabilities(model_name)["speakers"]
+                elif TTSManager.get_model_capabilities(model_name).get("requires_reference", False):
+                    return ["clone"]  # For voice cloning models
                 else:
-                    return ["default"]  # Single speaker models
+                    try:
+                        # Try to load model and get speakers
+                        from TTS.api import TTS
+                        tts = TTS(model_name, progress_bar=False)
+                        if hasattr(tts, "speakers"):
+                            return tts.speakers
+                    except Exception as e:
+                        logger.error(f"Error loading model to get speakers: {e}")
+                        return ["default"]
+                return ["default"]  # Single speaker models
             elif service_name == "xttsv2":
                 return ["clone"]  # XTTS v2 uses reference audio
         except Exception as e:
@@ -400,6 +415,17 @@ class TTSManager:
     @staticmethod
     def get_model_capabilities(model_name):
         """Get detailed model capabilities and requirements"""
+        # First check if it's a gTTS language code
+        if ":" in model_name and model_name.split(":")[0] in tts_langs():
+            return {
+                "type": "single-speaker",
+                "multilingual": False,
+                "has_speakers": True,  # TLDs act as speakers
+                "requires_reference": False,
+                "languages": [model_name.split(":")[0]],
+                "is_gtts": True
+            }
+
         # Database of known model capabilities
         known_models = {
             "tts_models/multilingual/multi-dataset/xtts_v2": {

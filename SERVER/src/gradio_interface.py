@@ -340,12 +340,7 @@ def add_character_and_client_management_tab():
     """Adds the merged Character and Client Management tab to the Gradio interface."""
 
     def update_tts_components(service_name, model_name=None, is_reference_components=False):
-        """Unified function to update TTS-related components
-        Args:
-            service_name: Name of the TTS service
-            model_name: Optional model name for voice updates
-            is_reference_components: Whether to update reference audio components
-        """
+        """Unified function to update TTS-related components"""
         if not service_name:
             base_update = [gr.update(choices=[], value=None)]
             if is_reference_components:
@@ -365,6 +360,7 @@ def add_character_and_client_management_tab():
 
         # Voice/language update
         voices = []
+        capabilities = {"multilingual": False, "has_speakers": False}
         if model_name:
             voices = TTSManager.get_available_voices(service_name, model_name)
             capabilities = TTSManager.get_model_capabilities(model_name)
@@ -372,8 +368,8 @@ def add_character_and_client_management_tab():
         voice_update = gr.update(
             choices=voices,
             value=voices[0] if voices else None,
-            visible=bool(model_name and capabilities["multilingual"] or capabilities["has_speakers"]) if model_name else True,
-            label="Available Voices" if model_name and capabilities["has_speakers"] else "Languages"
+            visible=bool(model_name and (capabilities.get("multilingual", False) or capabilities.get("has_speakers", False))),
+            label="Available Voices" if model_name and capabilities.get("has_speakers", False) else "Languages"
         ) if model_name else gr.update(choices=[], value=None)
 
         base_update = [
@@ -382,7 +378,7 @@ def add_character_and_client_management_tab():
         ]
 
         if is_reference_components:
-            needs_ref = model_name and capabilities["requires_reference_audio"] if model_name else ref_audio_visible
+            needs_ref = model_name and capabilities.get("requires_reference", False) if model_name else ref_audio_visible
             return base_update + [
                 gr.update(visible=needs_ref),  # ref_audio
                 gr.update(visible=needs_ref),  # ref_audio_column
