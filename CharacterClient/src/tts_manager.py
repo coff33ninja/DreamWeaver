@@ -3,6 +3,7 @@ import torch
 import asyncio  # Added asyncio
 from typing import Optional
 import logging
+import types
 
 from .config import (
     CLIENT_TTS_MODELS_PATH,
@@ -175,8 +176,9 @@ class TTSManager:
         """
         if (
             self.tts_instance is None
+            or isinstance(self.tts_instance, types.MethodType)
             or not hasattr(self.tts_instance, "tts_to_file")
-            or not callable(getattr(self.tts_instance, "tts_to_file"))
+            or not callable(getattr(self.tts_instance, "tts_to_file", None))
         ):
             logger.error(
                 "Client TTSManager (XTTSv2): XTTSv2 instance is not available or invalid. Cannot synthesize."
@@ -194,34 +196,36 @@ class TTSManager:
             if lang_to_use not in languages:
                 lang_to_use = languages[0]
         speaker_to_use = speaker_wav or self.speaker_wav_path
-        if (
-            speaker_to_use
-            and isinstance(speaker_to_use, str)
-            and os.path.exists(speaker_to_use)
-        ):
-            self.tts_instance.tts_to_file(
-                text=text,
-                speaker_wav=speaker_to_use,
-                language=lang_to_use,
-                file_path=output_file_path,
-            )
-            logger.debug(
-                f"Client TTSManager (XTTSv2): Synthesized with speaker wav {speaker_to_use}."
-            )
-        else:
+        # Only call tts_to_file if tts_instance is not a MethodType
+        if not isinstance(self.tts_instance, types.MethodType):
             if (
                 speaker_to_use
-            ):  # Only log warning if a speaker_wav was intended but not found/valid
-                logger.warning(
-                    f"Client TTSManager (XTTSv2): speaker_wav '{speaker_to_use}' not found or invalid. Using default voice for lang {lang_to_use}."
+                and isinstance(speaker_to_use, str)
+                and os.path.exists(speaker_to_use)
+            ):
+                self.tts_instance.tts_to_file(
+                    text=text,
+                    speaker_wav=speaker_to_use,
+                    language=lang_to_use,
+                    file_path=output_file_path,
                 )
-            else:  # Log if no speaker_wav was provided at all and default is used
                 logger.debug(
-                    f"Client TTSManager (XTTSv2): Synthesizing with default voice for lang {lang_to_use}."
+                    f"Client TTSManager (XTTSv2): Synthesized with speaker wav {speaker_to_use}."
                 )
-            self.tts_instance.tts_to_file(
-                text=text, language=lang_to_use, file_path=output_file_path
-            )
+            else:
+                if (
+                    speaker_to_use
+                ):  # Only log warning if a speaker_wav was intended but not found/valid
+                    logger.warning(
+                        f"Client TTSManager (XTTSv2): speaker_wav '{speaker_to_use}' not found or invalid. Using default voice for lang {lang_to_use}."
+                    )
+                else:  # Log if no speaker_wav was provided at all and default is used
+                    logger.debug(
+                        f"Client TTSManager (XTTSv2): Synthesizing with default voice for lang {lang_to_use}."
+                    )
+                self.tts_instance.tts_to_file(
+                    text=text, language=lang_to_use, file_path=output_file_path
+                )
 
     async def synthesize(
         self,
@@ -533,9 +537,7 @@ if __name__ == "__main__":
     # Setup basic logging for the test runner if this script is run directly
     # This is redundant if logging_config.setup_client_logging() is comprehensive
     # but good for standalone testing of this file.
-    if not logging.getLogger(
-        LOGGER_NAME
-    ).hasHandlers():  # Check if logger is already configured
+    if not logging.getLogger("dreamweaver_client").hasHandlers():
         logging.basicConfig(
             level=logging.DEBUG,
             format="%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s",

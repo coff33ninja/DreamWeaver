@@ -364,12 +364,12 @@ class TTSManager:
         return discovered
 
     @staticmethod
-    def get_available_voices(service_name: str, model_name: str = None):
+    def get_available_voices(service_name: str, model_name: Optional[str] = None):
         """
         Return a list of available voices/speakers for a given service/model.
         Parameters:
             service_name (str): The TTS backend name.
-            model_name (str): The model identifier (if required by backend).
+            model_name (Optional[str]): The model identifier (if required by backend).
         Returns:
             list: List of available voices/speakers, or an empty list if not supported.
         """
@@ -402,7 +402,7 @@ class TTSManager:
         return models[0] if models else None
 
     @staticmethod
-    def get_default_voice(service_name: str, model_name: str = None):
+    def get_default_voice(service_name: str, model_name: Optional[str] = None):
         """
         Return the default voice for a given service/model, for UI selection.
         """
